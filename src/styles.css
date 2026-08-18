@@ -335,6 +335,47 @@ textarea:focus-visible {
   font-size: 0.9rem;
 }
 
+.stock-search-field {
+  position: relative;
+}
+
+.stock-search-results {
+  position: absolute;
+  z-index: 2;
+  top: 100%;
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.stock-search-result {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.stock-search-result:hover,
+.stock-search-result:focus-visible {
+  background: var(--accent-soft);
+}
+
+.stock-search-result span:last-child {
+  color: var(--text-secondary);
+}
+
 .form-actions {
   display: flex;
   justify-content: flex-end;

@@ -69,10 +69,12 @@ const summaryFixture = (overrides: Partial<PortfolioSummary> = {}): PortfolioSum
 const HoldingFormHarness = ({
   groups,
   initialHolding,
+  onSearch,
   onSubmit = vi.fn<(values: HoldingFormValues) => void>(),
 }: {
   groups: StockGroup[];
   initialHolding?: Holding;
+  onSearch?: (query: string) => Promise<{ symbol: string; name: string }[]>;
   onSubmit?: (values: HoldingFormValues) => void;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -86,6 +88,7 @@ const HoldingFormHarness = ({
         <HoldingForm
           groups={groups}
           initialHolding={initialHolding}
+          onSearch={onSearch}
           onSubmit={(values) => {
             onSubmit(values);
             setIsOpen(false);
@@ -130,13 +133,59 @@ const GroupDialogHarness = ({
 };
 
 describe('Task 6 dashboard components', () => {
-  it('shows validation when a holding is submitted without an opening price', async () => {
+  it('searches by stock name and submits the selected stock result', async () => {
+    const user = userEvent.setup();
+    const onSearch = vi.fn().mockResolvedValue([{ symbol: '600519', name: '贵州茅台' }]);
+    const onSubmit = vi.fn();
+
+    render(<HoldingFormHarness groups={groupsFixture()} onSearch={onSearch} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByRole('button', { name: '添加股票' }));
+    await user.type(screen.getByLabelText('股票代码'), '贵州茅台');
+
+    const suggestion = await screen.findByRole('option', { name: '贵州茅台 600519' });
+    await user.click(suggestion);
+    await user.click(screen.getByRole('button', { name: '保存股票' }));
+
+    expect(onSearch).toHaveBeenCalledWith('贵州茅台');
+    expect(onSubmit).toHaveBeenCalledWith({
+      symbol: '600519',
+      name: '贵州茅台',
+      groupId: 'ungrouped',
+      openPrice: null,
+      quantity: null,
+      note: '',
+    });
+  });
+
+  it('submits an observation holding when opening price and quantity are blank', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+
+    render(<HoldingFormHarness groups={groupsFixture()} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByRole('button', { name: '添加股票' }));
+    await user.type(screen.getByLabelText('股票代码'), '600519');
+    await user.click(screen.getByRole('button', { name: '保存股票' }));
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      symbol: '600519',
+      name: '600519',
+      groupId: 'ungrouped',
+      openPrice: null,
+      quantity: null,
+      note: '',
+    });
+  });
+
+  it('shows validation when a holding is submitted with a non-positive opening price', async () => {
     const user = userEvent.setup();
 
     render(<HoldingFormHarness groups={groupsFixture()} />);
 
     await user.click(screen.getByRole('button', { name: '添加股票' }));
     await user.type(screen.getByLabelText('股票代码'), '600519');
+    await user.type(screen.getByLabelText('开仓价'), '0');
     await user.click(screen.getByRole('button', { name: '保存股票' }));
 
     expect(screen.getByText('请输入大于 0 的开仓价')).toBeInTheDocument();
@@ -163,6 +212,7 @@ describe('Task 6 dashboard components', () => {
 
     expect(onSubmit).toHaveBeenCalledWith({
       symbol: '600519',
+      name: '600519',
       groupId: 'long-term',
       openPrice: 160,
       quantity: 100,
@@ -303,6 +353,20 @@ describe('Task 6 dashboard components', () => {
     );
 
     expect(screen.getByText('观察业绩')).toBeInTheDocument();
+  });
+
+  it('marks a holding without position details as an observation item', () => {
+    render(
+      <HoldingList
+        holdings={[holding({ openPrice: null, quantity: null })]}
+        quotes={{ '600519': quote() }}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByText('未填写')).toHaveLength(2);
+    expect(screen.getByText('观察项：补录开仓价和持有数量后计算收益')).toBeInTheDocument();
   });
 
   it('shows unavailable and stale quote states in the holding list', () => {

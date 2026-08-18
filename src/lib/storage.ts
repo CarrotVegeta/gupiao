@@ -8,6 +8,9 @@ const isString = (value: unknown): value is string => typeof value === 'string';
 const isFinitePositiveNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value > 0;
 
+const isOptionalPositiveNumber = (value: unknown): value is number | null =>
+  value === null || isFinitePositiveNumber(value);
+
 const normalizeSymbol = (value: unknown): string | null => {
   if (!isString(value)) {
     return null;
@@ -54,8 +57,10 @@ const normalizeHolding = (value: unknown): Holding | null => {
     symbol === null ||
     !isString(holding.name) ||
     !isString(holding.groupId) ||
-    !isFinitePositiveNumber(holding.openPrice) ||
-    !isFinitePositiveNumber(holding.quantity) ||
+    !Object.prototype.hasOwnProperty.call(holding, 'openPrice') ||
+    !Object.prototype.hasOwnProperty.call(holding, 'quantity') ||
+    !isOptionalPositiveNumber(holding.openPrice) ||
+    !isOptionalPositiveNumber(holding.quantity) ||
     !isString(holding.note) ||
     !isString(holding.createdAt) ||
     !isString(holding.updatedAt)

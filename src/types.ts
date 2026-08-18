@@ -10,8 +10,8 @@ export type Holding = {
   symbol: string;
   name: string;
   groupId: string;
-  openPrice: number;
-  quantity: number;
+  openPrice: number | null;
+  quantity: number | null;
   note: string;
   createdAt: string;
   updatedAt: string;
@@ -39,6 +39,16 @@ export type QuoteMap = Record<string, Quote>;
 export type QuoteError = {
   symbol: string;
   message: string;
+};
+
+export type StockSearchResult = {
+  symbol: string;
+  name: string;
+};
+
+export type StockSearchResponse = {
+  results: StockSearchResult[];
+  source: 'eastmoney';
 };
 
 export type QuotesResponse = {

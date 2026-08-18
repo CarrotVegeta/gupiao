@@ -112,11 +112,11 @@ export const HoldingList = ({
               </div>
               <div>
                 <dt>开仓价</dt>
-                <dd>{formatCurrency(holding.openPrice)}</dd>
+                <dd>{holding.openPrice === null ? '未填写' : formatCurrency(holding.openPrice)}</dd>
               </div>
               <div>
                 <dt>持有数量</dt>
-                <dd>{holding.quantity}</dd>
+                <dd>{holding.quantity === null ? '未填写' : holding.quantity}</dd>
               </div>
             </dl>
 
@@ -125,7 +125,9 @@ export const HoldingList = ({
                 performance.hasQuote ? performance.profit : null,
               )}`}
             >
-              {performance.hasQuote
+              {holding.openPrice === null || holding.quantity === null
+                ? '观察项：补录开仓价和持有数量后计算收益'
+                : performance.hasQuote
                 ? `持仓收益：${formatSignedCurrency(performance.profit as number)}（${formatSignedPercent(
                     performance.returnPct as number,
                   )}）`

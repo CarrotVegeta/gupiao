@@ -74,6 +74,13 @@ describe('storage helpers', () => {
     expect(loadState(localStorage)).toEqual({ state, recovered: false });
   });
 
+  it('round-trips observation holdings without position details', () => {
+    const state = stateWithHolding({ openPrice: null, quantity: null });
+    saveState(localStorage, state);
+
+    expect(loadState(localStorage)).toEqual({ state, recovered: false });
+  });
+
   it('recovers a usable empty state when localStorage contains invalid JSON', () => {
     localStorage.setItem('stock-dashboard:v1', '{');
     expect(loadState(localStorage).recovered).toBe(true);

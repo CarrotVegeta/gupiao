@@ -29,6 +29,22 @@ const quote = (overrides: Partial<Quote> = {}): Quote => ({
 });
 
 describe('calculation helpers', () => {
+  it('excludes an observation holding without position details from return totals', () => {
+    const result = calculatePortfolioSummary(
+      [holding({ openPrice: null, quantity: null })],
+      { '600519': quote({ price: 12 }) },
+    );
+
+    expect(result).toMatchObject({
+      invested: 0,
+      marketValue: 0,
+      profit: null,
+      returnPct: null,
+      hasPartialQuotes: false,
+      holdingCount: 1,
+    });
+  });
+
   it('calculates one holding profit and return from the latest price', () => {
     const result = calculateHoldingPerformance(
       holding({ openPrice: 10, quantity: 100 }),

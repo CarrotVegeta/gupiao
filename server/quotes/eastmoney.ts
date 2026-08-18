@@ -1,4 +1,17 @@
-import type { Quote, QuoteError } from '../../src/types.js';
+import type { Quote, QuoteError, StockSearchResult } from '../../src/types.js';
+
+type EastmoneySearchItem = {
+  Code?: unknown;
+  Name?: unknown;
+  MktNum?: unknown;
+  QuoteID?: unknown;
+};
+
+export type EastmoneySearchPayload = {
+  QuotationCodeTable?: {
+    Data?: EastmoneySearchItem[];
+  };
+};
 
 type EastmoneyQuoteData = {
   f43?: unknown;
@@ -16,6 +29,8 @@ export type EastmoneyQuotePayload = {
 };
 
 const QUOTE_ENDPOINT = 'https://push2.eastmoney.com/api/qt/stock/get';
+const SEARCH_ENDPOINT = 'https://searchapi.eastmoney.com/api/suggest/get';
+const SEARCH_TOKEN = 'D43BF722C8E33BDC906FB84D85E326E8';
 const REQUEST_TIMEOUT_MS = 5_000;
 
 const asNumber = (value: unknown): number | null => {
@@ -76,6 +91,79 @@ export const normalizeSymbol = (value: string): string => {
   }
 
   return next;
+};
+
+const getSearchCode = (item: EastmoneySearchItem): string => {
+  const code = typeof item.Code === 'string' ? item.Code : '';
+
+  if (/^\d{6}$/.test(code)) {
+    return code;
+  }
+
+  const quoteId = typeof item.QuoteID === 'string' ? item.QuoteID : '';
+  const fallbackCode = quoteId.split('.')[1] ?? '';
+
+  return /^\d{6}$/.test(fallbackCode) ? fallbackCode : '';
+};
+
+export const mapEastmoneySearch = (payload: EastmoneySearchPayload): StockSearchResult[] => {
+  const results: StockSearchResult[] = [];
+  const seen = new Set<string>();
+  const items = payload.QuotationCodeTable?.Data ?? [];
+
+  for (const item of items) {
+    const symbol = getSearchCode(item);
+    const name = typeof item.Name === 'string' ? item.Name.trim() : '';
+
+    if (!symbol || !name || seen.has(symbol)) {
+      continue;
+    }
+
+    seen.add(symbol);
+    results.push({ symbol, name });
+  }
+
+  return results.slice(0, 8);
+};
+
+const toSearchUrl = (query: string): string => {
+  const params = new URLSearchParams({
+    input: query,
+    type: '14',
+    token: SEARCH_TOKEN,
+    count: '8',
+  });
+
+  return `${SEARCH_ENDPOINT}?${params.toString()}`;
+};
+
+export const fetchEastmoneySearch = async (
+  rawQuery: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<StockSearchResult[]> => {
+  const query = rawQuery.trim();
+
+  if (!query) {
+    return [];
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetchImpl(toSearchUrl(query), {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    return mapEastmoneySearch((await response.json()) as EastmoneySearchPayload);
+  } finally {
+    clearTimeout(timer);
+  }
 };
 
 export const toEastmoneySecId = (symbol: string): string =>

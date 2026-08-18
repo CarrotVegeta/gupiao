@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   fetchEastmoneyQuotes,
+  fetchEastmoneySearch,
   mapEastmoneyQuote,
+  mapEastmoneySearch,
   toEastmoneySecId,
 } from './eastmoney.js';
 
@@ -17,6 +19,52 @@ const validPayload = (symbol: string) => ({
 });
 
 describe('eastmoney quote adapter', () => {
+  it('maps search suggestions into stock choices', () => {
+    expect(
+      mapEastmoneySearch({
+        QuotationCodeTable: {
+          Data: [
+            { Code: '600519', Name: '贵州茅台', QuoteID: '1.600519', MktNum: '1' },
+            { Code: '000001', Name: '平安银行', QuoteID: '0.000001', MktNum: '0' },
+          ],
+        },
+      }),
+    ).toEqual([
+      { symbol: '600519', name: '贵州茅台' },
+      { symbol: '000001', name: '平安银行' },
+    ]);
+  });
+
+  it('ignores malformed search suggestions', () => {
+    expect(
+      mapEastmoneySearch({
+        QuotationCodeTable: {
+          Data: [
+            { Code: '600519', Name: '贵州茅台' },
+            { Code: 'sh600519', Name: '非法代码' },
+            { Code: '000001', Name: '' },
+          ],
+        },
+      }),
+    ).toEqual([{ symbol: '600519', name: '贵州茅台' }]);
+  });
+
+  it('fetches suggestions through the Eastmoney search endpoint', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          QuotationCodeTable: { Data: [{ Code: '600519', Name: '贵州茅台' }] },
+        }),
+      ),
+    );
+
+    await expect(fetchEastmoneySearch('贵州茅台', fetchImpl)).resolves.toEqual([
+      { symbol: '600519', name: '贵州茅台' },
+    ]);
+    expect(fetchImpl.mock.calls[0]?.[0]).toContain('input=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0');
+    expect(fetchImpl.mock.calls[0]?.[0]).toContain('count=8');
+  });
+
   it('maps Shanghai and Shenzhen symbols to Eastmoney security ids', () => {
     expect(toEastmoneySecId('600519')).toBe('1.600519');
     expect(toEastmoneySecId('000001')).toBe('0.000001');

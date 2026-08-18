@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useDialogFocus } from '../lib/useDialogFocus';
-import type { Holding, StockGroup } from '../types';
+import type { Holding, StockGroup, StockSearchResult } from '../types';
 
 export type HoldingFormValues = {
   symbol: string;
+  name: string;
   groupId: string;
-  openPrice: number;
-  quantity: number;
+  openPrice: number | null;
+  quantity: number | null;
   note: string;
 };
 
@@ -15,6 +16,7 @@ type HoldingFormProps = {
   initialHolding?: Holding;
   defaultGroupId?: string;
   isSubmitting?: boolean;
+  onSearch?: (query: string) => Promise<StockSearchResult[]>;
   onSubmit: (values: HoldingFormValues) => void;
   onCancel: () => void;
 };
@@ -25,6 +27,8 @@ const symbolPattern = /^[0-9]{6}$/;
 
 const hasAtMostTwoDecimals = (value: string): boolean => /^(\d+)(\.\d{1,2})?$/.test(value);
 
+const emptySearch = async (): Promise<StockSearchResult[]> => [];
+
 const getAssignableGroups = (groups: StockGroup[]): StockGroup[] =>
   groups.filter((group) => !group.isSystem || group.id === 'ungrouped');
 
@@ -33,6 +37,7 @@ export const HoldingForm = ({
   initialHolding,
   defaultGroupId,
   isSubmitting = false,
+  onSearch = emptySearch,
   onSubmit,
   onCancel,
 }: HoldingFormProps) => {
@@ -45,15 +50,58 @@ export const HoldingForm = ({
     '';
 
   const [symbol, setSymbol] = useState(initialHolding?.symbol ?? '');
+  const [stockName, setStockName] = useState(initialHolding?.name ?? '');
   const [groupId, setGroupId] = useState(initialGroupId);
   const [openPrice, setOpenPrice] = useState(
-    initialHolding ? String(initialHolding.openPrice) : '',
+    initialHolding?.openPrice === null || initialHolding?.openPrice === undefined
+      ? ''
+      : String(initialHolding.openPrice),
   );
   const [quantity, setQuantity] = useState(
-    initialHolding ? String(initialHolding.quantity) : '',
+    initialHolding?.quantity === null || initialHolding?.quantity === undefined
+      ? ''
+      : String(initialHolding.quantity),
   );
   const [note, setNote] = useState(initialHolding?.note ?? '');
   const [errors, setErrors] = useState<HoldingFormErrors>({});
+  const [suggestions, setSuggestions] = useState<StockSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  useEffect(() => {
+    const query = symbol.trim();
+
+    if (!query) {
+      setSuggestions([]);
+      setIsSearching(false);
+      return undefined;
+    }
+
+    let active = true;
+    const timerId = window.setTimeout(() => {
+      setIsSearching(true);
+      void onSearch(query)
+        .then((results) => {
+          if (active) {
+            setSuggestions(results);
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setSuggestions([]);
+          }
+        })
+        .finally(() => {
+          if (active) {
+            setIsSearching(false);
+          }
+        });
+    }, 220);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timerId);
+    };
+  }, [onSearch, symbol]);
 
   const validate = (): HoldingFormErrors => {
     const nextErrors: HoldingFormErrors = {};
@@ -70,15 +118,15 @@ export const HoldingForm = ({
       nextErrors.groupId = '请选择分组';
     }
 
-    if (!openPrice || !Number.isFinite(parsedOpenPrice) || parsedOpenPrice <= 0) {
+    if (openPrice && (!Number.isFinite(parsedOpenPrice) || parsedOpenPrice <= 0)) {
       nextErrors.openPrice = '请输入大于 0 的开仓价';
-    } else if (!hasAtMostTwoDecimals(openPrice)) {
+    } else if (openPrice && !hasAtMostTwoDecimals(openPrice)) {
       nextErrors.openPrice = '开仓价最多保留两位小数';
     }
 
-    if (!quantity || !Number.isFinite(parsedQuantity) || parsedQuantity <= 0) {
+    if (quantity && (!Number.isFinite(parsedQuantity) || parsedQuantity <= 0)) {
       nextErrors.quantity = '请输入大于 0 的持有数量';
-    } else if (!hasAtMostTwoDecimals(quantity)) {
+    } else if (quantity && !hasAtMostTwoDecimals(quantity)) {
       nextErrors.quantity = '持有数量最多保留两位小数';
     }
 
@@ -106,11 +154,24 @@ export const HoldingForm = ({
 
     onSubmit({
       symbol: symbol.trim(),
+      name: stockName.trim() || symbol.trim(),
       groupId,
-      openPrice: Number(openPrice),
-      quantity: Number(quantity),
+      openPrice: openPrice ? Number(openPrice) : null,
+      quantity: quantity ? Number(quantity) : null,
       note: note.trim(),
     });
+  };
+
+  const handleSymbolChange = (value: string): void => {
+    setSymbol(value);
+    setStockName('');
+    setSuggestions([]);
+  };
+
+  const handleSelectSuggestion = (result: StockSearchResult): void => {
+    setSymbol(result.symbol);
+    setStockName(result.name);
+    setSuggestions([]);
   };
 
   return (
@@ -131,17 +192,42 @@ export const HoldingForm = ({
       </div>
 
       <form className="form-grid" onSubmit={handleSubmit} noValidate>
-        <label className="field" htmlFor="holding-symbol">
+        <label className="field stock-search-field" htmlFor="holding-symbol">
           <span>股票代码</span>
           <input
             id="holding-symbol"
             className="input"
             name="symbol"
             value={symbol}
-            onChange={(event) => setSymbol(event.target.value)}
-            inputMode="numeric"
+            onChange={(event) => handleSymbolChange(event.target.value)}
+            inputMode="search"
             autoComplete="off"
+            aria-label="股票代码"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-controls="holding-symbol-suggestions"
+            aria-expanded={suggestions.length > 0}
           />
+          <span className="field__hint">可输入股票代码或名称搜索</span>
+          {isSearching ? <span className="field__hint">搜索中…</span> : null}
+          {suggestions.length > 0 ? (
+            <div id="holding-symbol-suggestions" className="stock-search-results" role="listbox">
+              {suggestions.map((result) => (
+                <button
+                  key={result.symbol}
+                  className="stock-search-result"
+                  type="button"
+                  role="option"
+                  aria-label={`${result.name} ${result.symbol}`}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => handleSelectSuggestion(result)}
+                >
+                  <span>{result.name}</span>
+                  <span>{result.symbol}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
           {errors.symbol ? <span className="field__error">{errors.symbol}</span> : null}
         </label>
 
@@ -165,6 +251,7 @@ export const HoldingForm = ({
 
         <label className="field" htmlFor="holding-open-price">
           <span>开仓价</span>
+          <span className="field__hint">可选，填写后计算收益</span>
           <input
             id="holding-open-price"
             className="input"
@@ -172,12 +259,14 @@ export const HoldingForm = ({
             value={openPrice}
             onChange={(event) => setOpenPrice(event.target.value)}
             inputMode="decimal"
+            aria-label="开仓价"
           />
           {errors.openPrice ? <span className="field__error">{errors.openPrice}</span> : null}
         </label>
 
         <label className="field" htmlFor="holding-quantity">
           <span>持有数量</span>
+          <span className="field__hint">可选，填写后计算收益</span>
           <input
             id="holding-quantity"
             className="input"
@@ -185,6 +274,7 @@ export const HoldingForm = ({
             value={quantity}
             onChange={(event) => setQuantity(event.target.value)}
             inputMode="decimal"
+            aria-label="持有数量"
           />
           {errors.quantity ? <span className="field__error">{errors.quantity}</span> : null}
         </label>

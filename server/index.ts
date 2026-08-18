@@ -1,8 +1,12 @@
 import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { QuotesResponse } from '../src/types.js';
-import { fetchEastmoneyQuotes, normalizeSymbol } from './quotes/eastmoney.js';
+import type { QuotesResponse, StockSearchResponse } from '../src/types.js';
+import {
+  fetchEastmoneyQuotes,
+  fetchEastmoneySearch,
+  normalizeSymbol,
+} from './quotes/eastmoney.js';
 
 const DIST_DIR = path.resolve(process.cwd(), 'dist');
 const INDEX_HTML = path.join(DIST_DIR, 'index.html');
@@ -51,6 +55,31 @@ export const createApp = () => {
     };
 
     return res.status(200).json(body);
+  });
+
+  app.get('/api/stock-search', async (req, res) => {
+    const query = String(req.query.query ?? '').trim();
+
+    if (!query) {
+      return res.status(400).json({ message: '缺少 query 查询参数' });
+    }
+
+    if (query.length > 40) {
+      return res.status(400).json({ message: '搜索内容不能超过 40 个字符' });
+    }
+
+    try {
+      const body: StockSearchResponse = {
+        results: await fetchEastmoneySearch(query),
+        source: 'eastmoney',
+      };
+
+      return res.status(200).json(body);
+    } catch (error) {
+      return res.status(502).json({
+        message: error instanceof Error ? error.message : '股票搜索失败',
+      });
+    }
   });
 
   if (HAS_DIST) {

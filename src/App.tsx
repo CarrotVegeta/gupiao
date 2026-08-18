@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { calculatePortfolioSummary } from './lib/calculations';
 import { fetchQuotes, mergeQuotes } from './lib/quotes';
+import { searchStocks } from './lib/search';
 import { loadState, moveHoldingsToGroup, saveState } from './lib/storage';
 import { GroupDialog, type GroupDialogValues } from './components/GroupDialog';
 import { GroupSidebar } from './components/GroupSidebar';
@@ -252,7 +253,7 @@ export default function App() {
     const holding: Holding = {
       id: createId(),
       symbol,
-      name: symbol,
+      name: values.name.trim() || symbol,
       groupId: values.groupId,
       openPrice: values.openPrice,
       quantity: values.quantity,
@@ -300,7 +301,7 @@ export default function App() {
           ? {
               ...holding,
               symbol,
-              name: nextName,
+              name: values.name.trim() || nextName,
               groupId: values.groupId,
               openPrice: values.openPrice,
               quantity: values.quantity,
@@ -397,6 +398,7 @@ export default function App() {
               groups={state.groups}
               defaultGroupId={selectedGroupId}
               isSubmitting={isHoldingSubmitting}
+              onSearch={searchStocks}
               onSubmit={handleCreateHolding}
               onCancel={closeModal}
             />
@@ -407,6 +409,7 @@ export default function App() {
               groups={state.groups}
               initialHolding={editingHolding}
               isSubmitting={isHoldingSubmitting}
+              onSearch={searchStocks}
               onSubmit={handleUpdateHolding}
               onCancel={closeModal}
             />
