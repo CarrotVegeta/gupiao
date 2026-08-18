@@ -34,6 +34,18 @@ export type Quote = {
   status: "fresh" | "stale" | "unavailable";
 };
 
+export type QuoteError = {
+  symbol: string;
+  message: string;
+};
+
+export type QuotesResponse = {
+  quotes: Quote[];
+  fetchedAt: string;
+  source: "eastmoney";
+  errors: QuoteError[];
+};
+
 export type HoldingPerformance = {
   profit: number | null;
   returnPct: number | null;
