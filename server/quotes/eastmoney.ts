@@ -1,4 +1,4 @@
-import type { Quote, QuoteError } from '../../src/types';
+import type { Quote, QuoteError } from '../../src/types.js';
 
 type EastmoneyQuoteData = {
   f43?: unknown;
@@ -85,9 +85,21 @@ const toRequestUrl = (symbol: string): string => {
 };
 
 const fetchSingleQuote = async (
-  symbol: string,
+  rawSymbol: string,
   fetchImpl: typeof fetch,
 ): Promise<{ quote?: Quote; error?: QuoteError }> => {
+  let symbol: string;
+  try {
+    symbol = normalizeSymbol(rawSymbol);
+  } catch (error) {
+    return {
+      error: {
+        symbol: rawSymbol.trim(),
+        message: error instanceof Error ? error.message : '未知错误',
+      },
+    };
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const fetchedAt = new Date().toISOString();

@@ -1,11 +1,10 @@
 import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import type { QuotesResponse } from '../src/types';
-import { fetchEastmoneyQuotes, normalizeSymbol } from './quotes/eastmoney';
+import type { QuotesResponse } from '../src/types.js';
+import { fetchEastmoneyQuotes, normalizeSymbol } from './quotes/eastmoney.js';
 
-const DIST_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');
+const DIST_DIR = path.resolve(process.cwd(), 'dist');
 const INDEX_HTML = path.join(DIST_DIR, 'index.html');
 const HAS_DIST = fs.existsSync(INDEX_HTML);
 
@@ -67,7 +66,7 @@ export const createApp = () => {
   }
 
   app.use((_req, res) => {
-    return res.status(404).json({ message: 'Not Found' });
+    return res.status(404).json({ message: '未找到资源' });
   });
 
   return app;

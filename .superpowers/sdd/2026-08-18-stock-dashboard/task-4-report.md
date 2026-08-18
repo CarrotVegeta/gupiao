@@ -116,3 +116,131 @@ Tests       16 passed (16)
 ## Concerns
 
 - No blocking concerns after the final focused test, typecheck, build, and full-suite verification.
+
+## Review Fix Round — 2026-08-18
+
+### Changes made
+
+- Added a dedicated production server compile target in `tsconfig.server.json` that emits ESM server files to `dist-server/`.
+- Updated `package.json` so:
+  - `dev` still runs `tsx watch server/index.ts`
+  - `build` cleans `dist-server/`, compiles both app and server TypeScript, then builds the Vite client bundle
+  - `start` runs `node dist-server/server/index.js`
+- Added `dist-server/` to `.gitignore`.
+- Hardened `fetchEastmoneyQuotes` so each public entrypoint symbol is trimmed and validated inside the adapter before any upstream request is built.
+- Preserved per-symbol isolation: invalid symbols now return `{ symbol, message }` errors without preventing valid symbols from succeeding.
+- Switched server/runtime-relative imports to explicit `.js` ESM specifiers so the emitted Node runtime stays self-contained.
+- Changed the unmatched-route 404 response copy to Chinese: `未找到资源`.
+
+### TDD evidence for the review fixes
+
+#### RED
+
+Command:
+
+```bash
+npm test -- server/quotes/eastmoney.test.ts
+```
+
+Observed failing output before the fix:
+
+```text
+FAIL  server/quotes/eastmoney.test.ts > eastmoney quote adapter > normalizes whitespace before building the upstream request
+expected ... to contain 'secid=1.600519'
+
+FAIL  server/quotes/eastmoney.test.ts > eastmoney quote adapter > returns a per-symbol error for invalid symbols without calling upstream
+expected "vi.fn()" to be called 1 times, but got 2 times
+```
+
+This proved the adapter was not normalizing/validating symbols at its public boundary.
+
+#### GREEN
+
+Command:
+
+```bash
+npm test -- server/quotes/eastmoney.test.ts
+```
+
+Passing output after the fix:
+
+```text
+Test Files  1 passed (1)
+Tests       6 passed (6)
+```
+
+New coverage added:
+
+- whitespace trimming before `secid` generation
+- invalid symbol short-circuiting without upstream request
+- valid symbol success preserved when another symbol is invalid
+
+### Verification commands and outputs
+
+Focused adapter suite:
+
+```bash
+npm test -- server/quotes/eastmoney.test.ts
+```
+
+Output:
+
+```text
+Test Files  1 passed (1)
+Tests       6 passed (6)
+```
+
+TypeScript check:
+
+```bash
+npm run typecheck
+```
+
+Output:
+
+```text
+> typecheck
+> tsc -b --pretty false tsconfig.json tsconfig.server.json
+```
+
+Production build:
+
+```bash
+npm run build
+```
+
+Output:
+
+```text
+> build
+> rm -rf dist-server && tsc -b tsconfig.json tsconfig.server.json && vite build
+...
+✓ built in 168ms
+```
+
+Verified emitted production server files:
+
+```text
+dist-server/server/index.js
+dist-server/server/quotes/eastmoney.js
+```
+
+Full suite:
+
+```bash
+npm test
+```
+
+Output:
+
+```text
+Test Files  3 passed (3)
+Tests       18 passed (18)
+```
+
+### Self-review
+
+- The production `start` path no longer depends on `tsx` or any devDependency runtime.
+- The server build emits executable ESM JavaScript with Node-compatible `.js` import specifiers.
+- The static client fallback still resolves from the repository `dist/` directory during both `npm run dev` and `npm start`.
+- Adapter validation now protects all external callers, not only the HTTP route.

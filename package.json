@@ -4,9 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"tsx watch server/index.ts\"",
-    "start": "tsx server/index.ts",
-    "build": "tsc -b && vite build",
-    "typecheck": "tsc -b --pretty false",
+    "start": "node dist-server/server/index.js",
+    "build": "rm -rf dist-server && tsc -b tsconfig.json tsconfig.server.json && vite build",
+    "typecheck": "tsc -b --pretty false tsconfig.json tsconfig.server.json",
     "test": "vitest run",
     "test:watch": "vitest"
   },

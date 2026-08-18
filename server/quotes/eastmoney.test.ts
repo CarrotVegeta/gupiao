@@ -3,7 +3,7 @@ import {
   fetchEastmoneyQuotes,
   mapEastmoneyQuote,
   toEastmoneySecId,
-} from './eastmoney';
+} from './eastmoney.js';
 
 const validPayload = (symbol: string) => ({
   f43: 168.2,
@@ -60,5 +60,33 @@ describe('eastmoney quote adapter', () => {
 
     expect(result.quotes).toHaveLength(1);
     expect(result.errors).toEqual([{ symbol: '000001', message: 'upstream timeout' }]);
+  });
+
+  it('normalizes whitespace before building the upstream request', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: validPayload('600519') })));
+
+    const result = await fetchEastmoneyQuotes([' 600519 '], fetchImpl);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0]?.[0]).toContain('secid=1.600519');
+    expect(result.quotes).toMatchObject([{ symbol: '600519', status: 'fresh' }]);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('returns a per-symbol error for invalid symbols without calling upstream', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: validPayload('000001') })));
+
+    const result = await fetchEastmoneyQuotes(['sh600519', '000001'], fetchImpl);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(result.quotes).toMatchObject([{ symbol: '000001', status: 'fresh' }]);
+    expect(result.errors).toContainEqual({
+      symbol: 'sh600519',
+      message: '股票代码必须是 6 位数字',
+    });
   });
 });
