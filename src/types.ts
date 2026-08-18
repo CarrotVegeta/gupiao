@@ -34,6 +34,8 @@ export type Quote = {
   status: "fresh" | "stale" | "unavailable";
 };
 
+export type QuoteMap = Record<string, Quote>;
+
 export type QuoteError = {
   symbol: string;
   message: string;
