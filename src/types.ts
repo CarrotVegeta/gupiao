@@ -17,6 +17,11 @@ export type Holding = {
   updatedAt: string;
 };
 
+export type StorageState = {
+  groups: StockGroup[];
+  holdings: Holding[];
+};
+
 export type Quote = {
   symbol: string;
   name: string;
