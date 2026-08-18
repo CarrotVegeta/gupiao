@@ -39,12 +39,13 @@ export const GroupSidebar = ({
           <button
             className="group-sidebar__select"
             type="button"
-            aria-label={`全部持仓 ${holdings.length}`}
             aria-current={selectedGroupId === 'all' ? 'true' : undefined}
             onClick={() => onSelect('all')}
           >
             <span>全部持仓</span>
-            <span className="group-sidebar__count">{holdings.length}</span>
+            <span className="group-sidebar__count" aria-hidden="true">
+              {holdings.length}
+            </span>
           </button>
         </li>
 
@@ -53,12 +54,13 @@ export const GroupSidebar = ({
             <button
               className="group-sidebar__select"
               type="button"
-              aria-label={`${group.name} ${getCountByGroup(holdings, group.id)}`}
               aria-current={selectedGroupId === group.id ? 'true' : undefined}
               onClick={() => onSelect(group.id)}
             >
               <span>{group.name}</span>
-              <span className="group-sidebar__count">{getCountByGroup(holdings, group.id)}</span>
+              <span className="group-sidebar__count" aria-hidden="true">
+                {getCountByGroup(holdings, group.id)}
+              </span>
             </button>
 
             {!group.isSystem ? (

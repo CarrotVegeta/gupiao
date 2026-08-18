@@ -179,12 +179,12 @@ describe('Task 6 dashboard components', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: '全部持仓 2' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: '全部持仓' })).toHaveAttribute(
       'aria-current',
       'true',
     );
 
-    await user.click(screen.getByRole('button', { name: '长期持仓 1' }));
+    await user.click(screen.getByRole('button', { name: '长期持仓' }));
     await user.click(screen.getByRole('button', { name: '新建分组' }));
     await user.click(screen.getByRole('button', { name: '编辑分组 长期持仓' }));
     await user.click(screen.getByRole('button', { name: '删除分组 长期持仓' }));
