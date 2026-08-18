@@ -36,3 +36,29 @@
 ## Concerns
 
 - There is an unrelated pre-existing modification in `.superpowers/sdd/2026-08-18-stock-dashboard/task-2-report.md` that I did not change or include in the commit.
+
+---
+
+# Task 5 Fix Report — Symbol validation hardening
+
+## Issue fixed
+
+- `fetchQuotes()` now normalizes surrounding whitespace and rejects any non-six-digit ASCII A-share symbol before calling `fetch`.
+- Invalid input fails fast with the existing user-facing message: `股票代码必须是 6 位数字`.
+- Fetch is not called when any input symbol is invalid.
+
+## New/updated tests
+
+- Updated the API request test to cover whitespace normalization plus deduplication.
+- Added a focused test that invalid input rejects before any request is made.
+
+## Verification
+
+- `npm test -- src/lib/quotes.test.ts` → passed
+- `npm test` → passed
+- `npm run typecheck` → passed
+- `npm run build` → passed
+
+## Notes
+
+- `mergeQuotes()` and the rest of the public helper contract remain unchanged.

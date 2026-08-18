@@ -21,8 +21,20 @@ const TIME_FORMATTER = new Intl.DateTimeFormat('zh-CN', {
   hourCycle: 'h23',
 });
 
+const INVALID_SYMBOL_MESSAGE = '股票代码必须是 6 位数字';
+
+const normalizeSymbol = (value: string): string => {
+  const next = value.trim();
+
+  if (!/^\d{6}$/.test(next)) {
+    throw new Error(INVALID_SYMBOL_MESSAGE);
+  }
+
+  return next;
+};
+
 const uniqueSymbols = (symbols: string[]): string[] =>
-  Array.from(new Set(symbols.map((symbol) => symbol.trim()).filter(Boolean)));
+  Array.from(new Set(symbols.map(normalizeSymbol)));
 
 const formatDateParts = (value: string): string | null => {
   const date = new Date(value);

@@ -23,12 +23,21 @@ const validQuotesResponse = (): QuotesResponse => ({
 });
 
 describe('quote helpers', () => {
-  it('requests deduplicated symbols from the local API', async () => {
+  it('requests deduplicated normalized symbols from the local API', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify(validQuotesResponse())));
 
-    await fetchQuotes(['600519', '600519', '000001'], fetchImpl);
+    await fetchQuotes([' 600519 ', '600519', ' 000001 '], fetchImpl);
 
     expect(fetchImpl).toHaveBeenCalledWith('/api/quotes?symbols=600519%2C000001');
+  });
+
+  it('rejects invalid symbols before calling the local API', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify(validQuotesResponse())));
+
+    await expect(fetchQuotes(['600519', 'sh600519', '000001'], fetchImpl)).rejects.toThrow(
+      '股票代码必须是 6 位数字',
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('throws a user-facing error for non-2xx responses', async () => {
