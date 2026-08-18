@@ -6,13 +6,14 @@ import {
 } from './eastmoney.js';
 
 const validPayload = (symbol: string) => ({
-  f43: 168.2,
+  f43: 129799,
   f57: symbol,
   f58: '贵州茅台',
-  f60: 165,
-  f169: 3.2,
-  f170: 1.98,
-  f86: '20260818103000',
+  f59: 2,
+  f60: 129309,
+  f169: 490,
+  f170: 38,
+  f86: 1787020200,
 });
 
 describe('eastmoney quote adapter', () => {
@@ -32,13 +33,25 @@ describe('eastmoney quote adapter', () => {
     ).toMatchObject({
       symbol: '600519',
       name: '贵州茅台',
-      price: 168.2,
-      preClose: 165,
-      change: 3.2,
-      pct: 1.98,
+      price: 1297.99,
+      preClose: 1293.09,
+      change: 4.9,
+      pct: 0.38,
+      updatedAt: '2026-08-18T02:30:00.000Z',
       status: 'fresh',
       source: 'eastmoney',
     });
+  });
+
+  it('preserves support for a 14-digit vendor timestamp string', () => {
+    expect(
+      mapEastmoneyQuote(
+        {
+          data: { ...validPayload('600519'), f86: '20260818103000' },
+        },
+        '2026-08-18T11:00:00.000Z',
+      ).updatedAt,
+    ).toBe('2026-08-18T02:30:00.000Z');
   });
 
   it('returns an unavailable quote for an empty vendor payload', () => {
@@ -62,6 +75,32 @@ describe('eastmoney quote adapter', () => {
     expect(result.errors).toEqual([{ symbol: '000001', message: 'upstream timeout' }]);
   });
 
+  it('reports an empty payload against the requested symbol', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify({ data: null })));
+
+    const result = await fetchEastmoneyQuotes(['600519'], fetchImpl);
+
+    expect(result.quotes).toEqual([]);
+    expect(result.errors).toEqual([{ symbol: '600519', message: '上游未返回行情数据' }]);
+  });
+
+  it('reports an incomplete quote against the requested symbol', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: { ...validPayload('600519'), f169: '-' },
+        }),
+      ),
+    );
+
+    const result = await fetchEastmoneyQuotes(['600519'], fetchImpl);
+
+    expect(result.quotes).toEqual([]);
+    expect(result.errors).toEqual([{ symbol: '600519', message: '上游行情数据不完整' }]);
+  });
+
   it('normalizes whitespace before building the upstream request', async () => {
     const fetchImpl = vi
       .fn<typeof fetch>()
@@ -71,6 +110,7 @@ describe('eastmoney quote adapter', () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(fetchImpl.mock.calls[0]?.[0]).toContain('secid=1.600519');
+    expect(fetchImpl.mock.calls[0]?.[0]).toContain('f59');
     expect(result.quotes).toMatchObject([{ symbol: '600519', status: 'fresh' }]);
     expect(result.errors).toEqual([]);
   });

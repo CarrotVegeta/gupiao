@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import type { ReactNode } from 'react';
+import { useDialogFocus } from '../lib/useDialogFocus';
 import type { StockGroup } from '../types';
 
 export type GroupDialogValues = {
@@ -8,6 +10,7 @@ export type GroupDialogValues = {
 type GroupDialogProps = {
   initialGroup?: StockGroup;
   existingNames: string[];
+  children?: ReactNode;
   onSubmit: (values: GroupDialogValues) => void;
   onCancel: () => void;
 };
@@ -17,9 +20,11 @@ const normalizeName = (value: string): string => value.trim().toLocaleLowerCase(
 export const GroupDialog = ({
   initialGroup,
   existingNames,
+  children,
   onSubmit,
   onCancel,
 }: GroupDialogProps) => {
+  const dialogRef = useDialogFocus(onCancel);
   const [name, setName] = useState(initialGroup?.name ?? '');
   const [error, setError] = useState('');
 
@@ -50,7 +55,14 @@ export const GroupDialog = ({
   };
 
   return (
-    <section className="dialog-card" aria-labelledby="group-dialog-title">
+    <section
+      ref={dialogRef}
+      className="dialog-card"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="group-dialog-title"
+      tabIndex={-1}
+    >
       <div className="dialog-card__header">
         <div>
           <p className="eyebrow">{initialGroup ? '编辑分组' : '新增分组'}</p>
@@ -84,6 +96,7 @@ export const GroupDialog = ({
           </button>
         </div>
       </form>
+      {children}
     </section>
   );
 };

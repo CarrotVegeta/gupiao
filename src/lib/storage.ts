@@ -94,9 +94,24 @@ const normalizeStorageState = (value: unknown): StorageState | null => {
     return null;
   }
 
+  const normalizedGroups = groups as StockGroup[];
+  const normalizedHoldings = holdings as Holding[];
+  const groupIds = new Set(normalizedGroups.map((group) => group.id));
+  const hasSystemUngrouped = normalizedGroups.some(
+    (group) => group.id === 'ungrouped' && group.isSystem,
+  );
+
+  if (
+    !hasSystemUngrouped ||
+    groupIds.size !== normalizedGroups.length ||
+    normalizedHoldings.some((holding) => !groupIds.has(holding.groupId))
+  ) {
+    return null;
+  }
+
   return {
-    groups: groups as StockGroup[],
-    holdings: holdings as Holding[],
+    groups: normalizedGroups,
+    holdings: normalizedHoldings,
   };
 };
 

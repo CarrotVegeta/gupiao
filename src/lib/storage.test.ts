@@ -80,6 +80,44 @@ describe('storage helpers', () => {
     expect(loadState(localStorage).state.holdings).toEqual([]);
   });
 
+  const expectInvalidStateRejected = (state: StorageState): void => {
+    localStorage.setItem('stock-dashboard:v1', JSON.stringify(state));
+    expect(loadState(localStorage)).toMatchObject({
+      recovered: true,
+      state: {
+        groups: [{ id: 'ungrouped', name: '未分组', isSystem: true }],
+        holdings: [],
+      },
+    });
+
+    localStorage.setItem('stock-dashboard:v1', 'kept');
+    saveState(localStorage, state);
+    expect(localStorage.getItem('stock-dashboard:v1')).toBe('kept');
+  };
+
+  it('recovers and rejects a state missing the system ungrouped group', () => {
+    const state = stateWithHolding({ groupId: 'growth' });
+    state.groups = state.groups.filter((group) => group.id !== 'ungrouped');
+
+    expectInvalidStateRejected(state);
+  });
+
+  it('recovers and rejects a state containing duplicate group ids', () => {
+    const state = stateWithHolding();
+    state.groups.push({
+      id: 'growth',
+      name: '重复分组',
+      isSystem: false,
+      createdAt: '2026-08-18T00:00:00.000Z',
+    });
+
+    expectInvalidStateRejected(state);
+  });
+
+  it('recovers and rejects a holding that refers to a nonexistent group', () => {
+    expectInvalidStateRejected(stateWithHolding({ groupId: 'missing-group' }));
+  });
+
   it('moves holdings into ungrouped without mutating the original state', () => {
     const state = stateWithHolding({ groupId: 'growth' });
     const next = moveHoldingsToGroup(state, 'growth', 'ungrouped');

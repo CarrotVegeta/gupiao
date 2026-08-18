@@ -1,4 +1,4 @@
-import type { QuoteMap, QuotesResponse } from '../types';
+import type { Quote, QuoteMap, QuotesResponse } from '../types';
 
 const CURRENCY_FORMATTER = new Intl.NumberFormat('zh-CN', {
   minimumFractionDigits: 2,
@@ -67,6 +67,19 @@ export const fetchQuotes = async (
   return (await response.json()) as QuotesResponse;
 };
 
+const isFiniteNumber = (value: number | null): value is number =>
+  value !== null && Number.isFinite(value);
+
+const isUsableFreshQuote = (quote: Quote): boolean =>
+  quote.status === 'fresh' &&
+  /^\d{6}$/.test(quote.symbol) &&
+  isFiniteNumber(quote.price) &&
+  isFiniteNumber(quote.change) &&
+  isFiniteNumber(quote.pct) &&
+  isFiniteNumber(quote.preClose) &&
+  quote.updatedAt !== null &&
+  !Number.isNaN(new Date(quote.updatedAt).getTime());
+
 export const mergeQuotes = (
   previous: QuoteMap,
   response: QuotesResponse,
@@ -74,7 +87,16 @@ export const mergeQuotes = (
   const next: QuoteMap = { ...previous };
 
   for (const quote of response.quotes) {
-    next[quote.symbol] = quote;
+    if (isUsableFreshQuote(quote)) {
+      next[quote.symbol] = quote;
+      continue;
+    }
+
+    const existing = next[quote.symbol];
+
+    if (existing) {
+      next[quote.symbol] = { ...existing, status: 'stale' };
+    }
   }
 
   for (const error of response.errors) {

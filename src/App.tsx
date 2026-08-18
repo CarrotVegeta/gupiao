@@ -33,9 +33,6 @@ const normalizeDisplayName = (value: string | null | undefined): string | null =
   return trimmed.length > 0 ? trimmed : null;
 };
 
-const getQuoteName = (response: QuotesResponse | null, symbol: string): string | null =>
-  normalizeDisplayName(response?.quotes.find((quote) => quote.symbol === symbol)?.name);
-
 const isQuoteStale = (quote: Quote | undefined): boolean => quote?.status === 'stale';
 
 export default function App() {
@@ -49,6 +46,7 @@ export default function App() {
     loadedState.recovered ? '本地数据已恢复为默认状态。' : null,
   );
   const [modal, setModal] = useState<ModalState>(null);
+  const [isHoldingSubmitting, setIsHoldingSubmitting] = useState(false);
 
   const holdingSymbols = useMemo(
     () => unique(state.holdings.map((holding) => holding.symbol)),
@@ -91,6 +89,11 @@ export default function App() {
     });
   }, []);
 
+  const persistState = useCallback((next: StorageState): void => {
+    saveState(localStorage, next);
+    setState(next);
+  }, []);
+
   const refreshQuotes = useCallback(
     async (symbols: string[] = holdingSymbols): Promise<QuotesResponse | null> => {
       const targets = unique(symbols);
@@ -112,6 +115,14 @@ export default function App() {
 
         return response;
       } catch (error) {
+        setQuotes((current) =>
+          mergeQuotes(current, {
+            quotes: [],
+            fetchedAt: new Date().toISOString(),
+            source: 'eastmoney',
+            errors: targets.map((symbol) => ({ symbol, message: '行情刷新失败' })),
+          }),
+        );
         setRefreshMessage(
           error instanceof Error
             ? `${error.message}，已保留上一轮数据。`
@@ -231,14 +242,17 @@ export default function App() {
   };
 
   const handleCreateHolding = async (values: HoldingFormValues): Promise<void> => {
+    if (isHoldingSubmitting) {
+      return;
+    }
+
+    setIsHoldingSubmitting(true);
     const symbol = values.symbol.trim();
-    const response = await refreshQuotes([symbol]);
-    const quoteName = getQuoteName(response, symbol) ?? symbol;
     const timestamp = new Date().toISOString();
     const holding: Holding = {
       id: createId(),
       symbol,
-      name: quoteName,
+      name: symbol,
       groupId: values.groupId,
       openPrice: values.openPrice,
       quantity: values.quantity,
@@ -246,16 +260,23 @@ export default function App() {
       createdAt: timestamp,
       updatedAt: timestamp,
     };
+    const nextState: StorageState = {
+      groups: state.groups.map((group) => ({ ...group })),
+      holdings: [...state.holdings.map((item) => ({ ...item })), holding],
+    };
 
-    commitState((current) => ({
-      groups: current.groups.map((group) => ({ ...group })),
-      holdings: [...current.holdings, holding],
-    }));
-    closeModal();
+    persistState(nextState);
+
+    try {
+      await refreshQuotes(nextState.holdings.map((item) => item.symbol));
+    } finally {
+      setIsHoldingSubmitting(false);
+      closeModal();
+    }
   };
 
   const handleUpdateHolding = async (values: HoldingFormValues): Promise<void> => {
-    if (modal?.type !== 'edit-holding') {
+    if (modal?.type !== 'edit-holding' || isHoldingSubmitting) {
       return;
     }
 
@@ -267,16 +288,14 @@ export default function App() {
     }
 
     const symbol = values.symbol.trim();
-    const response =
-      symbol === currentHolding.symbol ? null : await refreshQuotes([symbol]);
     const nextName =
       symbol === currentHolding.symbol
-        ? getQuoteName(response, symbol) ?? normalizeDisplayName(quotes[symbol]?.name) ?? currentHolding.name
-        : getQuoteName(response, symbol) ?? normalizeDisplayName(quotes[symbol]?.name) ?? symbol;
-
-    commitState((current) => ({
-      groups: current.groups.map((group) => ({ ...group })),
-      holdings: current.holdings.map((holding) =>
+        ? normalizeDisplayName(quotes[symbol]?.name) ?? currentHolding.name
+        : normalizeDisplayName(quotes[symbol]?.name) ?? symbol;
+    const timestamp = new Date().toISOString();
+    const nextState: StorageState = {
+      groups: state.groups.map((group) => ({ ...group })),
+      holdings: state.holdings.map((holding) =>
         holding.id === modal.holdingId
           ? {
               ...holding,
@@ -286,12 +305,21 @@ export default function App() {
               openPrice: values.openPrice,
               quantity: values.quantity,
               note: values.note,
-              updatedAt: new Date().toISOString(),
+              updatedAt: timestamp,
             }
           : { ...holding },
       ),
-    }));
-    closeModal();
+    };
+
+    setIsHoldingSubmitting(true);
+    persistState(nextState);
+
+    try {
+      await refreshQuotes(nextState.holdings.map((holding) => holding.symbol));
+    } finally {
+      setIsHoldingSubmitting(false);
+      closeModal();
+    }
   };
 
   const handleDeleteHolding = (holding: Holding): void => {
@@ -336,39 +364,40 @@ export default function App() {
                 existingNames={state.groups.map((group) => group.name)}
                 onSubmit={handleUpdateGroup}
                 onCancel={closeModal}
-              />
-              <div className="dialog-card dialog-card--danger">
-                <div className="dialog-card__header">
-                  <div>
-                    <p className="eyebrow">危险操作</p>
-                    <h2>删除分组</h2>
+              >
+                <div className="dialog-card__danger">
+                  <div className="dialog-card__header">
+                    <div>
+                      <p className="eyebrow">危险操作</p>
+                      <h2>删除分组</h2>
+                    </div>
+                  </div>
+                  <p className="dialog-card__body">
+                    删除后，该分组下的股票会自动移动到“未分组”。
+                  </p>
+                  <div className="form-actions">
+                    <button
+                      className="button button--ghost"
+                      type="button"
+                      onClick={closeModal}
+                    >
+                      取消
+                    </button>
+                    <button className="button button--danger" type="button" onClick={handleDeleteGroup}>
+                      删除分组
+                    </button>
                   </div>
                 </div>
-                <p className="dialog-card__body">
-                  删除后，该分组下的股票会自动移动到“未分组”。
-                </p>
-                <div className="form-actions">
-                  <button
-                    className="button button--ghost"
-                    type="button"
-                    onClick={closeModal}
-                  >
-                    取消
-                  </button>
-                  <button className="button button--danger" type="button" onClick={handleDeleteGroup}>
-                    删除分组
-                  </button>
-                </div>
-              </div>
+              </GroupDialog>
             </>
           ) : null}
 
           {modal.type === 'create-holding' ? (
             <HoldingForm
               groups={state.groups}
-              onSubmit={(values) => {
-                void handleCreateHolding(values);
-              }}
+              defaultGroupId={selectedGroupId}
+              isSubmitting={isHoldingSubmitting}
+              onSubmit={handleCreateHolding}
               onCancel={closeModal}
             />
           ) : null}
@@ -377,9 +406,8 @@ export default function App() {
             <HoldingForm
               groups={state.groups}
               initialHolding={editingHolding}
-              onSubmit={(values) => {
-                void handleUpdateHolding(values);
-              }}
+              isSubmitting={isHoldingSubmitting}
+              onSubmit={handleUpdateHolding}
               onCancel={closeModal}
             />
           ) : null}

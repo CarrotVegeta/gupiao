@@ -4,6 +4,7 @@ type EastmoneyQuoteData = {
   f43?: unknown;
   f57?: unknown;
   f58?: unknown;
+  f59?: unknown;
   f60?: unknown;
   f169?: unknown;
   f170?: unknown;
@@ -29,20 +30,43 @@ const asNumber = (value: unknown): number | null => {
 const asString = (value: unknown): string => (typeof value === 'string' ? value : '');
 
 const parseVendorUpdatedAt = (value: unknown): string | null => {
-  const raw = asString(value);
+  const raw = String(value ?? '').trim();
+
+  if (/^\d{10}$/.test(raw)) {
+    const next = new Date(Number(raw) * 1_000);
+    return Number.isNaN(next.getTime()) ? null : next.toISOString();
+  }
+
   if (!/^\d{14}$/.test(raw)) {
     return null;
   }
 
   const year = Number(raw.slice(0, 4));
-  const month = Number(raw.slice(4, 6)) - 1;
+  const month = raw.slice(4, 6);
   const day = Number(raw.slice(6, 8));
   const hour = Number(raw.slice(8, 10));
   const minute = Number(raw.slice(10, 12));
   const second = Number(raw.slice(12, 14));
-  const next = new Date(Date.UTC(year, month, day, hour, minute, second));
+  const next = new Date(
+    `${year}-${month}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(
+      minute,
+    ).padStart(2, '0')}:${String(second).padStart(2, '0')}+08:00`,
+  );
 
   return Number.isNaN(next.getTime()) ? null : next.toISOString();
+};
+
+const getPriceDivisor = (value: unknown): number => {
+  const precision = asNumber(value);
+
+  return precision !== null && Number.isInteger(precision) && precision >= 0 && precision <= 8
+    ? 10 ** precision
+    : 100;
+};
+
+const normalizeRawValue = (value: unknown, divisor: number): number | null => {
+  const raw = asNumber(value);
+  return raw === null ? null : raw / divisor;
 };
 
 export const normalizeSymbol = (value: string): string => {
@@ -63,25 +87,39 @@ export const mapEastmoneyQuote = (
 ): Quote => {
   const data = payload.data;
   const symbol = asString(data?.f57);
-  const price = asNumber(data?.f43);
-  const pct = asNumber(data?.f170);
+  const divisor = getPriceDivisor(data?.f59);
+  const price = normalizeRawValue(data?.f43, divisor);
+  const change = normalizeRawValue(data?.f169, divisor);
+  const pct = normalizeRawValue(data?.f170, 100);
+  const preClose = normalizeRawValue(data?.f60, divisor);
+  const vendorUpdatedAt = parseVendorUpdatedAt(data?.f86);
+  const name = asString(data?.f58);
+  const isComplete =
+    data !== null &&
+    symbol.length > 0 &&
+    name.trim().length > 0 &&
+    price !== null &&
+    change !== null &&
+    pct !== null &&
+    preClose !== null &&
+    vendorUpdatedAt !== null;
 
   return {
     symbol,
-    name: asString(data?.f58),
+    name,
     price,
-    change: asNumber(data?.f169),
+    change,
     pct,
-    preClose: asNumber(data?.f60),
-    updatedAt: parseVendorUpdatedAt(data?.f86) ?? fetchedAt,
+    preClose,
+    updatedAt: vendorUpdatedAt ?? fetchedAt,
     source: 'eastmoney',
-    status: data === null ? 'unavailable' : price !== null && pct !== null ? 'fresh' : 'stale',
+    status: data === null ? 'unavailable' : isComplete ? 'fresh' : 'stale',
   };
 };
 
 const toRequestUrl = (symbol: string): string => {
   const secid = encodeURIComponent(toEastmoneySecId(symbol));
-  return `${QUOTE_ENDPOINT}?secid=${secid}&fields=f43,f57,f58,f60,f169,f170,f86`;
+  return `${QUOTE_ENDPOINT}?secid=${secid}&fields=f43,f57,f58,f59,f60,f169,f170,f86`;
 };
 
 const fetchSingleQuote = async (
@@ -119,7 +157,18 @@ const fetchSingleQuote = async (
     }
 
     const payload = (await response.json()) as EastmoneyQuotePayload;
-    return { quote: mapEastmoneyQuote(payload, fetchedAt) };
+
+    if (payload.data === null || payload.data === undefined) {
+      return { error: { symbol, message: '上游未返回行情数据' } };
+    }
+
+    const quote = mapEastmoneyQuote(payload, fetchedAt);
+
+    if (quote.status !== 'fresh' || quote.symbol !== symbol) {
+      return { error: { symbol, message: '上游行情数据不完整' } };
+    }
+
+    return { quote };
   } catch (error) {
     return {
       error: {

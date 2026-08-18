@@ -59,6 +59,45 @@ describe('quote helpers', () => {
     expect(next['600519'].price).toBe(previous['600519'].price);
   });
 
+  it('keeps previous numeric values when an unavailable quote is returned', () => {
+    const previous = { '600519': quote({ price: 1297.99, change: 4.9, pct: 0.38 }) };
+    const next = mergeQuotes(previous, {
+      ...validQuotesResponse(),
+      quotes: [
+        quote({
+          price: null,
+          change: null,
+          pct: null,
+          preClose: null,
+          updatedAt: null,
+          status: 'unavailable',
+        }),
+      ],
+    });
+
+    expect(next['600519']).toMatchObject({
+      price: 1297.99,
+      change: 4.9,
+      pct: 0.38,
+      status: 'stale',
+    });
+  });
+
+  it('keeps previous numeric values when a fresh quote is incomplete', () => {
+    const previous = { '600519': quote({ price: 1297.99, change: 4.9, pct: 0.38 }) };
+    const next = mergeQuotes(previous, {
+      ...validQuotesResponse(),
+      quotes: [quote({ change: null })],
+    });
+
+    expect(next['600519']).toMatchObject({
+      price: 1297.99,
+      change: 4.9,
+      pct: 0.38,
+      status: 'stale',
+    });
+  });
+
   it('formats missing values as an em dash', () => {
     expect(formatCurrency(null)).toBe('—');
     expect(formatPercent(null)).toBe('—');

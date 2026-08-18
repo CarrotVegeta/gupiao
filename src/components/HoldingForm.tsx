@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDialogFocus } from '../lib/useDialogFocus';
 import type { Holding, StockGroup } from '../types';
 
 export type HoldingFormValues = {
@@ -12,6 +13,8 @@ export type HoldingFormValues = {
 type HoldingFormProps = {
   groups: StockGroup[];
   initialHolding?: Holding;
+  defaultGroupId?: string;
+  isSubmitting?: boolean;
   onSubmit: (values: HoldingFormValues) => void;
   onCancel: () => void;
 };
@@ -28,13 +31,21 @@ const getAssignableGroups = (groups: StockGroup[]): StockGroup[] =>
 export const HoldingForm = ({
   groups,
   initialHolding,
+  defaultGroupId,
+  isSubmitting = false,
   onSubmit,
   onCancel,
 }: HoldingFormProps) => {
   const assignableGroups = getAssignableGroups(groups);
+  const dialogRef = useDialogFocus(onCancel);
+  const initialGroupId =
+    initialHolding?.groupId ??
+    assignableGroups.find((group) => group.id === defaultGroupId)?.id ??
+    assignableGroups[0]?.id ??
+    '';
 
   const [symbol, setSymbol] = useState(initialHolding?.symbol ?? '');
-  const [groupId, setGroupId] = useState(initialHolding?.groupId ?? assignableGroups[0]?.id ?? '');
+  const [groupId, setGroupId] = useState(initialGroupId);
   const [openPrice, setOpenPrice] = useState(
     initialHolding ? String(initialHolding.openPrice) : '',
   );
@@ -81,6 +92,10 @@ export const HoldingForm = ({
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
 
+    if (isSubmitting) {
+      return;
+    }
+
     const nextErrors = validate();
 
     setErrors(nextErrors);
@@ -99,7 +114,15 @@ export const HoldingForm = ({
   };
 
   return (
-    <section className="dialog-card" aria-labelledby="holding-form-title">
+    <section
+      ref={dialogRef}
+      className="dialog-card"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="holding-form-title"
+      aria-busy={isSubmitting}
+      tabIndex={-1}
+    >
       <div className="dialog-card__header">
         <div>
           <p className="eyebrow">{initialHolding ? '编辑持仓' : '新增持仓'}</p>
@@ -185,8 +208,8 @@ export const HoldingForm = ({
           <button className="button button--ghost" type="button" onClick={onCancel}>
             取消
           </button>
-          <button className="button" type="submit">
-            保存股票
+          <button className="button" type="submit" disabled={isSubmitting}>
+            {isSubmitting ? '保存中…' : '保存股票'}
           </button>
         </div>
       </form>

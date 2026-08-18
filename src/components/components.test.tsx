@@ -97,6 +97,38 @@ const HoldingFormHarness = ({
   );
 };
 
+const GroupDialogHarness = ({
+  onCancel = vi.fn(),
+  withDeleteAction = false,
+}: {
+  onCancel?: () => void;
+  withDeleteAction?: boolean;
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div>
+      <button type="button" onClick={() => setIsOpen(true)}>
+        新建分组
+      </button>
+      {isOpen ? (
+        <div>
+          <GroupDialog
+            existingNames={[]}
+            onSubmit={vi.fn()}
+            onCancel={() => {
+              onCancel();
+              setIsOpen(false);
+            }}
+          >
+            {withDeleteAction ? <button type="button">删除分组</button> : null}
+          </GroupDialog>
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
 describe('Task 6 dashboard components', () => {
   it('shows validation when a holding is submitted without an opening price', async () => {
     const user = userEvent.setup();
@@ -138,6 +170,31 @@ describe('Task 6 dashboard components', () => {
     });
   });
 
+  it('exposes holding dialog semantics, traps focus, and restores focus after Escape', async () => {
+    const user = userEvent.setup();
+
+    render(<HoldingFormHarness groups={groupsFixture()} />);
+    const trigger = screen.getByRole('button', { name: '添加股票' });
+
+    await user.click(trigger);
+
+    const dialog = screen.getByRole('dialog', { name: '添加股票' });
+    const symbolInput = screen.getByLabelText('股票代码');
+    const saveButton = screen.getByRole('button', { name: '保存股票' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(symbolInput).toHaveFocus();
+
+    saveButton.focus();
+    await user.tab();
+    expect(symbolInput).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(saveButton).toHaveFocus();
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: '添加股票' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
   it('prevents case-insensitive duplicate group names', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
@@ -155,6 +212,42 @@ describe('Task 6 dashboard components', () => {
 
     expect(screen.getByText('分组名称不能重复')).toBeInTheDocument();
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('exposes group dialog semantics and closes with Escape', async () => {
+    const user = userEvent.setup();
+    const onCancel = vi.fn();
+
+    render(<GroupDialogHarness onCancel={onCancel} />);
+    const trigger = screen.getByRole('button', { name: '新建分组' });
+    await user.click(trigger);
+
+    const dialog = screen.getByRole('dialog', { name: '新建分组' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(screen.getByLabelText('分组名称')).toHaveFocus();
+
+    await user.keyboard('{Escape}');
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(dialog).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it('keeps edit-group danger actions inside the active dialog focus cycle', async () => {
+    const user = userEvent.setup();
+    const onCancel = vi.fn();
+
+    render(<GroupDialogHarness onCancel={onCancel} withDeleteAction />);
+    await user.click(screen.getByRole('button', { name: '新建分组' }));
+    const nameInput = screen.getByLabelText('分组名称');
+    const deleteButton = screen.getByRole('button', { name: '删除分组' });
+
+    deleteButton.focus();
+    await user.tab();
+    expect(nameInput).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(deleteButton).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
   it('renders all holdings as the active filter when selectedGroupId is all', async () => {
@@ -249,6 +342,24 @@ describe('Task 6 dashboard components', () => {
     expect(screen.getByRole('button', { name: '删除 平安银行' })).toBeInTheDocument();
     expect(screen.getByText('−1.64%')).toHaveClass('value--fall');
     expect(screen.getByText('持仓收益：+¥200.00（+20.00%）')).toHaveClass('value--rise');
+  });
+
+  it('shows the runtime quote name, change amount, percent, and quote time', () => {
+    render(
+      <HoldingList
+        holdings={[holding({ name: '持仓备用名称' })]}
+        quotes={{
+          '600519': quote({ name: '行情实时名称' }),
+        }}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: '行情实时名称' })).toBeInTheDocument();
+    expect(screen.getByText('+¥2.00')).toHaveClass('value--rise');
+    expect(screen.getByText('+20.00%')).toHaveClass('value--rise');
+    expect(screen.getByText('2026-08-18 18:30:00')).toBeInTheDocument();
   });
 
   it('renders overview metrics and refresh status', () => {

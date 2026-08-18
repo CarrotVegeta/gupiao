@@ -96,8 +96,10 @@ textarea:focus-visible {
   max-width: 720px;
 }
 
-.dialog-card--danger {
-  border-color: #e4b6b8;
+.dialog-card__danger {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #e4b6b8;
 }
 
 .dialog-card__body {

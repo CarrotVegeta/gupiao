@@ -1,4 +1,5 @@
 import { calculateHoldingPerformance } from '../lib/calculations';
+import { formatCurrency, formatPercent, formatQuoteTime } from '../lib/quotes';
 import type { Holding, QuoteMap } from '../types';
 
 type HoldingListProps = {
@@ -24,27 +25,11 @@ const getValueToneClass = (value: number | null | undefined): string => {
   return 'value--neutral';
 };
 
-const formatCurrency = (value: number): string =>
-  new Intl.NumberFormat('zh-CN', {
-    style: 'currency',
-    currency: 'CNY',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-
 const formatSignedCurrency = (value: number): string =>
   `${value >= 0 ? '+' : '−'}${formatCurrency(Math.abs(value))}`;
 
 const formatSignedPercent = (value: number): string =>
-  `${value >= 0 ? '+' : '−'}${Math.abs(value).toFixed(2)}%`;
-
-const formatQuoteChange = (value: number | null): string => {
-  if (value === null) {
-    return '—';
-  }
-
-  return formatSignedPercent(value);
-};
+  `${value >= 0 ? '+' : '−'}${formatPercent(Math.abs(value))}`;
 
 export const HoldingList = ({
   holdings,
@@ -106,10 +91,24 @@ export const HoldingList = ({
                 </dd>
               </div>
               <div>
-                <dt>当日涨跌</dt>
-                <dd className={quote ? getValueToneClass(quote.pct) : 'value--neutral'}>
-                  {quote ? formatQuoteChange(quote.pct) : '—'}
+                <dt>涨跌额</dt>
+                <dd className={getValueToneClass(quote?.change)}>
+                  {quote?.change === null || quote?.change === undefined
+                    ? '—'
+                    : formatSignedCurrency(quote.change)}
                 </dd>
+              </div>
+              <div>
+                <dt>涨跌幅</dt>
+                <dd className={getValueToneClass(quote?.pct)}>
+                  {quote?.pct === null || quote?.pct === undefined
+                    ? '—'
+                    : formatSignedPercent(quote.pct)}
+                </dd>
+              </div>
+              <div>
+                <dt>更新时间</dt>
+                <dd>{formatQuoteTime(quote?.updatedAt ?? null)}</dd>
               </div>
               <div>
                 <dt>开仓价</dt>
