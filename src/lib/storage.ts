@@ -1,60 +1,103 @@
 import type { Holding, StorageState, StockGroup } from '../types';
 
 const STORAGE_KEY = 'stock-dashboard:v1';
+const ASHARE_SYMBOL_PATTERN = /^[0-9]{6}$/;
 
 const isString = (value: unknown): value is string => typeof value === 'string';
 
 const isFinitePositiveNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value > 0;
 
-const isStockGroup = (value: unknown): value is StockGroup => {
+const normalizeSymbol = (value: unknown): string | null => {
+  if (!isString(value)) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return ASHARE_SYMBOL_PATTERN.test(trimmed) ? trimmed : null;
+};
+
+const normalizeStockGroup = (value: unknown): StockGroup | null => {
   if (!value || typeof value !== 'object') {
-    return false;
+    return null;
   }
 
   const group = value as Partial<StockGroup>;
 
-  return (
-    isString(group.id) &&
-    isString(group.name) &&
-    typeof group.isSystem === 'boolean' &&
-    isString(group.createdAt)
-  );
+  if (
+    !isString(group.id) ||
+    !isString(group.name) ||
+    typeof group.isSystem !== 'boolean' ||
+    !isString(group.createdAt)
+  ) {
+    return null;
+  }
+
+  return {
+    id: group.id,
+    name: group.name,
+    isSystem: group.isSystem,
+    createdAt: group.createdAt,
+  };
 };
 
-const isHolding = (value: unknown): value is Holding => {
+const normalizeHolding = (value: unknown): Holding | null => {
   if (!value || typeof value !== 'object') {
-    return false;
+    return null;
   }
 
   const holding = value as Partial<Holding>;
+  const symbol = normalizeSymbol(holding.symbol);
 
-  return (
-    isString(holding.id) &&
-    isString(holding.symbol) &&
-    isString(holding.name) &&
-    isString(holding.groupId) &&
-    isFinitePositiveNumber(holding.openPrice) &&
-    isFinitePositiveNumber(holding.quantity) &&
-    isString(holding.note) &&
-    isString(holding.createdAt) &&
-    isString(holding.updatedAt)
-  );
+  if (
+    !isString(holding.id) ||
+    symbol === null ||
+    !isString(holding.name) ||
+    !isString(holding.groupId) ||
+    !isFinitePositiveNumber(holding.openPrice) ||
+    !isFinitePositiveNumber(holding.quantity) ||
+    !isString(holding.note) ||
+    !isString(holding.createdAt) ||
+    !isString(holding.updatedAt)
+  ) {
+    return null;
+  }
+
+  return {
+    id: holding.id,
+    symbol,
+    name: holding.name,
+    groupId: holding.groupId,
+    openPrice: holding.openPrice,
+    quantity: holding.quantity,
+    note: holding.note,
+    createdAt: holding.createdAt,
+    updatedAt: holding.updatedAt,
+  };
 };
 
-const isStorageState = (value: unknown): value is StorageState => {
+const normalizeStorageState = (value: unknown): StorageState | null => {
   if (!value || typeof value !== 'object') {
-    return false;
+    return null;
   }
 
   const state = value as Partial<StorageState>;
 
-  return (
-    Array.isArray(state.groups) &&
-    Array.isArray(state.holdings) &&
-    state.groups.every(isStockGroup) &&
-    state.holdings.every(isHolding)
-  );
+  if (!Array.isArray(state.groups) || !Array.isArray(state.holdings)) {
+    return null;
+  }
+
+  const groups = state.groups.map(normalizeStockGroup);
+  const holdings = state.holdings.map(normalizeHolding);
+
+  if (groups.some((group) => group === null) || holdings.some((holding) => holding === null)) {
+    return null;
+  }
+
+  return {
+    groups: groups as StockGroup[],
+    holdings: holdings as Holding[],
+  };
 };
 
 export const createDefaultState = (): StorageState => ({
@@ -79,24 +122,26 @@ export const loadState = (storage: Storage): { state: StorageState; recovered: b
   try {
     const parsed: unknown = JSON.parse(raw);
 
-    if (!isStorageState(parsed)) {
+    const state = normalizeStorageState(parsed);
+
+    if (state === null) {
       return { state: createDefaultState(), recovered: true };
     }
 
-    return { state: parsed, recovered: false };
+    return { state, recovered: false };
   } catch {
     return { state: createDefaultState(), recovered: true };
   }
 };
 
 export const saveState = (storage: Storage, state: StorageState): void => {
-  storage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({
-      groups: state.groups,
-      holdings: state.holdings,
-    }),
-  );
+  const normalizedState = normalizeStorageState(state);
+
+  if (normalizedState === null) {
+    return;
+  }
+
+  storage.setItem(STORAGE_KEY, JSON.stringify(normalizedState));
 };
 
 export const moveHoldingsToGroup = (

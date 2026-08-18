@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { Holding, StorageState } from '../types';
 import { createDefaultState, loadState, moveHoldingsToGroup, saveState } from './storage';
 
@@ -24,6 +24,43 @@ const stateWithHolding = (overrides: Partial<Holding> = {}): StorageState => ({
 });
 
 describe('storage helpers', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('trims a valid holding symbol when saving and loading', () => {
+    const state = stateWithHolding({ symbol: ' 600519 ' });
+    saveState(localStorage, state);
+
+    expect(loadState(localStorage)).toEqual({
+      state: stateWithHolding({ symbol: '600519' }),
+      recovered: false,
+    });
+  });
+
+  it('recovers the default state when localStorage contains an invalid holding symbol', () => {
+    localStorage.setItem(
+      'stock-dashboard:v1',
+      JSON.stringify(stateWithHolding({ symbol: '600519.SH' })),
+    );
+
+    expect(loadState(localStorage)).toMatchObject({
+      recovered: true,
+      state: {
+        groups: [{ id: 'ungrouped', name: '未分组', isSystem: true }],
+        holdings: [],
+      },
+    });
+  });
+
+  it('does not write invalid holding symbols to storage', () => {
+    localStorage.setItem('stock-dashboard:v1', 'kept');
+
+    saveState(localStorage, stateWithHolding({ symbol: 'sh600519' }));
+
+    expect(localStorage.getItem('stock-dashboard:v1')).toBe('kept');
+  });
+
   it('creates one system ungrouped group for a new browser', () => {
     expect(createDefaultState()).toMatchObject({
       groups: [{ id: 'ungrouped', name: '未分组', isSystem: true }],
