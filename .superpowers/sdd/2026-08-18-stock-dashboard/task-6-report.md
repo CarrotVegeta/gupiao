@@ -133,3 +133,103 @@ vite v8.2.1 building client environment for production...
 ## 关注点
 
 - `App.tsx` 仍是临时壳子；这些组件和样式需要在 Task 7 中接入真实状态与页面布局后，才能形成完整仪表盘体验。
+
+---
+
+## 评审修复追加记录（2026-08-18）
+
+### 修复内容
+
+1. `HoldingForm` 的可分配分组过滤从“排除 `all`”收紧为“仅允许用户分组与系统 `ungrouped` 分组”。
+2. `HoldingList` 的编辑/删除按钮改为显式可访问名称，例如 `编辑 平安银行`、`删除 平安银行`。
+3. `Overview` 与 `HoldingList` 的涨跌/收益节点开始应用 `value--rise`、`value--fall`、`value--neutral` 语义类。
+
+### 本轮改动文件
+
+- `src/components/HoldingForm.tsx`
+- `src/components/HoldingList.tsx`
+- `src/components/Overview.tsx`
+- `src/components/components.test.tsx`
+- `.superpowers/sdd/2026-08-18-stock-dashboard/task-6-report.md`
+
+### 本轮 RED 证据
+
+命令：
+
+```bash
+npm test -- src/components/components.test.tsx
+```
+
+结果：失败，且失败点与评审项一一对应。
+
+关键输出：
+
+```text
+expected document not to contain element, found <option value="system-watchlist">系统观察</option>
+Unable to find an accessible element with the role "button" and name "编辑 平安银行"
+Expected the element to have class: value--rise
+Received: overview__hero-value
+```
+
+### 本轮 GREEN 与验收命令
+
+#### 1. 定向组件测试
+
+命令：
+
+```bash
+npm test -- src/components/components.test.tsx
+```
+
+结果：通过。
+
+关键输出：
+
+```text
+Test Files  1 passed (1)
+Tests  8 passed (8)
+```
+
+#### 2. 全量测试
+
+命令：
+
+```bash
+npm test
+```
+
+结果：通过。
+
+关键输出：
+
+```text
+Test Files  5 passed (5)
+Tests  32 passed (32)
+```
+
+#### 3. 类型检查
+
+命令：
+
+```bash
+npm run typecheck
+```
+
+结果：通过，退出码 0。
+
+#### 4. 生产构建
+
+命令：
+
+```bash
+npm run build
+```
+
+结果：通过。
+
+关键输出：
+
+```text
+vite v8.2.1 building client environment for production...
+✓ built in 381ms
+```

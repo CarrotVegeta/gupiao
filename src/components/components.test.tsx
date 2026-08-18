@@ -17,6 +17,12 @@ const groupsFixture = (): StockGroup[] => [
     createdAt: '2026-08-18T00:00:00.000Z',
   },
   {
+    id: 'system-watchlist',
+    name: '系统观察',
+    isSystem: true,
+    createdAt: '2026-08-18T00:00:00.000Z',
+  },
+  {
     id: 'long-term',
     name: '长期持仓',
     isSystem: false,
@@ -113,6 +119,8 @@ describe('Task 6 dashboard components', () => {
     await user.click(screen.getByRole('button', { name: '添加股票' }));
 
     expect(screen.queryByRole('option', { name: '全部持仓' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: '系统观察' })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '未分组' })).toBeInTheDocument();
 
     await user.type(screen.getByLabelText('股票代码'), ' 600519 ');
     await user.selectOptions(screen.getByLabelText('分组'), '长期持仓');
@@ -237,10 +245,28 @@ describe('Task 6 dashboard components', () => {
 
     expect(screen.getByText('暂无行情')).toBeInTheDocument();
     expect(screen.getByText('行情已过期')).toBeInTheDocument();
-    expect(screen.getByText('持仓收益：+¥200.00（+20.00%）')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '编辑 平安银行' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '删除 平安银行' })).toBeInTheDocument();
+    expect(screen.getByText('−1.64%')).toHaveClass('value--fall');
+    expect(screen.getByText('持仓收益：+¥200.00（+20.00%）')).toHaveClass('value--rise');
   });
 
   it('renders overview metrics and refresh status', () => {
+    render(
+      <Overview
+        summary={summaryFixture()}
+        lastUpdated="2026-08-18T10:30:00.000Z"
+        isRefreshing={false}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('+20.00%')).toHaveClass('value--rise');
+    expect(screen.getByText('¥200.00')).toHaveClass('value--rise');
+    expect(screen.getByRole('button', { name: '刷新行情' })).not.toBeDisabled();
+  });
+
+  it('renders neutral overview state while partial quotes are refreshing', () => {
     render(
       <Overview
         summary={summaryFixture({ hasPartialQuotes: true, profit: null, returnPct: null })}

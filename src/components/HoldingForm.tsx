@@ -23,7 +23,7 @@ const symbolPattern = /^[0-9]{6}$/;
 const hasAtMostTwoDecimals = (value: string): boolean => /^(\d+)(\.\d{1,2})?$/.test(value);
 
 const getAssignableGroups = (groups: StockGroup[]): StockGroup[] =>
-  groups.filter((group) => group.id !== 'all');
+  groups.filter((group) => !group.isSystem || group.id === 'ungrouped');
 
 export const HoldingForm = ({
   groups,

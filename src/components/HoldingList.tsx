@@ -8,6 +8,22 @@ type HoldingListProps = {
   onDelete: (holding: Holding) => void;
 };
 
+const getValueToneClass = (value: number | null | undefined): string => {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return 'value--neutral';
+  }
+
+  if (value > 0) {
+    return 'value--rise';
+  }
+
+  if (value < 0) {
+    return 'value--fall';
+  }
+
+  return 'value--neutral';
+};
+
 const formatCurrency = (value: number): string =>
   new Intl.NumberFormat('zh-CN', {
     style: 'currency',
@@ -51,6 +67,7 @@ export const HoldingList = ({
         const performance = calculateHoldingPerformance(holding, quote);
         const hasLiveQuote =
           quote !== undefined && quote.status !== 'unavailable' && quote.price !== null;
+        const displayName = holding.name || holding.symbol;
 
         return (
           <article key={holding.id} className="holding-card card">
@@ -62,12 +79,18 @@ export const HoldingList = ({
 
               <div className="holding-card__actions">
                 {quote?.status === 'stale' ? <span className="status-pill">行情已过期</span> : null}
-                <button className="icon-button" type="button" onClick={() => onEdit(holding)}>
+                <button
+                  className="icon-button"
+                  type="button"
+                  aria-label={`编辑 ${displayName}`}
+                  onClick={() => onEdit(holding)}
+                >
                   编辑
                 </button>
                 <button
                   className="icon-button icon-button--danger"
                   type="button"
+                  aria-label={`删除 ${displayName}`}
                   onClick={() => onDelete(holding)}
                 >
                   删除
@@ -78,11 +101,15 @@ export const HoldingList = ({
             <dl className="holding-card__metrics">
               <div>
                 <dt>最新价</dt>
-                <dd>{hasLiveQuote ? formatCurrency(quote.price as number) : '暂无行情'}</dd>
+                <dd className={hasLiveQuote ? getValueToneClass(quote?.change) : 'value--neutral'}>
+                  {hasLiveQuote ? formatCurrency(quote.price as number) : '暂无行情'}
+                </dd>
               </div>
               <div>
                 <dt>当日涨跌</dt>
-                <dd>{quote ? formatQuoteChange(quote.pct) : '—'}</dd>
+                <dd className={quote ? getValueToneClass(quote.pct) : 'value--neutral'}>
+                  {quote ? formatQuoteChange(quote.pct) : '—'}
+                </dd>
               </div>
               <div>
                 <dt>开仓价</dt>
@@ -94,7 +121,11 @@ export const HoldingList = ({
               </div>
             </dl>
 
-            <p className="holding-card__profit">
+            <p
+              className={`holding-card__profit ${getValueToneClass(
+                performance.hasQuote ? performance.profit : null,
+              )}`}
+            >
               {performance.hasQuote
                 ? `持仓收益：${formatSignedCurrency(performance.profit as number)}（${formatSignedPercent(
                     performance.returnPct as number,

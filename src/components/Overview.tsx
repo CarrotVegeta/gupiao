@@ -7,6 +7,22 @@ type OverviewProps = {
   onRefresh: () => void;
 };
 
+const getValueToneClass = (value: number | null | undefined): string => {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return 'value--neutral';
+  }
+
+  if (value > 0) {
+    return 'value--rise';
+  }
+
+  if (value < 0) {
+    return 'value--fall';
+  }
+
+  return 'value--neutral';
+};
+
 const formatCurrency = (value: number | null): string => {
   if (value === null) {
     return '—';
@@ -66,7 +82,9 @@ export const Overview = ({
     </div>
 
     <div className="overview__hero">
-      <p className="overview__hero-value">{formatPercent(summary.returnPct)}</p>
+      <p className={`overview__hero-value ${getValueToneClass(summary.returnPct)}`}>
+        {formatPercent(summary.returnPct)}
+      </p>
       <div className="overview__status-group">
         <span className="status-pill">{summary.hasPartialQuotes ? '部分行情' : '行情完整'}</span>
         <span className="status-note">持仓数量：{summary.holdingCount}</span>
@@ -76,19 +94,19 @@ export const Overview = ({
     <dl className="overview__metrics">
       <div className="metric-card">
         <dt>总收益额</dt>
-        <dd>{formatCurrency(summary.profit)}</dd>
+        <dd className={getValueToneClass(summary.profit)}>{formatCurrency(summary.profit)}</dd>
       </div>
       <div className="metric-card">
         <dt>总投入</dt>
-        <dd>{formatCurrency(summary.invested)}</dd>
+        <dd className="value--neutral">{formatCurrency(summary.invested)}</dd>
       </div>
       <div className="metric-card">
         <dt>当前市值</dt>
-        <dd>{formatCurrency(summary.marketValue)}</dd>
+        <dd className="value--neutral">{formatCurrency(summary.marketValue)}</dd>
       </div>
       <div className="metric-card">
         <dt>持仓数量</dt>
-        <dd>{summary.holdingCount}</dd>
+        <dd className="value--neutral">{summary.holdingCount}</dd>
       </div>
     </dl>
   </section>
