@@ -23,8 +23,18 @@ const createId = (): string =>
 
 const unique = (symbols: string[]): string[] => Array.from(new Set(symbols));
 
+const normalizeDisplayName = (value: string | null | undefined): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  return trimmed.length > 0 ? trimmed : null;
+};
+
 const getQuoteName = (response: QuotesResponse | null, symbol: string): string | null =>
-  response?.quotes.find((quote) => quote.symbol === symbol)?.name ?? null;
+  normalizeDisplayName(response?.quotes.find((quote) => quote.symbol === symbol)?.name);
 
 const isQuoteStale = (quote: Quote | undefined): boolean => quote?.status === 'stale';
 
@@ -213,7 +223,9 @@ export default function App() {
       };
     });
 
-    setSelectedGroupId('ungrouped');
+    if (selectedGroupId === modal.groupId) {
+      setSelectedGroupId('ungrouped');
+    }
 
     closeModal();
   };
@@ -258,7 +270,9 @@ export default function App() {
     const response =
       symbol === currentHolding.symbol ? null : await refreshQuotes([symbol]);
     const nextName =
-      getQuoteName(response, symbol) ?? quotes[symbol]?.name ?? currentHolding.name ?? symbol;
+      symbol === currentHolding.symbol
+        ? getQuoteName(response, symbol) ?? normalizeDisplayName(quotes[symbol]?.name) ?? currentHolding.name
+        : getQuoteName(response, symbol) ?? normalizeDisplayName(quotes[symbol]?.name) ?? symbol;
 
     commitState((current) => ({
       groups: current.groups.map((group) => ({ ...group })),

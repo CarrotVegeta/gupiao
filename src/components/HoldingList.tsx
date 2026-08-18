@@ -67,14 +67,14 @@ export const HoldingList = ({
         const performance = calculateHoldingPerformance(holding, quote);
         const hasLiveQuote =
           quote !== undefined && quote.status !== 'unavailable' && quote.price !== null;
-        const displayName = holding.name || holding.symbol;
+        const displayName = quote?.name?.trim() || holding.name || holding.symbol;
 
         return (
           <article key={holding.id} className="holding-card card">
             <div className="holding-card__header">
               <div>
                 <p className="holding-card__symbol">{holding.symbol}</p>
-                <h3>{holding.name}</h3>
+                <h3>{displayName}</h3>
               </div>
 
               <div className="holding-card__actions">
