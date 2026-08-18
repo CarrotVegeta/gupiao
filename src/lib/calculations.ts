@@ -3,6 +3,12 @@ import type { Holding, HoldingPerformance, PortfolioSummary, Quote } from '../ty
 const isFiniteNumber = (value: number | null | undefined): value is number =>
   typeof value === 'number' && Number.isFinite(value);
 
+const assertPositiveNumber = (value: number, message: string): void => {
+  if (!isFiniteNumber(value) || value <= 0) {
+    throw new Error(message);
+  }
+};
+
 const getUsablePrice = (quote: Quote | undefined): number | null =>
   quote && quote.status !== 'unavailable' && isFiniteNumber(quote.price) ? quote.price : null;
 
@@ -10,9 +16,8 @@ export const calculateHoldingPerformance = (
   holding: Holding,
   quote: Quote | undefined,
 ): HoldingPerformance => {
-  if (!isFiniteNumber(holding.openPrice) || holding.openPrice <= 0) {
-    throw new Error('开仓价必须大于 0');
-  }
+  assertPositiveNumber(holding.openPrice, '开仓价必须大于 0');
+  assertPositiveNumber(holding.quantity, '持有数量必须大于 0');
 
   const price = getUsablePrice(quote);
 
@@ -43,9 +48,8 @@ export const calculatePortfolioSummary = (
   let hasPartialQuotes = false;
 
   for (const holding of holdings) {
-    if (!isFiniteNumber(holding.openPrice) || holding.openPrice <= 0) {
-      throw new Error('开仓价必须大于 0');
-    }
+    assertPositiveNumber(holding.openPrice, '开仓价必须大于 0');
+    assertPositiveNumber(holding.quantity, '持有数量必须大于 0');
 
     invested += holding.openPrice * holding.quantity;
 

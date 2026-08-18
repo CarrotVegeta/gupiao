@@ -77,4 +77,17 @@ describe('calculation helpers', () => {
       calculateHoldingPerformance(holding({ openPrice: 0 }), quote({ price: 12 })),
     ).toThrow('开仓价必须大于 0');
   });
+
+  it('rejects a non-finite or non-positive quantity without returning a valid performance', () => {
+    expect(() =>
+      calculateHoldingPerformance(holding({ quantity: Number.POSITIVE_INFINITY }), quote({ price: 12 })),
+    ).toThrow('持有数量必须大于 0');
+
+    expect(() =>
+      calculatePortfolioSummary(
+        [holding({ symbol: '600519', quantity: 0 })],
+        { '600519': quote({ symbol: '600519', price: 12 }) },
+      ),
+    ).toThrow('持有数量必须大于 0');
+  });
 });
