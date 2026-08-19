@@ -1,12 +1,26 @@
 import type { MarketIndex, MarketOverviewResponse, QuoteError } from '../types';
 
 const MARKET_ENDPOINT = '/api/market-overview';
+const RESPONSE_FORMAT_ERROR = '大盘响应数据格式错误';
+
+const MARKET_INDEX_CONFIG = [
+  { symbol: '000001', name: '上证指数' },
+  { symbol: '399001', name: '深证成指' },
+  { symbol: '399006', name: '创业板指' },
+  { symbol: '000688', name: '科创 50' },
+] as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
 const isStatus = (value: unknown): value is MarketIndex['status'] =>
   value === 'fresh' || value === 'stale' || value === 'unavailable';
+
+const isParseableDateTime = (value: unknown): value is string =>
+  typeof value === 'string' && !Number.isNaN(new Date(value).getTime());
+
+const isNullableFiniteNumber = (value: unknown): value is number | null =>
+  value === null || (typeof value === 'number' && Number.isFinite(value));
 
 const isQuoteError = (value: unknown): value is QuoteError => {
   if (!isRecord(value)) {
@@ -21,38 +35,105 @@ const isMarketIndex = (value: unknown): value is MarketIndex => {
     return false;
   }
 
-  return (
-    typeof value.symbol === 'string' &&
-    typeof value.name === 'string' &&
-    typeof value.price === 'number' &&
-    Number.isFinite(value.price) &&
-    typeof value.change === 'number' &&
-    Number.isFinite(value.change) &&
-    typeof value.pct === 'number' &&
-    Number.isFinite(value.pct) &&
-    (typeof value.updatedAt === 'string' || value.updatedAt === null) &&
-    isStatus(value.status)
-  );
+  if (
+    typeof value.symbol !== 'string' ||
+    typeof value.name !== 'string' ||
+    value.name.trim().length === 0 ||
+    !isNullableFiniteNumber(value.price) ||
+    !isNullableFiniteNumber(value.change) ||
+    !isNullableFiniteNumber(value.pct) ||
+    !(value.updatedAt === null || isParseableDateTime(value.updatedAt)) ||
+    !isStatus(value.status)
+  ) {
+    return false;
+  }
+
+  if (value.status === 'fresh') {
+    return (
+      value.price !== null &&
+      value.change !== null &&
+      value.pct !== null &&
+      isParseableDateTime(value.updatedAt)
+    );
+  }
+
+  return true;
 };
+
+const unavailableIndex = (symbol: string, name: string): MarketIndex => ({
+  symbol,
+  name,
+  price: null,
+  change: null,
+  pct: null,
+  updatedAt: null,
+  status: 'unavailable',
+});
+
+export const createUnavailableMarketIndices = (): Record<string, MarketIndex> =>
+  Object.fromEntries(
+    MARKET_INDEX_CONFIG.map(({ symbol, name }) => [symbol, unavailableIndex(symbol, name)]),
+  );
+
+export const marketIndicesInDisplayOrder = (
+  indices: Record<string, MarketIndex>,
+): MarketIndex[] =>
+  MARKET_INDEX_CONFIG.map(({ symbol, name }) => indices[symbol] ?? unavailableIndex(symbol, name));
+
+export const createUnavailableMarketOverviewResponse = (
+  fetchedAt: string,
+  message: string,
+): MarketOverviewResponse => ({
+  indices: MARKET_INDEX_CONFIG.map(({ symbol, name }) => unavailableIndex(symbol, name)),
+  fetchedAt: isParseableDateTime(fetchedAt) ? fetchedAt : new Date().toISOString(),
+  source: 'eastmoney',
+  errors: MARKET_INDEX_CONFIG.map(({ symbol }) => ({ symbol, message })),
+});
 
 const toMarketOverviewResponse = (
   payload: unknown,
   fetchedAtFallback: string,
 ): MarketOverviewResponse => {
-  if (!isRecord(payload)) {
-    return {
-      indices: [],
-      fetchedAt: fetchedAtFallback,
-      source: 'eastmoney',
-      errors: [],
-    };
+  if (
+    !isRecord(payload) ||
+    !Array.isArray(payload.indices) ||
+    !Array.isArray(payload.errors) ||
+    payload.source !== 'eastmoney' ||
+    !isParseableDateTime(payload.fetchedAt)
+  ) {
+    return createUnavailableMarketOverviewResponse(fetchedAtFallback, RESPONSE_FORMAT_ERROR);
   }
 
+  const payloadRows = new Map<string, unknown>();
+  for (const row of payload.indices) {
+    if (isRecord(row) && typeof row.symbol === 'string' && !payloadRows.has(row.symbol)) {
+      payloadRows.set(row.symbol, row);
+    }
+  }
+
+  const errors = payload.errors.filter(isQuoteError);
+  const indices = MARKET_INDEX_CONFIG.map(({ symbol, name }) => {
+    const row = payloadRows.get(symbol);
+
+    if (!isMarketIndex(row)) {
+      if (!errors.some((error) => error.symbol === symbol)) {
+        errors.push({ symbol, message: '大盘指数数据不完整' });
+      }
+      return unavailableIndex(symbol, name);
+    }
+
+    return {
+      ...row,
+      symbol,
+      name,
+    };
+  });
+
   return {
-    indices: Array.isArray(payload.indices) ? payload.indices.filter(isMarketIndex) : [],
-    fetchedAt: typeof payload.fetchedAt === 'string' ? payload.fetchedAt : fetchedAtFallback,
-    source: payload.source === 'eastmoney' ? 'eastmoney' : 'eastmoney',
-    errors: Array.isArray(payload.errors) ? payload.errors.filter(isQuoteError) : [],
+    indices,
+    fetchedAt: payload.fetchedAt,
+    source: 'eastmoney',
+    errors,
   };
 };
 
@@ -65,45 +146,55 @@ export const fetchMarketOverview = async (
     throw new Error(`大盘请求失败（${response.status}）`);
   }
 
-  return toMarketOverviewResponse(await response.json(), new Date().toISOString());
+  const fetchedAtFallback = new Date().toISOString();
+
+  try {
+    return toMarketOverviewResponse(await response.json(), fetchedAtFallback);
+  } catch {
+    return createUnavailableMarketOverviewResponse(fetchedAtFallback, RESPONSE_FORMAT_ERROR);
+  }
 };
 
 export const mergeMarketOverview = (
   previous: Record<string, MarketIndex>,
   response: MarketOverviewResponse,
 ): Record<string, MarketIndex> => {
-  const next = { ...previous };
+  const next = createUnavailableMarketIndices();
+  const responseBySymbol = new Map(response.indices.map((index) => [index.symbol, index]));
 
-  for (const index of response.indices) {
-    if (index.status === 'fresh') {
-      next[index.symbol] = index;
+  for (const { symbol, name } of MARKET_INDEX_CONFIG) {
+    const existing = previous[symbol];
+    const incoming = responseBySymbol.get(symbol);
+
+    if (incoming?.status === 'fresh') {
+      next[symbol] = { ...incoming, symbol, name };
       continue;
     }
 
-    const existing = next[index.symbol];
-
-    if (existing) {
-      next[index.symbol] = {
+    if (existing && (existing.status === 'fresh' || existing.status === 'stale')) {
+      next[symbol] = {
         ...existing,
+        symbol,
+        name,
         status: 'stale',
       };
       continue;
     }
 
-    next[index.symbol] = index;
+    if (incoming) {
+      next[symbol] = { ...incoming, symbol, name };
+    }
   }
 
   for (const error of response.errors) {
     const existing = next[error.symbol];
 
-    if (!existing) {
-      continue;
+    if (existing?.status === 'fresh') {
+      next[error.symbol] = {
+        ...existing,
+        status: 'stale',
+      };
     }
-
-    next[error.symbol] = {
-      ...existing,
-      status: 'stale',
-    };
   }
 
   return next;

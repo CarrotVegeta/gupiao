@@ -107,7 +107,7 @@ const marketIndicesFixture = (): MarketIndex[] => [
   },
   {
     symbol: '000688',
-    name: '科创50',
+    name: '科创 50',
     price: 980.42,
     change: -3.55,
     pct: -0.36,
@@ -133,13 +133,13 @@ const limitUpResponseFixture = (overrides: Partial<LimitUpResponse> = {}): Limit
     {
       symbol: '000017',
       name: 'ST中华',
-      price: 5.21,
-      pct: 4.98,
-      boardCount: 2,
+      price: null,
+      pct: null,
+      boardCount: null,
       firstSealTime: null,
       lastSealTime: null,
       industry: null,
-      breakCount: 0,
+      breakCount: null,
     },
   ],
   fetchedAt: '2026-08-19T07:32:00.000Z',
@@ -594,7 +594,7 @@ describe('Task 6 dashboard components', () => {
     expect(screen.getByText('上证指数')).toBeInTheDocument();
     expect(screen.getByText('深证成指')).toBeInTheDocument();
     expect(screen.getByText('创业板指')).toBeInTheDocument();
-    expect(screen.getByText('科创50')).toBeInTheDocument();
+    expect(screen.getByText('科创 50')).toBeInTheDocument();
     expect(screen.getByText('+0.38%')).toHaveClass('value--rise');
     expect(screen.getByText('-0.24%')).toHaveClass('value--fall');
     expect(screen.getByText('最后刷新：08/19 15:35')).toBeInTheDocument();
@@ -636,6 +636,32 @@ describe('Task 6 dashboard components', () => {
     expect(screen.getByText('-0.24%')).toHaveClass('value--neutral');
   });
 
+  it('renders four unavailable market placeholders with null values and tolerates an invalid update time', () => {
+    render(
+      <MarketOverview
+        indices={marketIndicesFixture().map((index) => ({
+          ...index,
+          price: null,
+          change: null,
+          pct: null,
+          updatedAt: null,
+          status: 'unavailable' as const,
+        }))}
+        lastUpdated="not-a-date"
+        isRefreshing={false}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('上证指数')).toBeInTheDocument();
+    expect(screen.getByText('深证成指')).toBeInTheDocument();
+    expect(screen.getByText('创业板指')).toBeInTheDocument();
+    expect(screen.getByText('科创 50')).toBeInTheDocument();
+    expect(screen.getByText('最后刷新：未刷新')).toBeInTheDocument();
+    expect(screen.getAllByText('—')).toHaveLength(12);
+    expect(screen.queryByText('0.00')).not.toBeInTheDocument();
+  });
+
   it('renders the limit-up table contract columns in response order and shows stale and empty states', () => {
     const staleData = limitUpResponseFixture({ status: 'stale' });
     const emptyData = limitUpResponseFixture({ items: [] });
@@ -662,6 +688,15 @@ describe('Task 6 dashboard components', () => {
     expect(rows[1]).toHaveTextContent('食品饮料');
     expect(rows[1]).toHaveTextContent('¥12.27');
     expect(rows[1]).toHaveTextContent('+10.04%');
+    expect(Array.from(rows[2].querySelectorAll('td')).map((cell) => cell.textContent)).toEqual([
+      '—',
+      '—',
+      '—',
+      '—',
+      '—',
+      '—',
+      '—',
+    ]);
     expect(screen.getByText('包含 ST / 风险标的')).toBeInTheDocument();
     expect(screen.getByText('数据已过期')).toBeInTheDocument();
     expect(screen.getByText('2026-08-19')).toBeInTheDocument();
@@ -673,5 +708,25 @@ describe('Task 6 dashboard components', () => {
 
     expect(screen.getByText('暂无涨停数据')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '刷新中…' })).toBeDisabled();
+  });
+
+  it('shows an explicit unavailable state without inventing a trade date', () => {
+    render(
+      <LimitUpList
+        data={limitUpResponseFixture({
+          tradeDate: null,
+          items: [],
+          status: 'unavailable',
+          error: '涨停池上游请求失败',
+        })}
+        isRefreshing={false}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('涨停数据暂不可用')).toBeInTheDocument();
+    expect(screen.getByText('暂无可用涨停数据')).toBeInTheDocument();
+    expect(screen.getByText('交易日：暂无数据')).toBeInTheDocument();
+    expect(screen.queryByText('数据已过期')).not.toBeInTheDocument();
   });
 });

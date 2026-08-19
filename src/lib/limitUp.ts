@@ -1,6 +1,7 @@
-import type { LimitUpItem, LimitUpResponse, QuoteError } from '../types';
+import type { LimitUpItem, LimitUpResponse } from '../types';
 
 const LIMIT_UP_ENDPOINT = '/api/limit-up';
+const RESPONSE_FORMAT_ERROR = '涨停响应数据格式错误';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -8,13 +9,20 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isStatus = (value: unknown): value is LimitUpResponse['status'] =>
   value === 'fresh' || value === 'stale' || value === 'unavailable';
 
-const isQuoteError = (value: unknown): value is QuoteError => {
-  if (!isRecord(value)) {
-    return false;
-  }
+const isParseableDateTime = (value: unknown): value is string =>
+  typeof value === 'string' && !Number.isNaN(new Date(value).getTime());
 
-  return typeof value.symbol === 'string' && typeof value.message === 'string';
-};
+const isNullableFiniteNumber = (value: unknown): value is number | null =>
+  value === null || (typeof value === 'number' && Number.isFinite(value));
+
+const isNullableInteger = (value: unknown): value is number | null =>
+  value === null || (typeof value === 'number' && Number.isInteger(value));
+
+const isNullableString = (value: unknown): value is string | null =>
+  value === null || typeof value === 'string';
+
+const isTradeDate = (value: unknown): value is string | null =>
+  value === null || (typeof value === 'string' && /^\d{8}$/.test(value));
 
 const isLimitUpItem = (value: unknown): value is LimitUpItem => {
   if (!isRecord(value)) {
@@ -25,43 +33,69 @@ const isLimitUpItem = (value: unknown): value is LimitUpItem => {
     typeof value.symbol === 'string' &&
     /^\d{6}$/.test(value.symbol) &&
     typeof value.name === 'string' &&
-    typeof value.price === 'number' &&
-    Number.isFinite(value.price) &&
-    typeof value.pct === 'number' &&
-    Number.isFinite(value.pct) &&
-    typeof value.boardCount === 'number' &&
-    Number.isInteger(value.boardCount) &&
-    (typeof value.firstSealTime === 'string' || value.firstSealTime === null) &&
-    (typeof value.lastSealTime === 'string' || value.lastSealTime === null) &&
-    (typeof value.industry === 'string' || value.industry === null) &&
-    typeof value.breakCount === 'number' &&
-    Number.isInteger(value.breakCount)
+    value.name.trim().length > 0 &&
+    isNullableFiniteNumber(value.price) &&
+    isNullableFiniteNumber(value.pct) &&
+    isNullableInteger(value.boardCount) &&
+    isNullableString(value.firstSealTime) &&
+    isNullableString(value.lastSealTime) &&
+    isNullableString(value.industry) &&
+    isNullableInteger(value.breakCount)
   );
 };
 
+const unavailableResponse = (fetchedAt: string): LimitUpResponse => ({
+  tradeDate: null,
+  items: [],
+  fetchedAt,
+  source: 'eastmoney',
+  status: 'unavailable',
+  error: RESPONSE_FORMAT_ERROR,
+});
+
 const toLimitUpResponse = (
   payload: unknown,
-  requestedDate: string | undefined,
   fetchedAtFallback: string,
 ): LimitUpResponse => {
-  if (!isRecord(payload)) {
+  if (
+    !isRecord(payload) ||
+    !Array.isArray(payload.items) ||
+    !payload.items.every(isLimitUpItem) ||
+    payload.source !== 'eastmoney' ||
+    !isStatus(payload.status) ||
+    !isTradeDate(payload.tradeDate) ||
+    !isParseableDateTime(payload.fetchedAt) ||
+    !(typeof payload.error === 'string' || payload.error === null)
+  ) {
+    return unavailableResponse(fetchedAtFallback);
+  }
+
+  if (payload.status === 'fresh' && (payload.tradeDate === null || payload.error !== null)) {
+    return unavailableResponse(fetchedAtFallback);
+  }
+
+  if (payload.status === 'stale' && payload.tradeDate === null) {
+    return unavailableResponse(fetchedAtFallback);
+  }
+
+  if (payload.status === 'unavailable') {
     return {
-      tradeDate: requestedDate ?? '',
+      tradeDate: null,
       items: [],
-      fetchedAt: fetchedAtFallback,
+      fetchedAt: payload.fetchedAt,
       source: 'eastmoney',
       status: 'unavailable',
-      error: null,
+      error: payload.error,
     };
   }
 
   return {
-    tradeDate: typeof payload.tradeDate === 'string' ? payload.tradeDate : requestedDate ?? '',
-    items: Array.isArray(payload.items) ? payload.items.filter(isLimitUpItem) : [],
-    fetchedAt: typeof payload.fetchedAt === 'string' ? payload.fetchedAt : fetchedAtFallback,
-    source: payload.source === 'eastmoney' ? 'eastmoney' : 'eastmoney',
-    status: isStatus(payload.status) ? payload.status : 'unavailable',
-    error: isQuoteError(payload.error) ? payload.error : null,
+    tradeDate: payload.tradeDate,
+    items: payload.items,
+    fetchedAt: payload.fetchedAt,
+    source: 'eastmoney',
+    status: payload.status,
+    error: payload.error,
   };
 };
 
@@ -77,7 +111,13 @@ export const fetchLimitUp = async (
     throw new Error(`涨停请求失败（${response.status}）`);
   }
 
-  return toLimitUpResponse(await response.json(), date, new Date().toISOString());
+  const fetchedAtFallback = new Date().toISOString();
+
+  try {
+    return toLimitUpResponse(await response.json(), fetchedAtFallback);
+  } catch {
+    throw new Error(RESPONSE_FORMAT_ERROR);
+  }
 };
 
 export const mergeLimitUp = (
@@ -88,15 +128,24 @@ export const mergeLimitUp = (
     return response;
   }
 
-  if (!previous) {
-    return response;
+  const hasPreviousSuccessfulData =
+    previous !== null &&
+    previous !== undefined &&
+    previous.tradeDate !== null &&
+    (previous.status === 'fresh' || previous.status === 'stale') &&
+    isParseableDateTime(previous.fetchedAt);
+
+  if (!hasPreviousSuccessfulData) {
+    return {
+      ...response,
+      tradeDate: null,
+      items: [],
+      status: 'unavailable',
+    };
   }
 
   return {
     ...previous,
-    tradeDate: response.tradeDate || previous.tradeDate,
-    fetchedAt: response.fetchedAt,
-    source: response.source,
     status: 'stale',
     error: response.error,
   };

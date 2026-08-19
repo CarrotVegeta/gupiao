@@ -44,9 +44,9 @@ export type QuoteError = {
 export type MarketIndex = {
   symbol: string;
   name: string;
-  price: number;
-  change: number;
-  pct: number;
+  price: number | null;
+  change: number | null;
+  pct: number | null;
   updatedAt: string | null;
   status: Quote["status"];
 };
@@ -61,22 +61,22 @@ export type MarketOverviewResponse = {
 export type LimitUpItem = {
   symbol: string;
   name: string;
-  price: number;
-  pct: number;
-  boardCount: number;
+  price: number | null;
+  pct: number | null;
+  boardCount: number | null;
   firstSealTime: string | null;
   lastSealTime: string | null;
   industry: string | null;
-  breakCount: number;
+  breakCount: number | null;
 };
 
 export type LimitUpResponse = {
-  tradeDate: string;
+  tradeDate: string | null;
   items: LimitUpItem[];
   fetchedAt: string;
   source: "eastmoney";
   status: Quote["status"];
-  error: QuoteError | null;
+  error: string | null;
 };
 
 export type StockSearchResult = {

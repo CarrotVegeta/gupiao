@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
 import type { LimitUpResponse, MarketOverviewResponse, QuotesResponse, StorageState } from './types';
@@ -28,6 +28,24 @@ const marketResponseFixture = (
       price: 10500.88,
       change: -25.12,
       pct: -0.24,
+      updatedAt: '2026-08-19T07:30:00.000Z',
+      status: 'fresh',
+    },
+    {
+      symbol: '399006',
+      name: '创业板指',
+      price: 2200.66,
+      change: 8.11,
+      pct: 0.37,
+      updatedAt: '2026-08-19T07:30:00.000Z',
+      status: 'fresh',
+    },
+    {
+      symbol: '000688',
+      name: '科创 50',
+      price: 980.42,
+      change: -3.55,
+      pct: -0.36,
       updatedAt: '2026-08-19T07:30:00.000Z',
       status: 'fresh',
     },
@@ -210,6 +228,23 @@ describe('Task 7 app interactions', () => {
     ).not.toBe(0);
   });
 
+  it('keeps all four market placeholders unavailable when the first request rejects', async () => {
+    const fetchMock = createFetchMock({ market: [new Error('network down')] });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '刷新大盘' })).not.toBeDisabled());
+    expect(screen.getByText('上证指数')).toBeInTheDocument();
+    expect(screen.getByText('深证成指')).toBeInTheDocument();
+    expect(screen.getByText('创业板指')).toBeInTheDocument();
+    expect(screen.getByText('科创 50')).toBeInTheDocument();
+    expect(screen.getAllByText('无可用数据')).toHaveLength(4);
+    expect(
+      within(screen.getByRole('region', { name: '大盘概览' })).getAllByText('—'),
+    ).toHaveLength(12);
+  });
+
   it('requests and renders limit-up data when navigating, then restores holdings-only sections', async () => {
     const user = userEvent.setup();
     const seededState: StorageState = {
@@ -261,7 +296,7 @@ describe('Task 7 app interactions', () => {
     expect(screen.getByRole('button', { name: '添加股票' })).toBeInTheDocument();
   });
 
-  it('shows a stale limit-up notice for unavailable responses without mutating saved holdings', async () => {
+  it('shows an unavailable first-load state without mutating saved holdings', async () => {
     const user = userEvent.setup();
     const seededState: StorageState = {
       groups: [
@@ -289,10 +324,10 @@ describe('Task 7 app interactions', () => {
     const fetchMock = createFetchMock({
       limitUp: [
         limitUpResponseFixture({
-          tradeDate: '20260819',
+          tradeDate: null,
           items: [],
           status: 'unavailable',
-          error: { symbol: 'limit-up', message: '数据暂不可用' },
+          error: '数据暂不可用',
         }),
       ],
     });
@@ -304,8 +339,10 @@ describe('Task 7 app interactions', () => {
 
     await user.click(screen.getByRole('button', { name: /涨停聚焦/ }));
 
-    expect(await screen.findByText('数据已过期')).toBeInTheDocument();
-    expect(screen.getByText('暂无涨停数据')).toBeInTheDocument();
+    expect(await screen.findByText('涨停数据暂不可用')).toBeInTheDocument();
+    expect(screen.getByText('暂无可用涨停数据')).toBeInTheDocument();
+    expect(screen.getByText('交易日：暂无数据')).toBeInTheDocument();
+    expect(screen.queryByText('数据已过期')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /持仓/ }));
 
@@ -328,7 +365,7 @@ describe('Task 7 app interactions', () => {
 
     await user.click(screen.getByRole('button', { name: '刷新大盘' }));
 
-    expect(await screen.findAllByText('数据已过期')).toHaveLength(2);
+    expect(await screen.findAllByText('数据已过期')).toHaveLength(4);
     expect(screen.getByText('3,301.25')).toBeInTheDocument();
     expect(screen.getByText('+12.38')).toHaveClass('value--neutral');
     expect(screen.getByText('+0.38%')).toHaveClass('value--neutral');
@@ -337,7 +374,13 @@ describe('Task 7 app interactions', () => {
   it('keeps the last limit-up items when a later limit-up refresh rejects', async () => {
     const user = userEvent.setup();
     const fetchMock = createFetchMock({
-      limitUp: [limitUpResponseFixture(), new Error('network down')],
+      limitUp: [
+        limitUpResponseFixture({
+          tradeDate: '20260818',
+          fetchedAt: '2026-08-18T07:32:00.000Z',
+        }),
+        new Error('network down'),
+      ],
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -351,6 +394,7 @@ describe('Task 7 app interactions', () => {
     await user.click(screen.getByRole('button', { name: '刷新涨停池' }));
 
     expect(await screen.findByText('数据已过期')).toBeInTheDocument();
+    expect(screen.getByText('2026-08-18')).toBeInTheDocument();
     expect(screen.getByText('桂发祥')).toBeInTheDocument();
     expect(screen.getByText('ST中华')).toBeInTheDocument();
   });

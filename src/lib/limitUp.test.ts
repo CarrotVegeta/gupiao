@@ -50,53 +50,100 @@ describe('limit-up fixture', () => {
     expect(fetchImpl).toHaveBeenCalledWith('/api/limit-up?date=2026%2F08%2F18');
   });
 
-  it('filters invalid items and keeps a valid unavailable response shape', async () => {
+  it('normalizes a fresh response with a non-array items field to unavailable', async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(
         JSON.stringify({
           tradeDate: '20260818',
-          items: [
-            limitUpResponse.items[0],
-            {
-              symbol: '600000',
-              name: '浦发银行',
-              price: 'bad',
-              pct: 10,
-              boardCount: 1,
-              firstSealTime: '09:25:00',
-              lastSealTime: '13:12:01',
-              industry: '银行',
-              breakCount: 0,
-            },
-          ],
+          items: {},
           fetchedAt: '2026-08-18T08:05:00.000Z',
           source: 'eastmoney',
-          status: 'unavailable',
-          error: {
-            symbol: 'limit-up',
-            message: '上游不可用',
-          },
+          status: 'fresh',
+          error: null,
         }),
       ),
     );
 
-    await expect(fetchLimitUp(undefined, fetchImpl)).resolves.toEqual({
-      tradeDate: '20260818',
-      items: [limitUpResponse.items[0]],
-      fetchedAt: '2026-08-18T08:05:00.000Z',
+    await expect(fetchLimitUp(undefined, fetchImpl)).resolves.toMatchObject({
+      tradeDate: null,
+      items: [],
       source: 'eastmoney',
       status: 'unavailable',
-      error: {
-        symbol: 'limit-up',
-        message: '上游不可用',
-      },
+      error: '涨停响应数据格式错误',
     });
+  });
+
+  it.each([
+    ['source', { source: 'unknown' }],
+    ['status', { status: 'ready' }],
+    ['tradeDate', { tradeDate: '2026-08-18' }],
+    ['fetchedAt', { fetchedAt: 'not-a-date' }],
+    ['error', { error: { symbol: 'limit-up', message: '旧对象错误' } }],
+  ])('does not accept a fresh response with an invalid %s field', async (_field, override) => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ ...limitUpResponse, ...override })),
+    );
+
+    const result = await fetchLimitUp(undefined, fetchImpl);
+
+    expect(result).toMatchObject({
+      tradeDate: null,
+      items: [],
+      source: 'eastmoney',
+      status: 'unavailable',
+      error: '涨停响应数据格式错误',
+    });
+    expect(Number.isNaN(new Date(result.fetchedAt).getTime())).toBe(false);
+  });
+
+  it('rejects the whole fresh envelope instead of filtering malformed item rows', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ...limitUpResponse,
+          items: [limitUpResponse.items[0], { ...limitUpResponse.items[0], price: 'bad' }],
+        }),
+      ),
+    );
+
+    await expect(fetchLimitUp(undefined, fetchImpl)).resolves.toMatchObject({
+      tradeDate: null,
+      items: [],
+      status: 'unavailable',
+      error: '涨停响应数据格式错误',
+    });
+  });
+
+  it('accepts nullable numeric fields in otherwise valid limit-up rows', async () => {
+    const nullableResponse = {
+      ...limitUpResponse,
+      items: [
+        {
+          ...limitUpResponse.items[0],
+          price: null,
+          pct: null,
+          boardCount: null,
+          breakCount: null,
+        },
+      ],
+    } as LimitUpResponse;
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify(nullableResponse)));
+
+    await expect(fetchLimitUp(undefined, fetchImpl)).resolves.toEqual(nullableResponse);
   });
 
   it('throws a user-facing error for non-2xx responses', async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response('bad', { status: 502 }));
 
     await expect(fetchLimitUp('20260818', fetchImpl)).rejects.toThrow('涨停请求失败（502）');
+  });
+
+  it('throws a stable Chinese error when the response body is not valid JSON', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response('{bad json'));
+
+    await expect(fetchLimitUp(undefined, fetchImpl)).rejects.toThrow('涨停响应数据格式错误');
   });
 
   it('replaces items when the next response is fresh', () => {
@@ -124,11 +171,53 @@ describe('limit-up fixture', () => {
     const previous = { ...limitUpResponse, status: 'fresh' as const };
     const next: LimitUpResponse = {
       ...limitUpResponse,
+      tradeDate: null,
       items: [],
+      fetchedAt: '2026-08-19T08:00:00.000Z',
       status: 'unavailable',
-      error: { symbol: 'limit-up', message: '网络错误' },
+      error: '网络错误',
     };
 
-    expect(mergeLimitUp(previous, next)).toMatchObject({ status: 'stale', items: previous.items });
+    expect(mergeLimitUp(previous, next)).toEqual({
+      ...previous,
+      status: 'stale',
+      error: '网络错误',
+    });
+  });
+
+  it('keeps the previous successful trade date and fetchedAt across a later trading-day failure', () => {
+    const previous = { ...limitUpResponse, status: 'fresh' as const };
+    const next = {
+      ...limitUpResponse,
+      tradeDate: '20260819',
+      items: [],
+      fetchedAt: '2026-08-19T08:00:00.000Z',
+      status: 'unavailable' as const,
+      error: '涨停池刷新失败',
+    };
+
+    expect(mergeLimitUp(previous, next)).toEqual({
+      ...previous,
+      status: 'stale',
+      error: '涨停池刷新失败',
+    });
+  });
+
+  it('keeps an initial failed load unavailable with no trade date', () => {
+    const initial = {
+      tradeDate: null,
+      items: [],
+      fetchedAt: '2026-08-19T08:00:00.000Z',
+      source: 'eastmoney' as const,
+      status: 'unavailable' as const,
+      error: null,
+    };
+    const failure = {
+      ...initial,
+      fetchedAt: '2026-08-19T08:01:00.000Z',
+      error: '涨停池刷新失败',
+    };
+
+    expect(mergeLimitUp(initial, failure)).toEqual(failure);
   });
 });

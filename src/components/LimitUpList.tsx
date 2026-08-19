@@ -7,7 +7,11 @@ type LimitUpListProps = {
   onRefresh: () => void;
 };
 
-const formatTradeDate = (value: string): string => {
+const formatTradeDate = (value: string | null): string => {
+  if (value === null) {
+    return '暂无数据';
+  }
+
   if (/^\d{8}$/.test(value)) {
     return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
   }
@@ -30,7 +34,15 @@ const formatTradeDate = (value: string): string => {
 
 const formatValue = (value: string | null): string => value ?? '—';
 
-const formatSignedPercent = (value: number): string => `${value >= 0 ? '+' : '-'}${Math.abs(value).toFixed(2)}%`;
+const formatSignedPercent = (value: number | null): string =>
+  value === null || !Number.isFinite(value)
+    ? '—'
+    : `${value >= 0 ? '+' : '-'}${Math.abs(value).toFixed(2)}%`;
+
+const formatBoardCount = (value: number | null): string =>
+  value === null ? '—' : `${value} 连板`;
+
+const formatInteger = (value: number | null): string => (value === null ? '—' : String(value));
 
 export const LimitUpList = ({ data, isRefreshing, onRefresh }: LimitUpListProps) => (
   <section className="card" aria-labelledby="limit-up-list-title">
@@ -41,7 +53,13 @@ export const LimitUpList = ({ data, isRefreshing, onRefresh }: LimitUpListProps)
       </div>
       <div className="overview__actions">
         <p className="overview__meta">
-          交易日：<time dateTime={data.tradeDate}>{formatTradeDate(data.tradeDate)}</time>
+          {data.tradeDate === null ? (
+            '交易日：暂无数据'
+          ) : (
+            <>
+              交易日：<time dateTime={data.tradeDate}>{formatTradeDate(data.tradeDate)}</time>
+            </>
+          )}
         </p>
         <p className="overview__meta">
           数量：<span>{data.items.length} 只</span>
@@ -67,9 +85,18 @@ export const LimitUpList = ({ data, isRefreshing, onRefresh }: LimitUpListProps)
       </p>
     ) : null}
 
+    {data.status === 'unavailable' ? (
+      <>
+        <p className="banner banner--warning" role="status">
+          涨停数据暂不可用
+        </p>
+        {data.error ? <p className="status-note">{data.error}</p> : null}
+      </>
+    ) : null}
+
     {data.items.length === 0 ? (
       <div className="empty-state empty-state--subtle">
-        <p>暂无涨停数据</p>
+        <p>{data.status === 'unavailable' ? '暂无可用涨停数据' : '暂无涨停数据'}</p>
       </div>
     ) : (
       <table aria-label="涨停列表">
@@ -92,13 +119,13 @@ export const LimitUpList = ({ data, isRefreshing, onRefresh }: LimitUpListProps)
                 {item.name}
                 <div>{item.symbol}</div>
               </th>
-              <td>{item.boardCount} 连板</td>
+              <td>{formatBoardCount(item.boardCount)}</td>
               <td>{formatValue(item.industry)}</td>
               <td>{formatCurrency(item.price)}</td>
               <td>{formatSignedPercent(item.pct)}</td>
               <td>{formatValue(item.firstSealTime)}</td>
               <td>{formatValue(item.lastSealTime)}</td>
-              <td>{item.breakCount}</td>
+              <td>{formatInteger(item.breakCount)}</td>
             </tr>
           ))}
         </tbody>

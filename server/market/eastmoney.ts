@@ -21,14 +21,24 @@ const MARKET_INDEX_CONFIG = [
   { symbol: '000001', name: '上证指数', secid: '1.000001' },
   { symbol: '399001', name: '深证成指', secid: '0.399001' },
   { symbol: '399006', name: '创业板指', secid: '0.399006' },
-  { symbol: '000688', name: '科创50', secid: '1.000688' },
+  { symbol: '000688', name: '科创 50', secid: '1.000688' },
 ] as const;
 
 const MARKET_SYMBOLS = ['000001', '399001', '399006', '000688'] as const;
 const MARKET_SECIDS = '1.000001,0.399001,0.399006,1.000688';
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const isAbortError = (error: unknown): boolean =>
+  isRecord(error) && error.name === 'AbortError';
+
 const asNumber = (value: unknown): number | null => {
-  if (value === null || value === undefined || value === '-') {
+  if (
+    value === null ||
+    value === undefined ||
+    (typeof value === 'string' && (value.trim() === '' || value.trim() === '-'))
+  ) {
     return null;
   }
 
@@ -51,9 +61,9 @@ const toUnavailableIndex = (
   index: {
     symbol,
     name: fallbackName,
-    price: 0,
-    pct: 0,
-    change: 0,
+    price: null,
+    pct: null,
+    change: null,
     updatedAt: null,
     status: 'unavailable',
   },
@@ -62,6 +72,22 @@ const toUnavailableIndex = (
     message,
   },
 });
+
+const buildUnavailableResponse = (
+  message: string,
+  fetchedAt: string,
+): MarketOverviewResponse => {
+  const fallback = MARKET_INDEX_CONFIG.map(({ symbol, name }) =>
+    toUnavailableIndex(symbol, name, message),
+  );
+
+  return {
+    indices: fallback.map((item) => item.index),
+    fetchedAt,
+    source: 'eastmoney',
+    errors: fallback.map((item) => item.error),
+  };
+};
 
 const toMarketRows = (payload: EastmoneyMarketPayload): EastmoneyMarketRow[] => {
   const diff = payload.data?.diff;
@@ -108,10 +134,10 @@ export const mapEastmoneyMarket = (
     const price = normalizeScaledNumber(row?.f2);
     const pct = normalizeScaledNumber(row?.f3);
     const change = normalizeScaledNumber(row?.f4);
-    const upstreamName = asString(row?.f14) || name;
+    const upstreamName = asString(row?.f14);
 
     if (!row || price === null || pct === null || change === null || !upstreamName) {
-      const unavailable = toUnavailableIndex(symbol, upstreamName || name, '上游指数数据不完整');
+      const unavailable = toUnavailableIndex(symbol, name, '上游指数数据不完整');
       indices.push(unavailable.index);
       errors.push(unavailable.error);
       continue;
@@ -119,7 +145,7 @@ export const mapEastmoneyMarket = (
 
     indices.push({
       symbol,
-      name: upstreamName,
+      name,
       price,
       pct,
       change,
@@ -159,31 +185,36 @@ export const fetchEastmoneyMarket = async (
     });
 
     if (!response.ok) {
-      const fallback = MARKET_INDEX_CONFIG.map(({ symbol, name }) =>
-        toUnavailableIndex(symbol, name, `大盘指数上游请求失败（HTTP ${response.status}）`),
-      );
-
-      return {
-        indices: fallback.map((item) => item.index),
+      return buildUnavailableResponse(
+        `大盘指数上游请求失败（HTTP ${response.status}）`,
         fetchedAt,
-        source: 'eastmoney',
-        errors: fallback.map((item) => item.error),
-      };
+      );
     }
 
-    return mapEastmoneyMarket((await response.json()) as EastmoneyMarketPayload, fetchedAt);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : '未知错误';
-    const fallback = MARKET_INDEX_CONFIG.map(({ symbol, name }) =>
-      toUnavailableIndex(symbol, name, `大盘指数上游请求失败（${message}）`),
-    );
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch (error) {
+      return buildUnavailableResponse(
+        controller.signal.aborted || isAbortError(error)
+          ? '大盘指数上游请求超时'
+          : '大盘指数上游响应格式错误',
+        fetchedAt,
+      );
+    }
 
-    return {
-      indices: fallback.map((item) => item.index),
+    if (!isRecord(payload)) {
+      return buildUnavailableResponse('大盘指数上游数据格式错误', fetchedAt);
+    }
+
+    return mapEastmoneyMarket(payload as EastmoneyMarketPayload, fetchedAt);
+  } catch (error) {
+    return buildUnavailableResponse(
+      controller.signal.aborted || isAbortError(error)
+        ? '大盘指数上游请求超时'
+        : '大盘指数上游请求失败',
       fetchedAt,
-      source: 'eastmoney',
-      errors: fallback.map((item) => item.error),
-    };
+    );
   } finally {
     clearTimeout(timer);
   }

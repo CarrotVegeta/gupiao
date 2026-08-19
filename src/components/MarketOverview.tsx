@@ -47,29 +47,47 @@ const getStatusText = (status: MarketIndex['status']): string | null => {
   return null;
 };
 
-const formatIndexValue = (value: number): string =>
-  new Intl.NumberFormat('zh-CN', {
+const formatIndexValue = (value: number | null): string => {
+  if (value === null || !Number.isFinite(value)) {
+    return '—';
+  }
+
+  return new Intl.NumberFormat('zh-CN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
+};
 
-const formatSignedNumber = (value: number): string =>
-  `${value >= 0 ? '+' : '-'}${formatIndexValue(Math.abs(value))}`;
+const formatSignedNumber = (value: number | null): string =>
+  value === null || !Number.isFinite(value)
+    ? '—'
+    : `${value >= 0 ? '+' : '-'}${formatIndexValue(Math.abs(value))}`;
 
-const formatSignedPercent = (value: number): string =>
-  `${value >= 0 ? '+' : '-'}${formatPercent(Math.abs(value))}`;
+const formatSignedPercent = (value: number | null): string =>
+  value === null || !Number.isFinite(value)
+    ? '—'
+    : `${value >= 0 ? '+' : '-'}${formatPercent(Math.abs(value))}`;
 
-const formatDateTime = (value: string | null): string =>
-  value === null
-    ? '未刷新'
-    : new Intl.DateTimeFormat('zh-CN', {
-        timeZone: 'Asia/Shanghai',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        hourCycle: 'h23',
-      }).format(new Date(value));
+const formatDateTime = (value: string | null): string => {
+  if (value === null) {
+    return '未刷新';
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return '未刷新';
+  }
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(date);
+};
 
 export const MarketOverview = ({
   indices,

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fetchEastmoneyMarket, mapEastmoneyMarket } from './eastmoney.js';
 
 const fetchedAt = '2026-08-19T01:30:00.000Z';
@@ -11,6 +11,10 @@ const marketDiffFixture = [
 ];
 
 describe('eastmoney market adapter', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('maps index quote fields from the Eastmoney diff payload', () => {
     const result = mapEastmoneyMarket(
       {
@@ -52,7 +56,7 @@ describe('eastmoney market adapter', () => {
         },
         {
           symbol: '000688',
-          name: '科创50',
+          name: '科创 50',
           price: 3456.78,
           pct: 1.23,
           change: 41.98,
@@ -102,11 +106,85 @@ describe('eastmoney market adapter', () => {
       {
         symbol: '399001',
         name: '深证成指',
+        price: null,
+        change: null,
+        pct: null,
         status: 'unavailable',
       },
       { symbol: '399006', status: 'fresh' },
       { symbol: '000688', status: 'fresh' },
     ]);
     expect(result.errors).toEqual([{ symbol: '399001', message: '上游指数数据不完整' }]);
+  });
+
+  it('does not coerce an empty numeric field to a fresh zero value', () => {
+    const result = mapEastmoneyMarket(
+      {
+        data: {
+          diff: marketDiffFixture.map((item) =>
+            item.f12 === '000001' ? { ...item, f2: '' } : item,
+          ),
+        },
+      },
+      fetchedAt,
+    );
+
+    expect(result.indices[0]).toEqual({
+      symbol: '000001',
+      name: '上证指数',
+      price: null,
+      change: null,
+      pct: null,
+      updatedAt: null,
+      status: 'unavailable',
+    });
+  });
+
+  it('keeps the five-second timeout active while reading the response body', async () => {
+    vi.useFakeTimers();
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+      const signal = init?.signal as AbortSignal;
+
+      return {
+        ok: true,
+        status: 200,
+        json: () =>
+          new Promise((_resolve, reject) => {
+            signal.addEventListener(
+              'abort',
+              () => {
+                const error = new Error('body read aborted');
+                error.name = 'AbortError';
+                reject(error);
+              },
+              { once: true },
+            );
+          }),
+      } as Response;
+    });
+
+    const resultPromise = fetchEastmoneyMarket(fetchImpl);
+    await vi.advanceTimersByTimeAsync(5_000);
+    const result = await resultPromise;
+
+    expect(result.indices).toHaveLength(4);
+    expect(result.indices.every((index) => index.status === 'unavailable')).toBe(true);
+    expect(result.errors.every((error) => error.message === '大盘指数上游请求超时')).toBe(true);
+  });
+
+  it('maps bad JSON and ordinary request failures to stable Chinese errors', async () => {
+    const invalidJsonFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response('{bad json'));
+    const rejectedFetch = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new Error('socket hang up with upstream details'));
+
+    const invalidJson = await fetchEastmoneyMarket(invalidJsonFetch);
+    const rejected = await fetchEastmoneyMarket(rejectedFetch);
+
+    expect(invalidJson.errors.every((error) => error.message === '大盘指数上游响应格式错误')).toBe(true);
+    expect(rejected.errors.every((error) => error.message === '大盘指数上游请求失败')).toBe(true);
+    expect(JSON.stringify(rejected)).not.toContain('socket hang up');
   });
 });

@@ -12,20 +12,29 @@ type EastmoneyLimitUpRow = {
   zbc?: unknown;
 };
 
-type EastmoneyLimitUpPayload = {
-  data?: {
-    pool?: EastmoneyLimitUpRow[];
-    tc?: unknown;
-    pagesize?: unknown;
-  } | null;
-};
-
 const REQUEST_TIMEOUT_MS = 5_000;
 const REQUEST_PAGE_SIZE = 100;
+const MAX_PAGE_COUNT = 50;
 const LIMIT_UP_ENDPOINT = 'https://push2ex.eastmoney.com/getTopicZTPool';
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const isAbortError = (error: unknown): boolean =>
+  isRecord(error) && error.name === 'AbortError';
+
+const createAbortError = (): Error => {
+  const error = new Error('request aborted');
+  error.name = 'AbortError';
+  return error;
+};
+
 const asNumber = (value: unknown): number | null => {
-  if (value === null || value === undefined || value === '-') {
+  if (
+    value === null ||
+    value === undefined ||
+    (typeof value === 'string' && (value.trim() === '' || value.trim() === '-'))
+  ) {
     return null;
   }
 
@@ -38,7 +47,38 @@ const asInteger = (value: unknown): number | null => {
   return next !== null && Number.isInteger(next) ? next : null;
 };
 
+const asNonNegativeInteger = (value: unknown): number | null => {
+  const next = asInteger(value);
+  return next !== null && next >= 0 ? next : null;
+};
+
 const asString = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
+const normalizeLimitUpSymbol = (value: unknown): string => {
+  if (typeof value === 'number') {
+    return Number.isInteger(value) && value >= 0 && value <= 999_999
+      ? String(value).padStart(6, '0')
+      : '';
+  }
+
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  const raw = value.trim().toUpperCase();
+
+  if (/^\d{1,6}$/.test(raw)) {
+    return raw.padStart(6, '0');
+  }
+
+  const prefixed = raw.match(/^(?:SH|SZ|BJ)(\d{6})$/);
+  if (prefixed) {
+    return prefixed[1];
+  }
+
+  const quoteId = raw.match(/^(?:[01]\.)?(\d{6})(?:\.(?:SH|SZ|BJ))?$/);
+  return quoteId?.[1] ?? '';
+};
 
 const formatTradeTime = (value: unknown): string | null => {
   const raw = String(value ?? '').trim();
@@ -60,46 +100,38 @@ const formatTradeTime = (value: unknown): string | null => {
 };
 
 const buildUnavailableResponse = (
-  tradeDate: string,
   message: string,
   fetchedAt = new Date().toISOString(),
 ): LimitUpResponse => ({
-  tradeDate,
+  tradeDate: null,
   items: [],
   fetchedAt,
   source: 'eastmoney',
   status: 'unavailable',
-  error: {
-    symbol: 'limit-up',
-    message,
-  },
+  error: message,
 });
 
 export const mapEastmoneyLimitUpItem = (raw: EastmoneyLimitUpRow): LimitUpItem | null => {
-  const symbol = asString(raw.c);
+  const symbol = normalizeLimitUpSymbol(raw.c);
   const name = asString(raw.n);
-  const price = asNumber(raw.p);
-  const pct = asNumber(raw.zdp);
-  const boardCount = asInteger(raw.lbc);
-  const breakCount = asInteger(raw.zbc);
 
-  if (!symbol || !name || price === null || pct === null || boardCount === null || breakCount === null) {
+  if (!symbol || !name) {
     return null;
   }
 
-  const normalized: LimitUpItem = {
+  const rawPrice = asNumber(raw.p);
+
+  return {
     symbol,
     name,
-    price: price / 1000,
-    pct,
-    boardCount,
+    price: rawPrice === null ? null : rawPrice / 1000,
+    pct: asNumber(raw.zdp),
+    boardCount: asInteger(raw.lbc),
     firstSealTime: formatTradeTime(raw.fbt),
     lastSealTime: formatTradeTime(raw.lbt),
     industry: asString(raw.hybk) || null,
-    breakCount,
+    breakCount: asInteger(raw.zbc),
   };
-
-  return normalized;
 };
 
 const toRequestUrl = (tradeDate: string, pageIndex: number): string => {
@@ -115,19 +147,44 @@ const toRequestUrl = (tradeDate: string, pageIndex: number): string => {
   return `${LIMIT_UP_ENDPOINT}?${params.toString()}`;
 };
 
+type PageResult =
+  | { kind: 'ok'; payload: unknown }
+  | { kind: 'http-error'; status: number }
+  | { kind: 'invalid-json' };
+
 const fetchPage = async (
   tradeDate: string,
   pageIndex: number,
   fetchImpl: typeof fetch,
-): Promise<Response> => {
+): Promise<PageResult> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    return await fetchImpl(toRequestUrl(tradeDate, pageIndex), {
+    const response = await fetchImpl(toRequestUrl(tradeDate, pageIndex), {
       signal: controller.signal,
       headers: { Accept: 'application/json' },
     });
+
+    if (!response.ok) {
+      return { kind: 'http-error', status: response.status };
+    }
+
+    try {
+      return { kind: 'ok', payload: await response.json() };
+    } catch (error) {
+      if (controller.signal.aborted || isAbortError(error)) {
+        throw createAbortError();
+      }
+
+      return { kind: 'invalid-json' };
+    }
+  } catch (error) {
+    if (controller.signal.aborted && !isAbortError(error)) {
+      throw createAbortError();
+    }
+
+    throw error;
   } finally {
     clearTimeout(timer);
   }
@@ -140,43 +197,53 @@ export const fetchEastmoneyLimitUp = async (
   const fetchedAt = new Date().toISOString();
   const items: LimitUpItem[] = [];
   const seen = new Set<string>();
-  let pageIndex = 0;
-  let emptyPageCount = 0;
+  let receivedPoolRows = 0;
   let totalCount: number | null = null;
-  let currentPageSize = REQUEST_PAGE_SIZE;
+  let completed = false;
 
   try {
-    while (pageIndex < 50) {
-      const response = await fetchPage(tradeDate, pageIndex, fetchImpl);
+    for (let pageIndex = 0; pageIndex < MAX_PAGE_COUNT; pageIndex += 1) {
+      const page = await fetchPage(tradeDate, pageIndex, fetchImpl);
 
-      if (!response.ok) {
-        return buildUnavailableResponse(tradeDate, `涨停池上游请求失败（HTTP ${response.status}）`, fetchedAt);
+      if (page.kind === 'http-error') {
+        return buildUnavailableResponse(
+          `涨停池上游请求失败（HTTP ${page.status}）`,
+          fetchedAt,
+        );
       }
 
-      const payload = (await response.json()) as EastmoneyLimitUpPayload;
-      const data = payload.data;
-
-      if (!data || typeof data !== 'object') {
-        return buildUnavailableResponse(tradeDate, '涨停池上游未返回有效数据', fetchedAt);
+      if (page.kind === 'invalid-json') {
+        return buildUnavailableResponse('涨停池上游响应格式错误', fetchedAt);
       }
 
+      if (!isRecord(page.payload) || !isRecord(page.payload.data)) {
+        return buildUnavailableResponse('涨停池上游未返回有效数据', fetchedAt);
+      }
+
+      const data = page.payload.data;
       if (!('pool' in data) || !Array.isArray(data.pool)) {
-        return buildUnavailableResponse(tradeDate, '涨停池上游数据格式错误', fetchedAt);
+        return buildUnavailableResponse('涨停池上游数据格式错误', fetchedAt);
+      }
+
+      const reportedTotal = asNonNegativeInteger(data.tc);
+      if (reportedTotal !== null) {
+        totalCount = totalCount === null ? reportedTotal : Math.max(totalCount, reportedTotal);
       }
 
       const pool = data.pool;
-      totalCount = asInteger(data.tc) ?? totalCount;
-      currentPageSize = asInteger(data.pagesize) ?? currentPageSize;
-
       if (pool.length === 0) {
-        emptyPageCount += 1;
+        if (totalCount !== null && receivedPoolRows < totalCount) {
+          return buildUnavailableResponse('涨停池分页数据不完整', fetchedAt);
+        }
+
+        completed = true;
         break;
       }
 
-      emptyPageCount = 0;
+      receivedPoolRows += pool.length;
 
       for (const raw of pool) {
-        const item = mapEastmoneyLimitUpItem(raw);
+        const item = isRecord(raw) ? mapEastmoneyLimitUpItem(raw) : null;
 
         if (!item || seen.has(item.symbol)) {
           continue;
@@ -186,23 +253,14 @@ export const fetchEastmoneyLimitUp = async (
         items.push(item);
       }
 
-      pageIndex += 1;
-
-      if (totalCount !== null && items.length >= totalCount) {
-        break;
-      }
-
-      if (totalCount !== null && pageIndex * currentPageSize >= totalCount) {
-        break;
-      }
-
-      if (pool.length < currentPageSize) {
+      if (totalCount !== null && receivedPoolRows >= totalCount) {
+        completed = true;
         break;
       }
     }
 
-    if (emptyPageCount > 1) {
-      return buildUnavailableResponse(tradeDate, '涨停池分页响应异常', fetchedAt);
+    if (!completed) {
+      return buildUnavailableResponse('涨停池分页数据不完整', fetchedAt);
     }
 
     return {
@@ -214,11 +272,9 @@ export const fetchEastmoneyLimitUp = async (
       error: null,
     };
   } catch (error) {
-    const message =
-      error instanceof Error && error.name === 'AbortError'
-        ? '涨停池上游请求超时'
-        : '涨停池上游请求失败';
-
-    return buildUnavailableResponse(tradeDate, message, fetchedAt);
+    return buildUnavailableResponse(
+      isAbortError(error) ? '涨停池上游请求超时' : '涨停池上游请求失败',
+      fetchedAt,
+    );
   }
 };

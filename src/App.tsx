@@ -12,7 +12,13 @@ import { HoldingForm, type HoldingFormValues } from './components/HoldingForm';
 import { HoldingList } from './components/HoldingList';
 import { Overview } from './components/Overview';
 import { fetchLimitUp, mergeLimitUp } from './lib/limitUp';
-import { fetchMarketOverview, mergeMarketOverview } from './lib/market';
+import {
+  createUnavailableMarketIndices,
+  createUnavailableMarketOverviewResponse,
+  fetchMarketOverview,
+  marketIndicesInDisplayOrder,
+  mergeMarketOverview,
+} from './lib/market';
 import type {
   Holding,
   LimitUpResponse,
@@ -65,39 +71,21 @@ const formatTradeDate = (date: Date = new Date()): string => {
 };
 
 const emptyLimitUpResponse = (): LimitUpResponse => ({
-  tradeDate: formatTradeDate(),
+  tradeDate: null,
   items: [],
-  fetchedAt: '',
+  fetchedAt: new Date().toISOString(),
   source: 'eastmoney',
-  status: 'stale',
+  status: 'unavailable',
   error: null,
 });
 
-const buildMarketUnavailableResponse = (
-  symbols: string[],
-  fetchedAt: string,
-): {
-  indices: [];
-  fetchedAt: string;
-  source: 'eastmoney';
-  errors: Array<{ symbol: string; message: string }>;
-} => ({
-  indices: [],
-  fetchedAt,
-  source: 'eastmoney',
-  errors: symbols.map((symbol) => ({ symbol, message: '大盘刷新失败' })),
-});
-
-const buildLimitUpUnavailableResponse = (
-  tradeDate: string,
-  fetchedAt: string,
-): LimitUpResponse => ({
-  tradeDate,
+const buildLimitUpUnavailableResponse = (fetchedAt: string): LimitUpResponse => ({
+  tradeDate: null,
   items: [],
   fetchedAt,
   source: 'eastmoney',
   status: 'unavailable',
-  error: { symbol: 'limit-up', message: '涨停池刷新失败' },
+  error: '涨停池刷新失败',
 });
 
 export default function App() {
@@ -108,7 +96,9 @@ export default function App() {
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [marketIndices, setMarketIndices] = useState<Record<string, MarketIndex>>({});
+  const [marketIndices, setMarketIndices] = useState<Record<string, MarketIndex>>(
+    createUnavailableMarketIndices,
+  );
   const [marketUpdatedAt, setMarketUpdatedAt] = useState<string | null>(null);
   const [isMarketRefreshing, setIsMarketRefreshing] = useState(false);
   const [limitUp, setLimitUp] = useState<LimitUpResponse>(emptyLimitUpResponse());
@@ -152,7 +142,10 @@ export default function App() {
     return visibleQuotes.length > 0 && visibleQuotes.every(isQuoteStale);
   }, [filteredHoldings, quotes]);
 
-  const marketOverview = useMemo(() => Object.values(marketIndices), [marketIndices]);
+  const marketOverview = useMemo(
+    () => marketIndicesInDisplayOrder(marketIndices),
+    [marketIndices],
+  );
 
   const commitState = useCallback((updater: (current: StorageState) => StorageState) => {
     setState((current) => {
@@ -216,17 +209,18 @@ export default function App() {
       const response = await fetchMarketOverview();
 
       setMarketIndices((current) => mergeMarketOverview(current, response));
-      setMarketUpdatedAt(response.fetchedAt);
+      if (response.indices.some((index) => index.status === 'fresh')) {
+        setMarketUpdatedAt(response.fetchedAt);
+      }
     } catch {
       const fetchedAt = new Date().toISOString();
 
       setMarketIndices((current) =>
         mergeMarketOverview(
           current,
-          buildMarketUnavailableResponse(Object.keys(current), fetchedAt),
+          createUnavailableMarketOverviewResponse(fetchedAt, '大盘刷新失败'),
         ),
       );
-      setMarketUpdatedAt(fetchedAt);
     } finally {
       setIsMarketRefreshing(false);
     }
@@ -243,10 +237,7 @@ export default function App() {
       const fetchedAt = new Date().toISOString();
 
       setLimitUp((current) =>
-        mergeLimitUp(
-          current,
-          buildLimitUpUnavailableResponse(current.tradeDate || formatTradeDate(), fetchedAt),
-        ),
+        mergeLimitUp(current, buildLimitUpUnavailableResponse(fetchedAt)),
       );
     } finally {
       setIsLimitUpRefreshing(false);
@@ -561,7 +552,7 @@ export default function App() {
         <PrimaryNav
           activePage={activePage}
           holdingCount={state.holdings.length}
-          limitUpCount={limitUp.fetchedAt ? limitUp.items.length : null}
+          limitUpCount={limitUp.status === 'unavailable' ? null : limitUp.items.length}
           onNavigate={setActivePage}
         />
 
