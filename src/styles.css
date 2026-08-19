@@ -61,22 +61,51 @@ textarea:focus-visible {
   min-height: 100vh;
 }
 
-.app-shell {
+.dashboard-layout {
+  width: min(1440px, 100%);
   min-height: 100vh;
+  margin: 0 auto;
   padding: 32px 24px;
-}
-
-.dashboard-grid {
   display: grid;
-  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
   gap: 24px;
   align-items: start;
 }
 
-.sidebar-column,
-.content-column {
+.dashboard-main {
   display: grid;
   gap: 24px;
+  min-width: 0;
+}
+
+nav.card[aria-label='一级导航'] {
+  position: sticky;
+  top: 24px;
+  padding: 20px;
+  align-self: start;
+}
+
+nav.card[aria-label='一级导航'] .group-sidebar__list {
+  margin: 0;
+}
+
+nav.card[aria-label='一级导航'] .group-sidebar__select {
+  padding: 16px 18px;
+  background: var(--bg-muted);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+nav.card[aria-label='一级导航'] .group-sidebar__select[aria-current='page'] {
+  border-color: var(--accent-primary);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px rgba(39, 70, 144, 0.12);
+}
+
+nav.card[aria-label='一级导航'] .group-sidebar__count {
+  min-width: 2ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .card,
@@ -231,12 +260,16 @@ textarea:focus-visible {
 
 .overview__metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 16px;
   margin: 0;
 }
 
 .metric-card {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  min-height: 100%;
   padding: 16px;
   border-radius: 16px;
   border: 1px solid var(--border-color);
@@ -435,6 +468,88 @@ textarea:focus-visible {
   gap: 18px;
 }
 
+section[aria-labelledby='limit-up-list-title'] {
+  display: grid;
+  gap: 20px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+section[aria-labelledby='limit-up-list-title'] .overview__header {
+  margin-bottom: 0;
+}
+
+section[aria-labelledby='limit-up-list-title'] .overview__status-group {
+  align-items: flex-start;
+}
+
+section[aria-labelledby='limit-up-list-title'] .banner {
+  margin: 0;
+}
+
+section[aria-labelledby='limit-up-list-title'] .empty-state {
+  min-height: 144px;
+  justify-items: center;
+  align-content: center;
+  text-align: center;
+}
+
+section[aria-labelledby='limit-up-list-title'] table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+section[aria-labelledby='limit-up-list-title'] thead th {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+section[aria-labelledby='limit-up-list-title'] tbody th,
+section[aria-labelledby='limit-up-list-title'] tbody td {
+  padding: 14px;
+  border-bottom: 1px solid rgba(216, 207, 191, 0.7);
+  vertical-align: top;
+}
+
+section[aria-labelledby='limit-up-list-title'] tbody tr:last-child th,
+section[aria-labelledby='limit-up-list-title'] tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+section[aria-labelledby='limit-up-list-title'] tbody tr:nth-child(even) {
+  background: rgba(241, 234, 220, 0.42);
+}
+
+section[aria-labelledby='limit-up-list-title'] tbody th {
+  min-width: 140px;
+  font-size: 1rem;
+  text-align: left;
+}
+
+section[aria-labelledby='limit-up-list-title'] tbody th div {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(2),
+section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(4),
+section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
+  font-weight: 600;
+}
+
+section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
+  color: var(--rise);
+}
+
 .stale-note {
   margin: 0;
   color: var(--text-secondary);
@@ -513,15 +628,16 @@ textarea:focus-visible {
 }
 
 @media (max-width: 900px) {
-  .app-shell {
+  .dashboard-layout {
     padding: 24px 16px;
+    grid-template-columns: 1fr;
+    gap: 16px;
   }
 
-  .dashboard-grid,
-  .overview__metrics,
+  .dashboard-main,
   .holding-card__metrics,
   .form-grid {
-    grid-template-columns: 1fr;
+    gap: 16px;
   }
 
   .overview__header,
@@ -533,9 +649,36 @@ textarea:focus-visible {
     flex-direction: column;
   }
 
+  nav.card[aria-label='一级导航'] {
+    position: static;
+    top: auto;
+    padding: 16px;
+  }
+
+  nav.card[aria-label='一级导航'] .group-sidebar__list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
   .overview__actions,
   .overview__status-group,
   .holding-card__actions {
     align-items: flex-start;
+  }
+
+  .overview__metrics,
+  .holding-card__metrics,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  section[aria-labelledby='limit-up-list-title'] {
+    padding-bottom: 4px;
+  }
+}
+
+@media (max-width: 640px) {
+  nav.card[aria-label='一级导航'] .group-sidebar__list {
+    grid-template-columns: 1fr;
   }
 }

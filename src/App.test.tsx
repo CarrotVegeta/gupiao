@@ -196,6 +196,9 @@ describe('Task 7 app interactions', () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: '大盘概览' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: '一级导航' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '大盘概览' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: '持仓筛选' })).toBeInTheDocument();
     expect(screen.getByText('上证指数')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '持仓 1' })).toHaveAttribute('aria-current', 'page');
 
