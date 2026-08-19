@@ -2,12 +2,23 @@ import { useState } from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import type { Holding, PortfolioSummary, Quote, QuoteMap, StockGroup } from '../types';
+import type {
+  Holding,
+  LimitUpResponse,
+  MarketIndex,
+  PortfolioSummary,
+  Quote,
+  QuoteMap,
+  StockGroup,
+} from '../types';
 import { GroupDialog } from './GroupDialog';
 import { GroupSidebar } from './GroupSidebar';
 import { HoldingForm, type HoldingFormValues } from './HoldingForm';
 import { HoldingList } from './HoldingList';
+import { LimitUpList } from './LimitUpList';
+import { MarketOverview } from './MarketOverview';
 import { Overview } from './Overview';
+import { PrimaryNav } from './PrimaryNav';
 
 const groupsFixture = (): StockGroup[] => [
   {
@@ -63,6 +74,78 @@ const summaryFixture = (overrides: Partial<PortfolioSummary> = {}): PortfolioSum
   returnPct: 20,
   hasPartialQuotes: false,
   holdingCount: 1,
+  ...overrides,
+});
+
+const marketIndicesFixture = (): MarketIndex[] => [
+  {
+    symbol: '000001',
+    name: '上证指数',
+    price: 3301.25,
+    change: 12.38,
+    pct: 0.38,
+    updatedAt: '2026-08-19T07:30:00.000Z',
+    status: 'fresh',
+  },
+  {
+    symbol: '399001',
+    name: '深证成指',
+    price: 10500.88,
+    change: -25.12,
+    pct: -0.24,
+    updatedAt: '2026-08-19T07:30:00.000Z',
+    status: 'fresh',
+  },
+  {
+    symbol: '399006',
+    name: '创业板指',
+    price: 2100.66,
+    change: 8.11,
+    pct: 0.39,
+    updatedAt: '2026-08-19T07:30:00.000Z',
+    status: 'fresh',
+  },
+  {
+    symbol: '000688',
+    name: '科创50',
+    price: 980.42,
+    change: -3.55,
+    pct: -0.36,
+    updatedAt: '2026-08-19T07:30:00.000Z',
+    status: 'fresh',
+  },
+];
+
+const limitUpResponseFixture = (overrides: Partial<LimitUpResponse> = {}): LimitUpResponse => ({
+  tradeDate: '20260819',
+  items: [
+    {
+      symbol: '002820',
+      name: '桂发祥',
+      price: 12.27,
+      pct: 10.04,
+      boardCount: 3,
+      firstSealTime: '09:25:00',
+      lastSealTime: '14:42:10',
+      industry: '食品饮料',
+      breakCount: 1,
+    },
+    {
+      symbol: '000017',
+      name: 'ST中华',
+      price: 5.21,
+      pct: 4.98,
+      boardCount: 2,
+      firstSealTime: null,
+      lastSealTime: null,
+      industry: null,
+      breakCount: 0,
+    },
+  ],
+  fetchedAt: '2026-08-19T07:32:00.000Z',
+  source: 'eastmoney',
+  status: 'fresh',
+  error: null,
   ...overrides,
 });
 
@@ -453,6 +536,74 @@ describe('Task 6 dashboard components', () => {
 
     expect(screen.getByText('总收益率')).toBeInTheDocument();
     expect(screen.getByText('部分行情')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '刷新中…' })).toBeDisabled();
+  });
+
+  it('renders the primary navigation with the active page and pending limit-up count fallback', async () => {
+    const user = userEvent.setup();
+    const onNavigate = vi.fn();
+
+    render(
+      <PrimaryNav
+        activePage="limit-up"
+        holdingCount={12}
+        limitUpCount={null}
+        onNavigate={onNavigate}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: '持仓 12' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('button', { name: '涨停聚焦 —' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+
+    await user.click(screen.getByRole('button', { name: '持仓 12' }));
+
+    expect(onNavigate).toHaveBeenCalledWith('holdings');
+    expect(screen.queryByRole('button', { name: /全部持仓|设置/ })).not.toBeInTheDocument();
+  });
+
+  it('renders four market indices with quote values, update time, and refresh state', () => {
+    render(
+      <MarketOverview
+        indices={marketIndicesFixture()}
+        lastUpdated="2026-08-19T07:35:00.000Z"
+        isRefreshing={false}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('上证指数')).toBeInTheDocument();
+    expect(screen.getByText('深证成指')).toBeInTheDocument();
+    expect(screen.getByText('创业板指')).toBeInTheDocument();
+    expect(screen.getByText('科创50')).toBeInTheDocument();
+    expect(screen.getByText('+0.38%')).toHaveClass('value--rise');
+    expect(screen.getByText('-0.24%')).toHaveClass('value--fall');
+    expect(screen.getByText('最后刷新：08/19 15:35')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '刷新大盘' })).not.toBeDisabled();
+  });
+
+  it('renders the limit-up table in response order and shows stale and empty states', () => {
+    const staleData = limitUpResponseFixture({ status: 'stale' });
+    const emptyData = limitUpResponseFixture({ items: [] });
+    const { rerender } = render(
+      <LimitUpList data={staleData} isRefreshing={false} onRefresh={vi.fn()} />,
+    );
+
+    const rows = screen.getAllByRole('row');
+    expect(rows[1]).toHaveTextContent('桂发祥');
+    expect(rows[2]).toHaveTextContent('ST中华');
+    expect(screen.getByText('包含 ST / 风险标的')).toBeInTheDocument();
+    expect(screen.getByText('数据已过期')).toBeInTheDocument();
+    expect(screen.getByText('2026-08-19')).toBeInTheDocument();
+    expect(screen.getByText('2 只')).toBeInTheDocument();
+    expect(screen.getByText('3 连板')).toBeInTheDocument();
+    expect(screen.getAllByText('—')).not.toHaveLength(0);
+
+    rerender(<LimitUpList data={emptyData} isRefreshing={true} onRefresh={vi.fn()} />);
+
+    expect(screen.getByText('暂无涨停数据')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '刷新中…' })).toBeDisabled();
   });
 });
