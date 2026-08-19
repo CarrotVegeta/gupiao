@@ -311,6 +311,47 @@ describe('Task 7 app interactions', () => {
     expect(localStorage.getItem('stock-dashboard:v1')).toContain('长期观察');
   });
 
+  it('keeps the last market overview values when a later market refresh rejects', async () => {
+    const user = userEvent.setup();
+    const fetchMock = createFetchMock({
+      market: [marketResponseFixture(), new Error('network down')],
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText('上证指数')).toBeInTheDocument();
+    expect(screen.getByText('3,301.25')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '刷新大盘' }));
+
+    expect(await screen.findAllByText('数据已过期')).toHaveLength(2);
+    expect(screen.getByText('3,301.25')).toBeInTheDocument();
+    expect(screen.getByText('+12.38')).toHaveClass('value--neutral');
+    expect(screen.getByText('+0.38%')).toHaveClass('value--neutral');
+  });
+
+  it('keeps the last limit-up items when a later limit-up refresh rejects', async () => {
+    const user = userEvent.setup();
+    const fetchMock = createFetchMock({
+      limitUp: [limitUpResponseFixture(), new Error('network down')],
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: '大盘概览' });
+
+    await user.click(screen.getByRole('button', { name: /涨停聚焦/ }));
+
+    expect(await screen.findByText('桂发祥')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '刷新涨停池' }));
+
+    expect(await screen.findByText('数据已过期')).toBeInTheDocument();
+    expect(screen.getByText('桂发祥')).toBeInTheDocument();
+    expect(screen.getByText('ST中华')).toBeInTheDocument();
+  });
+
   it('adds a holding, persists its note, and filters by group', async () => {
     const user = userEvent.setup();
 

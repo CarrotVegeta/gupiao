@@ -73,6 +73,33 @@ const emptyLimitUpResponse = (): LimitUpResponse => ({
   error: null,
 });
 
+const buildMarketUnavailableResponse = (
+  symbols: string[],
+  fetchedAt: string,
+): {
+  indices: [];
+  fetchedAt: string;
+  source: 'eastmoney';
+  errors: Array<{ symbol: string; message: string }>;
+} => ({
+  indices: [],
+  fetchedAt,
+  source: 'eastmoney',
+  errors: symbols.map((symbol) => ({ symbol, message: '大盘刷新失败' })),
+});
+
+const buildLimitUpUnavailableResponse = (
+  tradeDate: string,
+  fetchedAt: string,
+): LimitUpResponse => ({
+  tradeDate,
+  items: [],
+  fetchedAt,
+  source: 'eastmoney',
+  status: 'unavailable',
+  error: { symbol: 'limit-up', message: '涨停池刷新失败' },
+});
+
 export default function App() {
   const [loadedState] = useState(() => loadState(localStorage));
   const [state, setState] = useState<StorageState>(loadedState.state);
@@ -190,6 +217,16 @@ export default function App() {
 
       setMarketIndices((current) => mergeMarketOverview(current, response));
       setMarketUpdatedAt(response.fetchedAt);
+    } catch {
+      const fetchedAt = new Date().toISOString();
+
+      setMarketIndices((current) =>
+        mergeMarketOverview(
+          current,
+          buildMarketUnavailableResponse(Object.keys(current), fetchedAt),
+        ),
+      );
+      setMarketUpdatedAt(fetchedAt);
     } finally {
       setIsMarketRefreshing(false);
     }
@@ -202,6 +239,15 @@ export default function App() {
       const response = await fetchLimitUp(formatTradeDate());
 
       setLimitUp((current) => mergeLimitUp(current, response));
+    } catch {
+      const fetchedAt = new Date().toISOString();
+
+      setLimitUp((current) =>
+        mergeLimitUp(
+          current,
+          buildLimitUpUnavailableResponse(current.tradeDate || formatTradeDate(), fetchedAt),
+        ),
+      );
     } finally {
       setIsLimitUpRefreshing(false);
     }

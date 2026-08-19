@@ -145,3 +145,79 @@ npm run typecheck
 
 - 本次按任务要求运行了 `src/App.test.tsx`、`src/components/components.test.tsx` 和 `npm run typecheck`，未额外运行全量测试或 `npm run build`。
 - 工作区原本存在与本任务无关的未提交改动：`.superpowers/sdd/2026-08-18-stock-dashboard/task-2-report.md`。本次已避开，未纳入修改与提交。
+
+## 2026-08-19 审查修复追加
+
+### 根因
+
+- `src/App.tsx` 中的 `refreshMarketOverview()` 与 `refreshLimitUp()` 只处理了 resolved 响应，没有捕获 rejected fetch。
+- `src/lib/market.ts` 与 `src/lib/limitUp.ts` 在网络失败或非 2xx 时会直接 `throw`，导致：
+  - 失败路径没有进入 `mergeMarketOverview` / `mergeLimitUp`；
+  - 上一轮成功数据无法保留为 stale；
+  - 页面交互会留下 unhandled rejection。
+
+### 修复说明
+
+- 在 `App` 内为两个刷新函数补上 rejected 分支捕获，不修改请求模块。
+- 大盘 rejected 时：
+  - 生成中文错误的 unavailable 标准化响应；
+  - 通过 `mergeMarketOverview` 把已有指数状态降级为 stale，保留上一轮价格、涨跌额和涨跌幅；
+  - 若此前没有成功数据，则保留空列表状态，不崩溃。
+- 涨停池 rejected 时：
+  - 生成中文错误的 unavailable 标准化响应；
+  - 通过 `mergeLimitUp` 保留上一轮 `items`，并把整体状态降级为 stale；
+  - 若此前没有成功数据，则保持空池 stale 状态。
+- 保留了原有 resolved `status: unavailable` 的处理路径，没有改动页面结构和可见性刷新策略。
+
+### 本轮 TDD 红灯验证
+
+命令：
+
+```bash
+npm test -- src/App.test.tsx
+```
+
+实际输出摘要：
+
+```text
+❯ src/App.test.tsx (14 tests | 2 failed)
+× keeps the last market overview values when a later market refresh rejects
+× keeps the last limit-up items when a later limit-up refresh rejects
+
+Unhandled Rejection
+Error: network down
+```
+
+结论：失败原因符合预期，正是 rejected fetch 未被 App 捕获，也没有进入 stale 合并。
+
+### 本轮修复后目标测试
+
+命令：
+
+```bash
+npm test -- src/App.test.tsx src/components/components.test.tsx
+```
+
+实际输出：
+
+```text
+Test Files  2 passed (2)
+Tests  34 passed (34)
+```
+
+### 本轮修复后类型检查
+
+命令：
+
+```bash
+npm run typecheck
+```
+
+实际输出：
+
+```text
+> typecheck
+> tsc -b --pretty false tsconfig.json tsconfig.server.json
+```
+
+结论：命令退出码为 0，通过。
