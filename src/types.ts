@@ -41,6 +41,44 @@ export type QuoteError = {
   message: string;
 };
 
+export type MarketIndex = {
+  symbol: string;
+  name: string;
+  price: number;
+  change: number;
+  pct: number;
+  updatedAt: string | null;
+  status: Quote["status"];
+};
+
+export type MarketOverviewResponse = {
+  indices: MarketIndex[];
+  fetchedAt: string;
+  source: "eastmoney";
+  errors: QuoteError[];
+};
+
+export type LimitUpItem = {
+  symbol: string;
+  name: string;
+  price: number;
+  pct: number;
+  boardCount: number;
+  firstSealTime: string;
+  lastSealTime: string;
+  industry: string;
+  breakCount: number;
+};
+
+export type LimitUpResponse = {
+  tradeDate: string;
+  items: LimitUpItem[];
+  fetchedAt: string;
+  source: "eastmoney";
+  status: Quote["status"];
+  error: QuoteError | null;
+};
+
 export type StockSearchResult = {
   symbol: string;
   name: string;
