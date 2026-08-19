@@ -584,16 +584,67 @@ describe('Task 6 dashboard components', () => {
     expect(screen.getByRole('button', { name: '刷新大盘' })).not.toBeDisabled();
   });
 
-  it('renders the limit-up table in response order and shows stale and empty states', () => {
+  it('renders stale and unavailable market indices with neutral semantics', () => {
+    render(
+      <MarketOverview
+        indices={[
+          {
+            symbol: '000001',
+            name: '上证指数',
+            price: 3301.25,
+            change: 12.38,
+            pct: 0.38,
+            updatedAt: '2026-08-19T07:30:00.000Z',
+            status: 'stale',
+          },
+          {
+            symbol: '399001',
+            name: '深证成指',
+            price: 10500.88,
+            change: -25.12,
+            pct: -0.24,
+            updatedAt: '2026-08-19T07:30:00.000Z',
+            status: 'unavailable',
+          },
+        ]}
+        lastUpdated="2026-08-19T07:35:00.000Z"
+        isRefreshing={false}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('数据已过期')).toHaveClass('value--neutral');
+    expect(screen.getByText('无可用数据')).toHaveClass('value--neutral');
+    expect(screen.getByText('+12.38')).toHaveClass('value--neutral');
+    expect(screen.getByText('-0.24%')).toHaveClass('value--neutral');
+  });
+
+  it('renders the limit-up table contract columns in response order and shows stale and empty states', () => {
     const staleData = limitUpResponseFixture({ status: 'stale' });
     const emptyData = limitUpResponseFixture({ items: [] });
     const { rerender } = render(
       <LimitUpList data={staleData} isRefreshing={false} onRefresh={vi.fn()} />,
     );
 
+    expect(screen.getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([
+      '股票',
+      '连板',
+      '板块',
+      '最新价',
+      '涨跌幅',
+      '首次封板',
+      '最后封板',
+      '炸板次数',
+    ]);
+
     const rows = screen.getAllByRole('row');
     expect(rows[1]).toHaveTextContent('桂发祥');
     expect(rows[2]).toHaveTextContent('ST中华');
+    expect(rows[1]).toHaveTextContent('002820');
+    expect(rows[1]).toHaveTextContent('3 连板');
+    expect(rows[1]).toHaveTextContent('食品饮料');
+    expect(rows[1]).toHaveTextContent('¥12.27');
+    expect(rows[1]).toHaveTextContent('+10.04%');
     expect(screen.getByText('包含 ST / 风险标的')).toBeInTheDocument();
     expect(screen.getByText('数据已过期')).toBeInTheDocument();
     expect(screen.getByText('2026-08-19')).toBeInTheDocument();

@@ -118,3 +118,70 @@ npm run typecheck
 
 - 本次仅按任务要求运行了组件测试和 `typecheck`，未额外运行 `npm run build` 或全量测试。
 - 工作区原本存在未提交改动：`.superpowers/sdd/2026-08-18-stock-dashboard/task-2-report.md`。本次已避开，不纳入提交。
+
+## 2026-08-19 审查修复追加
+
+### 修复内容
+
+- `LimitUpList`：
+  - 将表头和单元格顺序统一调整为：`股票`、`连板`、`板块`、`最新价`、`涨跌幅`、`首次封板`、`最后封板`、`炸板次数`。
+  - 将原“行业”列名改为“板块”。
+  - 在组件测试中增加列名与列顺序断言，避免再次回退。
+- `MarketOverview`：
+  - 新增基于 `MarketIndex.status` 的语义降级：
+    - `fresh`：继续按涨跌额/涨跌幅显示 `value--rise` / `value--fall` / `value--neutral`
+    - `stale`：数值保留，但统一使用中性语义，并显示“数据已过期”
+    - `unavailable`：数值保留，但统一使用中性语义，并显示“无可用数据”
+  - 在组件测试中增加 stale / unavailable 场景断言，防止旧数值继续错误套用涨跌语义。
+
+### 本轮 TDD 红灯验证
+
+命令：
+
+```bash
+npm test -- src/components/components.test.tsx
+```
+
+实际输出摘要：
+
+```text
+FAIL  src/components/components.test.tsx
+× renders stale and unavailable market indices with neutral semantics
+× renders the limit-up table contract columns in response order and shows stale and empty states
+
+Tests  2 failed | 17 passed (19)
+```
+
+结论：失败原因符合预期，正是本轮审查指出的两处行为偏差。
+
+### 本轮修复后组件测试
+
+命令：
+
+```bash
+npm test -- src/components/components.test.tsx
+```
+
+实际输出：
+
+```text
+Test Files  1 passed (1)
+Tests  19 passed (19)
+```
+
+### 本轮修复后类型检查
+
+命令：
+
+```bash
+npm run typecheck
+```
+
+实际输出：
+
+```text
+> typecheck
+> tsc -b --pretty false tsconfig.json tsconfig.server.json
+```
+
+结论：命令退出码为 0，通过。

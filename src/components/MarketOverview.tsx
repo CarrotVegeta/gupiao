@@ -24,6 +24,29 @@ const getValueToneClass = (value: number | null | undefined): string => {
   return 'value--neutral';
 };
 
+const getMarketToneClass = (
+  status: MarketIndex['status'],
+  value: number | null | undefined,
+): string => {
+  if (status !== 'fresh') {
+    return 'value--neutral';
+  }
+
+  return getValueToneClass(value);
+};
+
+const getStatusText = (status: MarketIndex['status']): string | null => {
+  if (status === 'stale') {
+    return '数据已过期';
+  }
+
+  if (status === 'unavailable') {
+    return '无可用数据';
+  }
+
+  return null;
+};
+
 const formatIndexValue = (value: number): string =>
   new Intl.NumberFormat('zh-CN', {
     minimumFractionDigits: 2,
@@ -76,14 +99,25 @@ export const MarketOverview = ({
     </div>
 
     <dl className="overview__metrics">
-      {indices.map((index) => (
-        <div key={index.symbol} className="metric-card">
-          <dt>{index.name}</dt>
-          <dd className={getValueToneClass(index.change)}>{formatIndexValue(index.price)}</dd>
-          <p className={getValueToneClass(index.change)}>{formatSignedNumber(index.change)}</p>
-          <p className={getValueToneClass(index.pct)}>{formatSignedPercent(index.pct)}</p>
-        </div>
-      ))}
+      {indices.map((index) => {
+        const statusText = getStatusText(index.status);
+
+        return (
+          <div key={index.symbol} className="metric-card">
+            <dt>{index.name}</dt>
+            <dd className={getMarketToneClass(index.status, index.change)}>
+              {formatIndexValue(index.price)}
+            </dd>
+            <p className={getMarketToneClass(index.status, index.change)}>
+              {formatSignedNumber(index.change)}
+            </p>
+            <p className={getMarketToneClass(index.status, index.pct)}>
+              {formatSignedPercent(index.pct)}
+            </p>
+            {statusText ? <p className="stale-note value--neutral">{statusText}</p> : null}
+          </div>
+        );
+      })}
     </dl>
   </section>
 );

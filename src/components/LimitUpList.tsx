@@ -75,11 +75,11 @@ export const LimitUpList = ({ data, isRefreshing, onRefresh }: LimitUpListProps)
       <table aria-label="涨停列表">
         <thead>
           <tr>
-            <th scope="col">名称</th>
-            <th scope="col">现价</th>
-            <th scope="col">涨跌幅</th>
+            <th scope="col">股票</th>
             <th scope="col">连板</th>
-            <th scope="col">行业</th>
+            <th scope="col">板块</th>
+            <th scope="col">最新价</th>
+            <th scope="col">涨跌幅</th>
             <th scope="col">首次封板</th>
             <th scope="col">最后封板</th>
             <th scope="col">炸板次数</th>
@@ -92,10 +92,10 @@ export const LimitUpList = ({ data, isRefreshing, onRefresh }: LimitUpListProps)
                 {item.name}
                 <div>{item.symbol}</div>
               </th>
-              <td>{formatCurrency(item.price)}</td>
-              <td>{formatSignedPercent(item.pct)}</td>
               <td>{item.boardCount} 连板</td>
               <td>{formatValue(item.industry)}</td>
+              <td>{formatCurrency(item.price)}</td>
+              <td>{formatSignedPercent(item.pct)}</td>
               <td>{formatValue(item.firstSealTime)}</td>
               <td>{formatValue(item.lastSealTime)}</td>
               <td>{item.breakCount}</td>
