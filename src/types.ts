@@ -64,9 +64,9 @@ export type LimitUpItem = {
   price: number;
   pct: number;
   boardCount: number;
-  firstSealTime: string;
-  lastSealTime: string;
-  industry: string;
+  firstSealTime: string | null;
+  lastSealTime: string | null;
+  industry: string | null;
   breakCount: number;
 };
 

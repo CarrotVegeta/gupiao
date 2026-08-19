@@ -10,9 +10,9 @@ const limitUpResponse: LimitUpResponse = {
       price: 12.27,
       pct: 10.04,
       boardCount: 3,
-      firstSealTime: '09:25:00',
-      lastSealTime: '09:25:00',
-      industry: '休闲食品',
+      firstSealTime: null,
+      lastSealTime: null,
+      industry: null,
       breakCount: 0,
     },
   ],
@@ -25,6 +25,8 @@ const limitUpResponse: LimitUpResponse = {
 describe('limit-up fixture', () => {
   it('keeps the expected limit-up response shape', () => {
     expect(limitUpResponse.items[0].symbol).toBe('002820');
+    expect(limitUpResponse.items[0].firstSealTime).toBeNull();
+    expect(limitUpResponse.items[0].industry).toBeNull();
     expect(limitUpResponse.status).toBe('fresh');
   });
 });

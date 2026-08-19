@@ -154,5 +154,5 @@ null
 
 ## 疑问 / concerns
 
-1. `src/types.ts` 里的 `LimitUpItem.firstSealTime / lastSealTime / industry` 仍声明为 `string`，但 brief 要求非法时间和空行业标准化为 `null`。为遵守“只改 server/* 和报告文件”的限制，本次保留前置契约文件不动，服务端在运行时按 brief 输出 `null`。
+1. 已在后续修正提交中将 `src/types.ts` 的 `LimitUpItem.firstSealTime / lastSealTime / industry` 调整为 `string | null`，并同步更新 Task 1 的类型夹具，使共享契约与设计文档、服务端输出保持一致。
 2. 本地接口 400 验证受当前沙箱回环网络限制，已用 `parseTradeDate` focused check 替代。
