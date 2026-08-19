@@ -1,7 +1,14 @@
 import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { QuotesResponse, StockSearchResponse } from '../src/types.js';
+import type {
+  LimitUpResponse,
+  MarketOverviewResponse,
+  QuotesResponse,
+  StockSearchResponse,
+} from '../src/types.js';
+import { fetchEastmoneyLimitUp } from './limit-up/eastmoney.js';
+import { fetchEastmoneyMarket } from './market/eastmoney.js';
 import {
   fetchEastmoneyQuotes,
   fetchEastmoneySearch,
@@ -23,8 +30,48 @@ const parseSymbols = (input: unknown): string[] => {
   return normalized.slice(0, 50);
 };
 
+const getShanghaiToday = (): string => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+
+  const year = parts.find((part) => part.type === 'year')?.value ?? '';
+  const month = parts.find((part) => part.type === 'month')?.value ?? '';
+  const day = parts.find((part) => part.type === 'day')?.value ?? '';
+
+  return `${year}${month}${day}`;
+};
+
+export const parseTradeDate = (input: unknown): string | null => {
+  if (input === undefined) {
+    return getShanghaiToday();
+  }
+
+  const value = String(input).trim();
+  return /^\d{8}$/.test(value) ? value : null;
+};
+
 export const createApp = () => {
   const app = express();
+
+  app.get('/api/market-overview', async (_req, res) => {
+    const body: MarketOverviewResponse = await fetchEastmoneyMarket();
+    return res.status(200).json(body);
+  });
+
+  app.get('/api/limit-up', async (req, res) => {
+    const tradeDate = parseTradeDate(req.query.date);
+
+    if (tradeDate === null) {
+      return res.status(400).json({ message: 'date 必须是 YYYYMMDD 格式' });
+    }
+
+    const body: LimitUpResponse = await fetchEastmoneyLimitUp(tradeDate);
+    return res.status(200).json(body);
+  });
 
   app.get('/api/quotes', async (req, res) => {
     const rawSymbols = req.query.symbols;
