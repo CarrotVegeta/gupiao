@@ -14,24 +14,35 @@ export type EastmoneySearchPayload = {
 };
 
 type EastmoneyQuoteData = {
+  f2?: unknown;
+  f3?: unknown;
+  f4?: unknown;
+  f8?: unknown;
+  f12?: unknown;
+  f14?: unknown;
+  f18?: unknown;
   f43?: unknown;
   f57?: unknown;
   f58?: unknown;
   f59?: unknown;
   f60?: unknown;
+  f168?: unknown;
   f169?: unknown;
   f170?: unknown;
   f86?: unknown;
 } | null;
 
 export type EastmoneyQuotePayload = {
-  data: EastmoneyQuoteData;
+  data: EastmoneyQuoteData | {
+    diff?: EastmoneyQuoteData[];
+  } | null;
 };
 
 const QUOTE_ENDPOINT = 'https://push2.eastmoney.com/api/qt/stock/get';
+const QUOTE_LIST_ENDPOINT = 'https://push2.eastmoney.com/api/qt/ulist.np/get';
 const SEARCH_ENDPOINT = 'https://searchapi.eastmoney.com/api/suggest/get';
 const SEARCH_TOKEN = 'D43BF722C8E33BDC906FB84D85E326E8';
-const REQUEST_TIMEOUT_MS = 5_000;
+const REQUEST_TIMEOUT_MS = 8_000;
 
 const asNumber = (value: unknown): number | null => {
   if (value === null || value === undefined || value === '-') {
@@ -169,19 +180,41 @@ export const fetchEastmoneySearch = async (
 export const toEastmoneySecId = (symbol: string): string =>
   symbol.startsWith('6') ? `1.${symbol}` : `0.${symbol}`;
 
+const getQuoteData = (payload: EastmoneyQuotePayload): EastmoneyQuoteData => {
+  const data = payload.data;
+
+  if (data && typeof data === 'object' && 'diff' in data) {
+    return Array.isArray(data.diff) ? data.diff[0] ?? null : null;
+  }
+
+  return data ?? null;
+};
+
 export const mapEastmoneyQuote = (
   payload: EastmoneyQuotePayload,
   fetchedAt: string,
 ): Quote => {
-  const data = payload.data;
-  const symbol = asString(data?.f57);
-  const divisor = getPriceDivisor(data?.f59);
-  const price = normalizeRawValue(data?.f43, divisor);
-  const change = normalizeRawValue(data?.f169, divisor);
-  const pct = normalizeRawValue(data?.f170, 100);
-  const preClose = normalizeRawValue(data?.f60, divisor);
+  const data = getQuoteData(payload);
+  const symbol = asString(data?.f57 || data?.f12);
+  const hasScaledFields = data?.f43 !== undefined || data?.f57 !== undefined;
+  const divisor = hasScaledFields ? getPriceDivisor(data?.f59) : 1;
+  const price = hasScaledFields
+    ? normalizeRawValue(data?.f43, divisor)
+    : asNumber(data?.f2);
+  const change = hasScaledFields
+    ? normalizeRawValue(data?.f169, divisor)
+    : asNumber(data?.f4);
+  const pct = hasScaledFields
+    ? normalizeRawValue(data?.f170, 100)
+    : asNumber(data?.f3);
+  const turnover = hasScaledFields
+    ? normalizeRawValue(data?.f168, 100)
+    : asNumber(data?.f8);
+  const preClose = hasScaledFields
+    ? normalizeRawValue(data?.f60, divisor)
+    : asNumber(data?.f18);
   const vendorUpdatedAt = parseVendorUpdatedAt(data?.f86);
-  const name = asString(data?.f58);
+  const name = asString(data?.f58 || data?.f14);
   const isComplete =
     data !== null &&
     symbol.length > 0 &&
@@ -189,8 +222,7 @@ export const mapEastmoneyQuote = (
     price !== null &&
     change !== null &&
     pct !== null &&
-    preClose !== null &&
-    vendorUpdatedAt !== null;
+    preClose !== null;
 
   return {
     symbol,
@@ -198,6 +230,7 @@ export const mapEastmoneyQuote = (
     price,
     change,
     pct,
+    turnover,
     preClose,
     updatedAt: vendorUpdatedAt ?? fetchedAt,
     source: 'eastmoney',
@@ -207,7 +240,19 @@ export const mapEastmoneyQuote = (
 
 const toRequestUrl = (symbol: string): string => {
   const secid = encodeURIComponent(toEastmoneySecId(symbol));
-  return `${QUOTE_ENDPOINT}?secid=${secid}&fields=f43,f57,f58,f59,f60,f169,f170,f86`;
+  return `${QUOTE_ENDPOINT}?secid=${secid}&fields=f43,f57,f58,f59,f60,f168,f169,f170,f86`;
+};
+
+const toBatchRequestUrl = (symbols: string[]): string => {
+  const secids = symbols.map(toEastmoneySecId).join(',');
+  const params = new URLSearchParams({
+    fltt: '2',
+    invt: '2',
+    fields: 'f12,f14,f2,f3,f4,f8,f18',
+    secids,
+  });
+
+  return `${QUOTE_LIST_ENDPOINT}?${params.toString()}`;
 };
 
 const fetchSingleQuote = async (
@@ -269,24 +314,94 @@ const fetchSingleQuote = async (
   }
 };
 
+const fetchBatchQuotes = async (
+  symbols: string[],
+  fetchImpl: typeof fetch,
+): Promise<{ quotes: Quote[]; errors: QuoteError[] } | null> => {
+  if (symbols.length === 0) {
+    return { quotes: [], errors: [] };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const fetchedAt = new Date().toISOString();
+
+  try {
+    const response = await fetchImpl(toBatchRequestUrl(symbols), {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = (await response.json()) as EastmoneyQuotePayload;
+    const rows =
+      payload.data && typeof payload.data === 'object' && 'diff' in payload.data
+        ? payload.data.diff ?? []
+        : [];
+    const quotes: Quote[] = [];
+    const found = new Set<string>();
+
+    for (const row of rows) {
+      const quote = mapEastmoneyQuote({ data: row }, fetchedAt);
+
+      if (quote.status === 'fresh' && symbols.includes(quote.symbol)) {
+        quotes.push(quote);
+        found.add(quote.symbol);
+      }
+    }
+
+    return {
+      quotes,
+      errors: symbols
+        .filter((symbol) => !found.has(symbol))
+        .map((symbol) => ({ symbol, message: '上游未返回行情数据' })),
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 export const fetchEastmoneyQuotes = async (
   symbols: string[],
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ quotes: Quote[]; errors: QuoteError[] }> => {
-  const results = await Promise.all(symbols.map((symbol) => fetchSingleQuote(symbol, fetchImpl)));
+  const validSymbols: string[] = [];
+  const errors: QuoteError[] = [];
 
-  return results.reduce(
-    (acc, result) => {
-      if (result.quote) {
-        acc.quotes.push(result.quote);
-      }
+  for (const rawSymbol of symbols) {
+    try {
+      validSymbols.push(normalizeSymbol(rawSymbol));
+    } catch (error) {
+      errors.push({
+        symbol: rawSymbol.trim(),
+        message: error instanceof Error ? error.message : '未知错误',
+      });
+    }
+  }
 
-      if (result.error) {
-        acc.errors.push(result.error);
-      }
+  const uniqueSymbols = Array.from(new Set(validSymbols));
+  const batch = await fetchBatchQuotes(uniqueSymbols, fetchImpl);
+  const quotes = batch?.quotes ?? [];
+  const missing = batch
+    ? batch.errors.map((error) => error.symbol)
+    : uniqueSymbols;
 
-      return acc;
-    },
-    { quotes: [] as Quote[], errors: [] as QuoteError[] },
-  );
+  const retries = await Promise.all(missing.map((symbol) => fetchSingleQuote(symbol, fetchImpl)));
+
+  for (const result of retries) {
+    if (result.quote) {
+      quotes.push(result.quote);
+    }
+
+    if (result.error) {
+      errors.push(result.error);
+    }
+  }
+
+  return { quotes, errors };
 };

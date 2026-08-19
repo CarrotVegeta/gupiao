@@ -120,6 +120,7 @@ const createFetchMock = ({
           price: 168.2,
           change: 3.2,
           pct: 1.98,
+          turnover: 0.42,
           preClose: 165,
           updatedAt: '2026-08-18T10:30:00.000Z',
           source: 'eastmoney',
@@ -477,7 +478,7 @@ describe('Task 7 app interactions', () => {
           quotes: [
             {
               symbol: '600519', name: '贵州茅台', price: 1297.99, change: 4.9,
-              pct: 0.38, preClose: 1293.09, updatedAt: '2026-08-18T02:30:00.000Z',
+              pct: 0.38, turnover: 0.17, preClose: 1293.09, updatedAt: '2026-08-18T02:30:00.000Z',
               source: 'eastmoney', status: 'fresh',
             },
           ],
@@ -578,7 +579,7 @@ describe('Task 7 app interactions', () => {
     expect(screen.getByText('600519')).toBeInTheDocument();
   });
 
-  it('keeps the active filter when deleting a different custom group', async () => {
+  it('falls back to ungrouped after deleting the selected custom group', async () => {
     const user = userEvent.setup();
 
     render(<App />);
@@ -591,11 +592,13 @@ describe('Task 7 app interactions', () => {
     await user.type(screen.getByLabelText('分组名称'), '波段交易');
     await user.click(screen.getByRole('button', { name: '保存分组' }));
 
-    await user.click(screen.getByRole('button', { name: '波段交易' }));
+    await user.click(screen.getByRole('button', { name: '短线观察' }));
     await user.click(screen.getByRole('button', { name: '编辑分组 短线观察' }));
     await user.click(screen.getByRole('button', { name: '删除分组' }));
 
-    expect(screen.getByRole('button', { name: '波段交易' })).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByRole('button', { name: '未分组' })).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByRole('button', { name: '波段交易' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '短线观察' })).not.toBeInTheDocument();
   });
 
   it('marks every known holding quote stale after a whole refresh rejects', async () => {
@@ -640,12 +643,12 @@ describe('Task 7 app interactions', () => {
           quotes: [
             {
               symbol: '600519', name: '贵州茅台', price: 1297.99, change: 4.9,
-              pct: 0.38, preClose: 1293.09, updatedAt: '2026-08-18T02:30:00.000Z',
+              pct: 0.38, turnover: 0.17, preClose: 1293.09, updatedAt: '2026-08-18T02:30:00.000Z',
               source: 'eastmoney', status: 'fresh',
             },
             {
               symbol: '000001', name: '平安银行', price: 12.3, change: 0.1,
-              pct: 0.82, preClose: 12.2, updatedAt: '2026-08-18T02:30:00.000Z',
+              pct: 0.82, turnover: 1.1, preClose: 12.2, updatedAt: '2026-08-18T02:30:00.000Z',
               source: 'eastmoney', status: 'fresh',
             },
           ],
@@ -661,9 +664,82 @@ describe('Task 7 app interactions', () => {
     expect(await screen.findByText('贵州茅台')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '刷新行情' }));
 
-    expect(await screen.findAllByText('行情已过期')).toHaveLength(2);
+    expect(await screen.findByText('network down，已保留上一轮数据。')).toBeInTheDocument();
+    expect(screen.queryByText('行情已过期')).not.toBeInTheDocument();
     expect(screen.getByText('¥1,297.99')).toBeInTheDocument();
     expect(screen.getByText('¥12.30')).toBeInTheDocument();
+  });
+
+  it('lists positioned stocks in both pages while watch-only stocks stay only in the watchlist', async () => {
+    const user = userEvent.setup();
+    const seededState: StorageState = {
+      groups: [
+        {
+          id: 'ungrouped',
+          name: '未分组',
+          isSystem: true,
+          createdAt: '2026-08-18T00:00:00.000Z',
+        },
+      ],
+      holdings: [
+        {
+          id: 'holding-1',
+          symbol: '600519',
+          name: '贵州茅台',
+          groupId: 'ungrouped',
+          openPrice: 1200,
+          quantity: 1,
+          note: '',
+          createdAt: '2026-08-18T00:00:00.000Z',
+          updatedAt: '2026-08-18T00:00:00.000Z',
+        },
+        {
+          id: 'holding-2',
+          symbol: '000001',
+          name: '平安银行',
+          groupId: 'ungrouped',
+          openPrice: null,
+          quantity: null,
+          note: '先观察',
+          createdAt: '2026-08-18T00:00:00.000Z',
+          updatedAt: '2026-08-18T00:00:00.000Z',
+        },
+      ],
+    };
+    localStorage.setItem('stock-dashboard:v1', JSON.stringify(seededState));
+
+    render(<App />);
+
+    expect(await screen.findByText('贵州茅台')).toBeInTheDocument();
+    expect(screen.queryByText('平安银行')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '持仓 1' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '自选 2' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '自选 2' }));
+
+    expect(await screen.findByRole('heading', { name: '自选股票' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '自选分组' })).toBeInTheDocument();
+    expect(screen.getByText('平安银行')).toBeInTheDocument();
+    expect(screen.getByText('贵州茅台')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '总收益率' })).not.toBeInTheDocument();
+    expect(screen.queryByText('开仓价')).not.toBeInTheDocument();
+    expect(screen.queryByText('持有数量')).not.toBeInTheDocument();
+    expect(screen.queryByText(/持仓收益/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/观察项/)).not.toBeInTheDocument();
+    expect(screen.getByText('先观察')).toBeInTheDocument();
+  });
+
+  it('shows the watchlist empty state when no stocks have been added', async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByRole('heading', { name: '大盘概览' });
+
+    await user.click(screen.getByRole('button', { name: '自选 0' }));
+
+    expect(await screen.findByRole('heading', { name: '自选列表为空' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '自选分组' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '添加股票' })).toBeInTheDocument();
   });
 
   it('falls back to the edited symbol until a later refresh provides the runtime quote name', async () => {
@@ -678,6 +754,7 @@ describe('Task 7 app interactions', () => {
               price: null,
               change: null,
               pct: null,
+              turnover: null,
               preClose: 165,
               updatedAt: '2026-08-18T10:30:00.000Z',
               source: 'eastmoney',
@@ -693,6 +770,7 @@ describe('Task 7 app interactions', () => {
               price: null,
               change: null,
               pct: null,
+              turnover: null,
               preClose: null,
               updatedAt: '2026-08-18T10:31:00.000Z',
               source: 'eastmoney',
@@ -708,6 +786,7 @@ describe('Task 7 app interactions', () => {
               price: 12.3,
               change: 0.1,
               pct: 0.82,
+              turnover: 1.1,
               preClose: 12.2,
               updatedAt: '2026-08-18T10:32:00.000Z',
               source: 'eastmoney',

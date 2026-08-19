@@ -1,8 +1,7 @@
-import { calculateHoldingPerformance } from '../lib/calculations';
 import { formatCurrency, formatPercent } from '../lib/quotes';
 import type { Holding, QuoteMap } from '../types';
 
-type HoldingListProps = {
+type WatchlistProps = {
   holdings: Holding[];
   quotes: QuoteMap;
   onEdit: (holding: Holding) => void;
@@ -31,36 +30,27 @@ const formatSignedCurrency = (value: number): string =>
 const formatSignedPercent = (value: number): string =>
   `${value >= 0 ? '+' : '−'}${formatPercent(Math.abs(value))}`;
 
-export const HoldingList = ({
+export const Watchlist = ({
   holdings,
   quotes,
   onEdit,
   onDelete,
-}: HoldingListProps) => {
+}: WatchlistProps) => {
   if (holdings.length === 0) {
     return (
       <section className="card holding-list holding-list--empty">
-        <p>当前范围暂无持仓</p>
+        <p>当前范围暂无自选股票</p>
       </section>
     );
   }
 
   return (
-    <section className="holding-list" aria-label="持仓列表">
+    <section className="holding-list" aria-label="自选列表">
       {holdings.map((holding) => {
         const quote = quotes[holding.symbol];
-        const performance = calculateHoldingPerformance(holding, quote);
         const hasLiveQuote =
           quote !== undefined && quote.status !== 'unavailable' && quote.price !== null;
         const displayName = quote?.name?.trim() || holding.name || holding.symbol;
-        const profitLabel =
-          holding.openPrice === null || holding.quantity === null
-            ? '观察项：补录开仓价和持有数量后计算收益'
-            : performance.hasQuote
-              ? `持仓收益：${formatSignedCurrency(performance.profit as number)}（${formatSignedPercent(
-                  performance.returnPct as number,
-                )}）`
-              : '持仓收益：—';
 
         return (
           <article key={holding.id} className="quote-row">
@@ -98,14 +88,6 @@ export const HoldingList = ({
                     : formatPercent(quote.turnover)}
                 </dd>
               </div>
-              <div>
-                <dt>开仓价</dt>
-                <dd>{holding.openPrice === null ? '未填写' : formatCurrency(holding.openPrice)}</dd>
-              </div>
-              <div>
-                <dt>持有数量</dt>
-                <dd>{holding.quantity === null ? '未填写' : holding.quantity}</dd>
-              </div>
             </dl>
 
             <div className={`quote-row__chg ${getValueToneClass(quote?.pct)}`}>
@@ -116,10 +98,6 @@ export const HoldingList = ({
                   : formatSignedPercent(quote.pct)}
               </strong>
             </div>
-
-            <p className={`holding-card__profit ${getValueToneClass(performance.hasQuote ? performance.profit : null)}`}>
-              {profitLabel}
-            </p>
 
             <div className="holding-card__actions">
               <button

@@ -4,6 +4,8 @@ type GroupSidebarProps = {
   groups: StockGroup[];
   holdings: Holding[];
   selectedGroupId: string;
+  title?: string;
+  allLabel?: string;
   onSelect: (groupId: string) => void;
   onCreate: () => void;
   onEdit: (group: StockGroup) => void;
@@ -17,6 +19,8 @@ export const GroupSidebar = ({
   groups,
   holdings,
   selectedGroupId,
+  title = '持仓分组',
+  allLabel = '全部持仓',
   onSelect,
   onCreate,
   onEdit,
@@ -26,7 +30,7 @@ export const GroupSidebar = ({
     <div className="group-sidebar__header">
       <div>
         <p className="eyebrow">分组导航</p>
-        <h2 id="group-sidebar-title">持仓分组</h2>
+        <h2 id="group-sidebar-title">{title}</h2>
       </div>
       <button className="button button--secondary" type="button" onClick={onCreate}>
         新建分组
@@ -42,7 +46,7 @@ export const GroupSidebar = ({
             aria-current={selectedGroupId === 'all' ? 'true' : undefined}
             onClick={() => onSelect('all')}
           >
-            <span>全部持仓</span>
+            <span>{allLabel}</span>
             <span className="group-sidebar__count" aria-hidden="true">
               {holdings.length}
             </span>
@@ -63,7 +67,7 @@ export const GroupSidebar = ({
               </span>
             </button>
 
-            {!group.isSystem ? (
+            {!group.isSystem && selectedGroupId === group.id ? (
               <div className="group-sidebar__actions">
                 <button
                   className="icon-button"

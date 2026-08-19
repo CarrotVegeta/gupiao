@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { calculatePortfolioSummary } from './lib/calculations';
+import { calculatePortfolioSummary, hasPositionDetails } from './lib/calculations';
 import { LimitUpList } from './components/LimitUpList';
 import { MarketOverview } from './components/MarketOverview';
 import { PrimaryNav } from './components/PrimaryNav';
@@ -11,6 +11,7 @@ import { GroupSidebar } from './components/GroupSidebar';
 import { HoldingForm, type HoldingFormValues } from './components/HoldingForm';
 import { HoldingList } from './components/HoldingList';
 import { Overview } from './components/Overview';
+import { Watchlist } from './components/Watchlist';
 import { fetchLimitUp, mergeLimitUp } from './lib/limitUp';
 import {
   createUnavailableMarketIndices,
@@ -29,7 +30,7 @@ import type {
   StockGroup,
 } from './types';
 
-const REFRESH_INTERVAL_MS = 30_000;
+const REFRESH_INTERVAL_MS = 10_000;
 
 type ModalState =
   | { type: 'create-group' }
@@ -52,8 +53,6 @@ const normalizeDisplayName = (value: string | null | undefined): string | null =
 
   return trimmed.length > 0 ? trimmed : null;
 };
-
-const isQuoteStale = (quote: Quote | undefined): boolean => quote?.status === 'stale';
 
 const formatTradeDate = (date: Date = new Date()): string => {
   const parts = new Intl.DateTimeFormat('zh-CN', {
@@ -91,7 +90,7 @@ const buildLimitUpUnavailableResponse = (fetchedAt: string): LimitUpResponse => 
 export default function App() {
   const [loadedState] = useState(() => loadState(localStorage));
   const [state, setState] = useState<StorageState>(loadedState.state);
-  const [activePage, setActivePage] = useState<'holdings' | 'limit-up'>('holdings');
+  const [activePage, setActivePage] = useState<'holdings' | 'watchlist' | 'limit-up'>('holdings');
   const [selectedGroupId, setSelectedGroupId] = useState<string>('all');
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
@@ -119,33 +118,41 @@ export default function App() {
     [selectedGroupId, state.groups],
   );
 
-  const filteredHoldings = useMemo(() => {
-    if (selectedGroupId === 'all') {
-      return state.holdings;
-    }
+  const positionedHoldings = useMemo(
+    () => state.holdings.filter(hasPositionDetails),
+    [state.holdings],
+  );
 
-    return state.holdings.filter((holding) => holding.groupId === selectedGroupId);
-  }, [selectedGroupId, state.holdings]);
+  const filterByGroup = useCallback(
+    (holdings: Holding[]): Holding[] => {
+      if (selectedGroupId === 'all') {
+        return holdings;
+      }
+
+      return holdings.filter((holding) => holding.groupId === selectedGroupId);
+    },
+    [selectedGroupId],
+  );
+
+  const filteredHoldings = useMemo(
+    () => filterByGroup(positionedHoldings),
+    [filterByGroup, positionedHoldings],
+  );
+
+  const filteredWatchlist = useMemo(
+    () => filterByGroup(state.holdings),
+    [filterByGroup, state.holdings],
+  );
 
   const summary = useMemo(
     () => calculatePortfolioSummary(filteredHoldings, quotes),
     [filteredHoldings, quotes],
   );
 
-  const allVisibleQuotesAreStale = useMemo(() => {
-    if (filteredHoldings.length === 0) {
-      return false;
-    }
-
-    const visibleQuotes = filteredHoldings.map((holding) => quotes[holding.symbol]);
-
-    return visibleQuotes.length > 0 && visibleQuotes.every(isQuoteStale);
-  }, [filteredHoldings, quotes]);
-
   const marketOverview = useMemo(
     () => marketIndicesInDisplayOrder(marketIndices),
     [marketIndices],
-  );
+  ); // 指数按固定展示顺序排列
 
   const commitState = useCallback((updater: (current: StorageState) => StorageState) => {
     setState((current) => {
@@ -546,130 +553,224 @@ export default function App() {
     );
   };
 
+  const renderGroupSidebar = (holdings: Holding[], title: string, allLabel: string) => (
+    <GroupSidebar
+      groups={state.groups}
+      holdings={holdings}
+      selectedGroupId={selectedGroupId}
+      title={title}
+      allLabel={allLabel}
+      onSelect={setSelectedGroupId}
+      onCreate={() => setModal({ type: 'create-group' })}
+      onEdit={(group) => setModal({ type: 'edit-group', groupId: group.id })}
+      onDelete={(group) => setModal({ type: 'edit-group', groupId: group.id })}
+    />
+  );
+
+  const renderEmptyState = (eyebrow: string, title: string, description: string) => (
+    <section className="card empty-state" aria-live="polite">
+      <p className="eyebrow">{eyebrow}</p>
+      <h2>{title}</h2>
+      <p>{description}</p>
+      <button
+        className="button"
+        type="button"
+        onClick={() => setModal({ type: 'create-holding' })}
+      >
+        添加股票
+      </button>
+    </section>
+  );
+
+  const renderHoldingsPage = () => {
+    if (state.holdings.length === 0) {
+      return (
+        <>
+          {renderGroupSidebar(positionedHoldings, '持仓分组', '全部持仓')}
+          {renderEmptyState(
+            '空白仪表盘',
+            '先添加一只股票，开始跟踪收益表现',
+            '所有添加的股票都会进入“自选”，填写开仓价和持有数量后会同步进入“持仓”。',
+          )}
+        </>
+      );
+    }
+
+    if (positionedHoldings.length === 0) {
+      return (
+        <>
+          {renderGroupSidebar(positionedHoldings, '持仓分组', '全部持仓')}
+          {renderEmptyState(
+            '暂无持仓',
+            '当前还没有持仓股票',
+            '所有添加的股票都会显示在“自选”中，补录开仓价和持有数量后会同步进入“持仓”。',
+          )}
+        </>
+      );
+    }
+
+    return (
+      <>
+        {renderGroupSidebar(positionedHoldings, '持仓分组', '全部持仓')}
+
+        <section className="card holdings-panel">
+          <div className="holdings-panel__header">
+            <div>
+              <p className="eyebrow">
+                {selectedGroupId === 'all'
+                  ? '全部持仓'
+                  : selectedGroup?.name ?? '当前分组'}
+              </p>
+              <h2>股票列表</h2>
+            </div>
+            <button
+              className="button"
+              type="button"
+              onClick={() => setModal({ type: 'create-holding' })}
+            >
+              添加股票
+            </button>
+          </div>
+
+          {filteredHoldings.length === 0 ? (
+            <div className="empty-state empty-state--subtle">
+              <h3>当前分组还没有持仓</h3>
+              <p>你可以切换到“未分组”，或者把股票添加到这个分组。</p>
+            </div>
+          ) : (
+            <HoldingList
+              holdings={filteredHoldings}
+              quotes={quotes}
+              onEdit={(holding) => setModal({ type: 'edit-holding', holdingId: holding.id })}
+              onDelete={handleDeleteHolding}
+            />
+          )}
+        </section>
+      </>
+    );
+  };
+
+  const renderWatchlistPage = () => {
+    if (state.holdings.length === 0) {
+      return (
+        <>
+          {renderGroupSidebar(state.holdings, '自选分组', '全部自选')}
+          {renderEmptyState(
+            '自选',
+            '自选列表为空',
+            '添加股票后会显示在“自选”中，填写开仓价和持有数量可同步进入“持仓”。',
+          )}
+        </>
+      );
+    }
+
+    return (
+      <>
+        {renderGroupSidebar(state.holdings, '自选分组', '全部自选')}
+
+        <section className="card holdings-panel">
+          <div className="holdings-panel__header">
+            <div>
+              <p className="eyebrow">
+                {selectedGroupId === 'all'
+                  ? '全部自选'
+                  : selectedGroup?.name ?? '当前分组'}
+              </p>
+              <h2>自选股票</h2>
+            </div>
+            <div className="holdings-panel__actions">
+              <button
+                className="button button--secondary"
+                type="button"
+                disabled={isRefreshing}
+                onClick={() => {
+                  void refreshQuotes();
+                }}
+              >
+                {isRefreshing ? '刷新中…' : '刷新行情'}
+              </button>
+              <button
+                className="button"
+                type="button"
+                onClick={() => setModal({ type: 'create-holding' })}
+              >
+                添加股票
+              </button>
+            </div>
+          </div>
+
+          {filteredWatchlist.length === 0 ? (
+            <div className="empty-state empty-state--subtle">
+              <h3>当前分组还没有自选股票</h3>
+              <p>你可以切换到“全部自选”，或者把股票添加到这个分组。</p>
+            </div>
+          ) : (
+            <Watchlist
+              holdings={filteredWatchlist}
+              quotes={quotes}
+              onEdit={(holding) => setModal({ type: 'edit-holding', holdingId: holding.id })}
+              onDelete={handleDeleteHolding}
+            />
+          )}
+        </section>
+      </>
+    );
+  };
+
   return (
     <>
-      <div className="dashboard-layout">
+      <div className="dashboard-shell">
         <PrimaryNav
           activePage={activePage}
-          holdingCount={state.holdings.length}
+          holdingCount={positionedHoldings.length}
+          watchlistCount={state.holdings.length}
           limitUpCount={limitUp.status === 'unavailable' ? null : limitUp.items.length}
           onNavigate={setActivePage}
         />
 
-        <main className="dashboard-main">
-          {refreshMessage ? (
-            <section className="banner banner--warning" aria-live="polite">
-              {refreshMessage}
-            </section>
-          ) : null}
+        <div className="dashboard-layout">
+          <main className="dashboard-main">
+            {refreshMessage ? (
+              <section className="banner banner--warning" aria-live="polite">
+                {refreshMessage}
+              </section>
+            ) : null}
 
-          <MarketOverview
-            indices={marketOverview}
-            lastUpdated={marketUpdatedAt}
-            isRefreshing={isMarketRefreshing}
-            onRefresh={() => {
-              void refreshMarketOverview();
-            }}
-          />
-
-          {activePage === 'holdings' ? (
-            state.holdings.length === 0 ? (
-              <>
-                <GroupSidebar
-                  groups={state.groups}
-                  holdings={state.holdings}
-                  selectedGroupId={selectedGroupId}
-                  onSelect={setSelectedGroupId}
-                  onCreate={() => setModal({ type: 'create-group' })}
-                  onEdit={(group) => setModal({ type: 'edit-group', groupId: group.id })}
-                  onDelete={(group) => setModal({ type: 'edit-group', groupId: group.id })}
-                />
-
-                <section className="card empty-state" aria-live="polite">
-                  <p className="eyebrow">空白仪表盘</p>
-                  <h2>先添加一只股票，开始跟踪收益表现</h2>
-                  <p>你可以先新建分组，也可以直接把第一只持仓放到“未分组”。</p>
-                  <button
-                    className="button"
-                    type="button"
-                    onClick={() => setModal({ type: 'create-holding' })}
-                  >
-                    添加股票
-                  </button>
-                </section>
-              </>
-            ) : (
-              <>
-                <Overview
-                  summary={summary}
-                  lastUpdated={lastUpdated}
-                  isRefreshing={isRefreshing}
-                  onRefresh={() => {
-                    void refreshQuotes();
-                  }}
-                />
-
-                <GroupSidebar
-                  groups={state.groups}
-                  holdings={state.holdings}
-                  selectedGroupId={selectedGroupId}
-                  onSelect={setSelectedGroupId}
-                  onCreate={() => setModal({ type: 'create-group' })}
-                  onEdit={(group) => setModal({ type: 'edit-group', groupId: group.id })}
-                  onDelete={(group) => setModal({ type: 'edit-group', groupId: group.id })}
-                />
-
-                <section className="card holdings-panel">
-                  <div className="holdings-panel__header">
-                    <div>
-                      <p className="eyebrow">
-                        {selectedGroupId === 'all'
-                          ? '全部持仓'
-                          : selectedGroup?.name ?? '当前分组'}
-                      </p>
-                      <h2>股票列表</h2>
-                    </div>
-                    <button
-                      className="button"
-                      type="button"
-                      onClick={() => setModal({ type: 'create-holding' })}
-                    >
-                      添加股票
-                    </button>
-                  </div>
-
-                  {allVisibleQuotesAreStale ? (
-                    <p className="stale-note" aria-live="polite">
-                      当前行情全部来自上一轮刷新，请稍后重试。
-                    </p>
-                  ) : null}
-
-                  {filteredHoldings.length === 0 ? (
-                    <div className="empty-state empty-state--subtle">
-                      <h3>当前分组还没有持仓</h3>
-                      <p>你可以切换到“未分组”，或者把股票添加到这个分组。</p>
-                    </div>
-                  ) : (
-                    <HoldingList
-                      holdings={filteredHoldings}
-                      quotes={quotes}
-                      onEdit={(holding) => setModal({ type: 'edit-holding', holdingId: holding.id })}
-                      onDelete={handleDeleteHolding}
-                    />
-                  )}
-                </section>
-              </>
-            )
-          ) : (
-            <LimitUpList
-              data={limitUp}
-              isRefreshing={isLimitUpRefreshing}
+            <MarketOverview
+              indices={marketOverview}
+              lastUpdated={marketUpdatedAt}
+              isRefreshing={isMarketRefreshing}
               onRefresh={() => {
-                void refreshLimitUp();
+                void refreshMarketOverview();
               }}
             />
-          )}
-        </main>
+
+            {activePage === 'holdings' && positionedHoldings.length > 0 ? (
+              <Overview
+                summary={summary}
+                lastUpdated={lastUpdated}
+                isRefreshing={isRefreshing}
+                onRefresh={() => {
+                  void refreshQuotes();
+                }}
+              />
+            ) : null}
+
+            {activePage === 'limit-up' ? (
+              <LimitUpList
+                data={limitUp}
+                isRefreshing={isLimitUpRefreshing}
+                onRefresh={() => {
+                  void refreshLimitUp();
+                }}
+              />
+            ) : activePage === 'holdings' ? (
+              renderHoldingsPage()
+            ) : (
+              renderWatchlistPage()
+            )}
+          </main>
+        </div>
       </div>
 
       {renderDialog()}

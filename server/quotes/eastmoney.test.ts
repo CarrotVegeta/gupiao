@@ -15,6 +15,7 @@ const validPayload = (symbol: string) => ({
   f60: 129309,
   f169: 490,
   f170: 38,
+  f168: 17,
   f86: 1787020200,
 });
 
@@ -85,6 +86,7 @@ describe('eastmoney quote adapter', () => {
       preClose: 1293.09,
       change: 4.9,
       pct: 0.38,
+      turnover: 0.17,
       updatedAt: '2026-08-18T02:30:00.000Z',
       status: 'fresh',
       source: 'eastmoney',
@@ -114,7 +116,25 @@ describe('eastmoney quote adapter', () => {
   it('keeps a successful symbol when another symbol request fails', async () => {
     const fetchImpl = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ data: validPayload('600519') })))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              diff: [
+                {
+                  f2: 1297.99,
+                  f3: 0.38,
+                  f4: 4.9,
+                  f8: 0.17,
+                  f12: '600519',
+                  f14: '贵州茅台',
+                  f18: 1293.09,
+                },
+              ],
+            },
+          }),
+        ),
+      )
       .mockRejectedValueOnce(new Error('upstream timeout'));
 
     const result = await fetchEastmoneyQuotes(['600519', '000001'], fetchImpl);
@@ -126,7 +146,8 @@ describe('eastmoney quote adapter', () => {
   it('reports an empty payload against the requested symbol', async () => {
     const fetchImpl = vi
       .fn<typeof fetch>()
-      .mockResolvedValue(new Response(JSON.stringify({ data: null })));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { diff: [] } })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: null })));
 
     const result = await fetchEastmoneyQuotes(['600519'], fetchImpl);
 
@@ -135,13 +156,15 @@ describe('eastmoney quote adapter', () => {
   });
 
   it('reports an incomplete quote against the requested symbol', async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          data: { ...validPayload('600519'), f169: '-' },
-        }),
-      ),
-    );
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { diff: [] } })))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: { ...validPayload('600519'), f169: '-' },
+          }),
+        ),
+      );
 
     const result = await fetchEastmoneyQuotes(['600519'], fetchImpl);
 
@@ -150,27 +173,58 @@ describe('eastmoney quote adapter', () => {
   });
 
   it('normalizes whitespace before building the upstream request', async () => {
-    const fetchImpl = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ data: validPayload('600519') })));
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            diff: [
+              {
+                f2: 1297.99,
+                f3: 0.38,
+                f4: 4.9,
+                f8: 0.17,
+                f12: '600519',
+                f14: '贵州茅台',
+                f18: 1293.09,
+              },
+            ],
+          },
+        }),
+      ),
+    );
 
     const result = await fetchEastmoneyQuotes([' 600519 '], fetchImpl);
 
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(fetchImpl.mock.calls[0]?.[0]).toContain('secid=1.600519');
-    expect(fetchImpl.mock.calls[0]?.[0]).toContain('f59');
+    expect(fetchImpl.mock.calls[0]?.[0]).toContain('secids=1.600519');
+    expect(fetchImpl.mock.calls[0]?.[0]).toContain('ulist.np/get');
     expect(result.quotes).toMatchObject([{ symbol: '600519', status: 'fresh' }]);
     expect(result.errors).toEqual([]);
   });
 
   it('returns a per-symbol error for invalid symbols without calling upstream', async () => {
-    const fetchImpl = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ data: validPayload('000001') })));
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            diff: [
+              {
+                f2: 12.3,
+                f3: 0.82,
+                f4: 0.1,
+                f8: 1.1,
+                f12: '000001',
+                f14: '平安银行',
+                f18: 12.2,
+              },
+            ],
+          },
+        }),
+      ),
+    );
 
     const result = await fetchEastmoneyQuotes(['sh600519', '000001'], fetchImpl);
 
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0]?.[0]).toContain('secids=0.000001');
     expect(result.quotes).toMatchObject([{ symbol: '000001', status: 'fresh' }]);
     expect(result.errors).toContainEqual({
       symbol: 'sh600519',

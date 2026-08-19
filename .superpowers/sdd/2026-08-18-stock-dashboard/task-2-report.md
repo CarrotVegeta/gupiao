@@ -77,3 +77,60 @@ All three checks passed after the implementation fix.
 ## Concerns
 
 - None at the moment. The current behavior is covered by focused tests, typecheck, and the full suite.
+
+## Fix follow-up — quantity validation
+
+### What changed
+
+- Added strict finite-and-positive validation for `holding.quantity` in `src/lib/calculations.ts`.
+- The calculation helpers now reject `NaN`, `Infinity`, and non-positive quantities with `持有数量必须大于 0`.
+- This prevents invalid quantities from leaking `NaN` / `Infinity` into `profit`, `invested`, and `marketValue`.
+
+### Covering test files
+
+- `src/lib/calculations.test.ts`
+
+### Verification commands and passing output
+
+Focused regression suite:
+
+```bash
+npm test -- src/lib/calculations.test.ts
+```
+
+Passing output:
+
+```text
+Test Files  1 passed (1)
+Tests       5 passed (5)
+```
+
+TypeScript check:
+
+```bash
+npm run typecheck
+```
+
+Passing output:
+
+```text
+> typecheck
+> tsc -b --pretty false
+```
+
+Full suite:
+
+```bash
+npm test
+```
+
+Passing output:
+
+```text
+Test Files  1 passed (1)
+Tests       5 passed (5)
+```
+
+### Fix commit SHA
+
+- `e5b4ba9` — `fix: guard invalid holding quantities`

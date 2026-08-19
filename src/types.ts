@@ -28,6 +28,7 @@ export type Quote = {
   price: number | null;
   change: number | null;
   pct: number | null;
+  turnover: number | null;
   preClose: number | null;
   updatedAt: string | null;
   source: "eastmoney";

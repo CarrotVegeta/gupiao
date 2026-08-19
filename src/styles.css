@@ -1,26 +1,31 @@
 :root {
   color-scheme: light;
-  --bg-canvas: #f8f4eb;
-  --bg-surface: #fffdf9;
-  --bg-muted: #f1eadc;
-  --border-color: #d8cfbf;
-  --text-primary: #16233b;
-  --text-secondary: #5e687d;
-  --accent-primary: #274690;
-  --accent-soft: #d9e3fb;
-  --danger: #a63d40;
-  --danger-soft: #f6d7d8;
-  --rise: #c44536;
-  --fall: #148f77;
-  --neutral: #7b7f8d;
-  --shadow-soft: 0 14px 28px rgba(22, 35, 59, 0.08);
+  --bg-canvas: #f5f5f5;
+  --bg-surface: #ffffff;
+  --bg-muted: #f7f7f7;
+  --border-color: #ececec;
+  --text-primary: #222222;
+  --text-secondary: #888888;
+  --accent-primary: #e23c3c;
+  --accent-soft: #ffe8e8;
+  --danger: #e23c3c;
+  --danger-soft: #ffe8e8;
+  --rise: #e23c3c;
+  --fall: #1aaa38;
+  --neutral: #999999;
+  --shadow-soft: none;
+  --space-1: 8px;
+  --space-2: 12px;
+  --space-3: 16px;
+  --space-4: 24px;
   font-family:
+    Inter,
     'Noto Sans SC',
     'PingFang SC',
     'Microsoft YaHei',
     system-ui,
     sans-serif;
-  line-height: 1.5;
+  line-height: 1.4;
   font-weight: 400;
   color: var(--text-primary);
   background: var(--bg-canvas);
@@ -31,7 +36,7 @@
 }
 
 body {
-  margin: 0;
+ margin: 0;
   min-width: 320px;
   min-height: 100vh;
   background: var(--bg-canvas);
@@ -53,114 +58,188 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid #6b9cff;
+  outline: 2px solid #e23c3c;
   outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
 }
 
 #root {
   min-height: 100vh;
 }
 
-.dashboard-layout {
-  width: min(1440px, 100%);
+.dashboard-shell {
   min-height: 100vh;
-  margin: 0 auto;
-  padding: 32px 24px;
   display: grid;
-  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
-  gap: 24px;
+  grid-template-rows: auto 1fr;
+}
+
+.app-topbar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 0;
+  background: #e23c3c;
+  color: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 4;
+}
+
+.app-topbar__brand {
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: #fff;
+}
+
+.app-topbar nav.card[aria-label='一级导航'] {
+  position: static;
+  justify-self: center;
+  padding: 4px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.app-topbar nav.card[aria-label='一级导航'] .group-sidebar__list {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.app-topbar nav.card[aria-label='一级导航'] .group-sidebar__item {
+  min-width: 108px;
+}
+
+.dashboard-layout {
+  width: min(980px, 100%);
+  margin: 0 auto;
+  padding: 0 0 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
   align-items: start;
 }
 
 .dashboard-main {
   display: grid;
-  gap: 24px;
+  gap: 0;
   min-width: 0;
+  background: #fff;
 }
 
 nav.card[aria-label='一级导航'] {
-  position: sticky;
-  top: 24px;
-  padding: 20px;
-  align-self: start;
+  padding: 0;
+  align-self: center;
 }
 
 nav.card[aria-label='一级导航'] .group-sidebar__list {
-  margin: 0;
+ margin: 0;
 }
 
 nav.card[aria-label='一级导航'] .group-sidebar__select {
-  padding: 16px 18px;
-  background: var(--bg-muted);
+  padding: 8px 4px 10px;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  font-weight: 700;
+  color: #fff;
+}
+
+nav.card[aria-label='一级导航'] .group-sidebar__select:hover {
+  background: transparent;
   border-color: transparent;
-  font-weight: 600;
 }
 
 nav.card[aria-label='一级导航'] .group-sidebar__select[aria-current='page'] {
-  border-color: var(--accent-primary);
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px rgba(39, 70, 144, 0.12);
+  border-color: transparent;
+  border-bottom-color: #fff;
+  background: transparent;
+  color: #fff;
+  box-shadow: none;
 }
 
 nav.card[aria-label='一级导航'] .group-sidebar__count {
   min-width: 2ch;
   text-align: right;
   font-variant-numeric: tabular-nums;
+  color: #fff;
 }
 
 .card,
 .dialog-card {
   background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: 20px;
-  box-shadow: var(--shadow-soft);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .card {
-  padding: 24px;
+  padding: 16px;
 }
 
 .dialog-card {
-  padding: 24px;
+  padding: 20px;
   max-width: 720px;
 }
 
 .dialog-card__danger {
-  margin-top: 24px;
-  padding-top: 24px;
+ gin-top: 16px;
+  padding-top: 16px;
   border-top: 1px solid #e4b6b8;
 }
 
 .dialog-card__body {
-  margin: 0 0 20px;
+ margin: 0 0 16px;
   color: var(--text-secondary);
 }
 
 .eyebrow {
-  margin: 0 0 6px;
+ margin: 0 0 2px;
   color: var(--text-secondary);
-  font-size: 0.9rem;
+  font-size: 0.8rem;
 }
 
 .button,
 .icon-button {
-  border-radius: 999px;
+  border-radius: 10px;
   border: 1px solid transparent;
+  font-weight: 600;
   transition:
     transform 0.15s ease,
     background 0.15s ease,
-    border-color 0.15s ease;
-}
-
-.button:hover,
-.icon-button:hover {
-  transform: translateY(-1px);
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .button {
-  padding: 10px 18px;
+  padding: 7px 14px;
   background: var(--accent-primary);
   color: #fff;
+  box-shadow: none;
+}
+
+.button:hover {
+  background: #c62f2f;
+  box-shadow: none;
+  transform: none;
+}
+
+.button:active {
+  box-shadow: 0 1px 2px rgba(22, 35, 59, 0.18);
+  transform: none;
 }
 
 .button--danger {
@@ -168,28 +247,53 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   color: #fff;
 }
 
+.button--danger:hover {
+  background: #8f3336;
+  box-shadow: 0 3px 10px rgba(166, 61, 64, 0.3);
+}
+
 .button:disabled {
   cursor: not-allowed;
   opacity: 0.65;
+  box-shadow: none;
   transform: none;
 }
 
 .button--secondary,
-.button--ghost,
-.icon-button {
-  background: var(--bg-muted);
-  border-color: var(--border-color);
+.button--ghost {
+  background: #fff;
+  border-color: #ddd;
   color: var(--text-primary);
+  box-shadow: none;
+}
+
+.button--secondary:hover,
+.button--ghost:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent-primary);
+  color: var(--text-primary);
+  transform: none;
 }
 
 .icon-button {
-  padding: 8px 14px;
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.icon-button:hover {
+  background: var(--bg-muted);
+  color: var(--text-primary);
 }
 
 .icon-button--danger {
   color: var(--danger);
+}
+
+.icon-button--danger:hover {
   background: var(--danger-soft);
-  border-color: #e4b6b8;
+  color: var(--danger);
 }
 
 .overview__header,
@@ -203,11 +307,17 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   align-items: flex-start;
 }
 
+.holdings-panel__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .overview__header h2,
 .group-sidebar__header h2,
 .dialog-card__header h2 {
-  margin: 0;
-  font-size: 1.35rem;
+ margin: 0;
+  font-size: 1.15rem;
 }
 
 .overview__actions {
@@ -218,40 +328,49 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 }
 
 .overview__meta {
-  margin: 0;
+ margin: 0;
   color: var(--text-secondary);
+}
+
+.overview {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 16px;
+  align-items: center;
 }
 
 .overview__hero {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 16px;
-  align-items: flex-end;
-  margin: 28px 0 24px;
+  align-items: baseline;
+ margin: 0;
 }
 
 .overview__hero-value {
-  margin: 0;
-  font-size: clamp(2rem, 4vw, 3rem);
-  font-weight: 700;
+ margin: 0;
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
 }
 
 .overview__status-group {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   align-items: flex-end;
 }
 
 .status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
+  gap: 6px;
+  padding: 3px 10px;
   border-radius: 999px;
   border: 1px solid var(--border-color);
   background: var(--bg-muted);
   color: var(--text-secondary);
+  font-size: 0.85rem;
 }
 
 .status-note {
@@ -260,23 +379,22 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 
 .overview__metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 16px;
-  margin: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+ margin: 0;
 }
 
 .market-overview {
-  padding: 26px;
+  padding: 12px 14px;
   overflow: hidden;
 }
 
 .market-overview__header {
   display: flex;
   justify-content: space-between;
-  gap: 24px;
-  align-items: flex-start;
-  padding-bottom: 22px;
-  border-bottom: 1px solid var(--border-color);
+  gap: 16px;
+  align-items: center;
+  padding-bottom: 10px;
 }
 
 .market-overview__title {
@@ -291,8 +409,8 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 }
 
 .market-overview__heading-row h2 {
-  margin: 0;
-  font-size: clamp(1.45rem, 2vw, 1.8rem);
+ margin: 0;
+  font-size: clamp(1.25rem, 1.6vw, 1.5rem);
   letter-spacing: -0.03em;
 }
 
@@ -302,7 +420,7 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   gap: 6px;
   padding: 4px 9px;
   border-radius: 999px;
-  background: #edf6f1;
+  background: rgba(34, 197, 94, 0.14);
   color: var(--fall);
   font-size: 0.75rem;
   font-weight: 700;
@@ -317,9 +435,9 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 }
 
 .market-overview__description {
-  margin: 7px 0 0;
+ margin: 4px 0 0;
   color: var(--text-secondary);
-  font-size: 0.88rem;
+  font-size: 0.85rem;
 }
 
 .market-overview__toolbar {
@@ -334,7 +452,7 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 0;
+ margin: 0;
   color: var(--text-secondary);
   font-size: 0.8rem;
 }
@@ -347,26 +465,33 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 .market-overview__grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-  margin: 22px 0 0;
+  gap: 0;
+ margin: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
 }
 
 .market-index-card {
   min-width: 0;
-  padding: 17px 18px 15px;
-  border: 1px solid var(--border-color);
-  border-top: 3px solid var(--neutral);
-  border-radius: 16px;
-  background: linear-gradient(145deg, var(--bg-surface), #fbf8f1);
+  padding: 10px 12px;
+  border: 0;
+  border-right: 1px solid var(--border-color);
+  border-radius: 0;
+  background: transparent;
+}
+
+.market-index-card:last-child {
+  border-right: 0;
 }
 
 .market-index-card--fresh {
-  border-top-color: var(--accent-primary);
+  border-top-color: var(--border-color);
 }
 
 .market-index-card--stale,
 .market-index-card--unavailable {
-  background: #faf8f3;
+  background: #111627;
 }
 
 .market-index-card__topline {
@@ -400,7 +525,7 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
-  margin: 13px 0 15px;
+ margin: 6px 0 8px;
 }
 
 .market-index-card__price > span,
@@ -411,7 +536,7 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 
 .market-index-card__price strong {
   color: var(--text-primary);
-  font-size: clamp(1.4rem, 2.2vw, 1.85rem);
+  font-size: clamp(1.15rem, 1.8vw, 1.5rem);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.04em;
 }
@@ -419,8 +544,8 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 .market-index-card__changes {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  padding-top: 11px;
+  gap: 8px;
+  padding-top: 7px;
   border-top: 1px solid rgba(216, 207, 191, 0.75);
 }
 
@@ -429,7 +554,7 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   flex-direction: column;
   gap: 3px;
   min-width: 0;
-  margin: 0;
+ margin: 0;
 }
 
 .market-index-card__changes strong {
@@ -442,56 +567,71 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 
 .metric-card {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   align-content: start;
   min-height: 100%;
-  padding: 16px;
-  border-radius: 16px;
+  padding: 10px 12px;
+  border-radius: 12px;
   border: 1px solid var(--border-color);
-  background: var(--bg-surface);
+  background: var(--bg-muted);
 }
 
 .metric-card dt {
   color: var(--text-secondary);
-  margin-bottom: 8px;
+ gin-bottom: 2px;
 }
 
 .metric-card dd {
-  margin: 0;
-  font-size: 1.1rem;
+ margin: 0;
+  font-size: 1rem;
   font-weight: 600;
 }
 
 .group-sidebar__list {
   list-style: none;
-  margin: 20px 0 0;
+ margin: 12px 0 0;
   padding: 0;
   display: grid;
-  gap: 12px;
+  gap: 8px;
+}
+
+.group-sidebar .group-sidebar__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .group-sidebar__item {
-  display: grid;
-  gap: 10px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
 }
 
 .group-sidebar__select {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 14px 16px;
-  border-radius: 16px;
+  gap: 10px;
+  width: auto;
+  padding: 8px 12px;
+  border-radius: 10px;
   border: 1px solid var(--border-color);
   background: var(--bg-surface);
   color: var(--text-primary);
   text-align: left;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.group-sidebar__select:hover {
+  border-color: var(--accent-primary);
 }
 
 .group-sidebar__select[aria-current='true'] {
   border-color: var(--accent-primary);
   background: var(--accent-soft);
+  color: var(--accent-primary);
 }
 
 .group-sidebar__count {
@@ -507,13 +647,13 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px 16px;
-  margin-top: 24px;
+  gap: 14px 12px;
+ gin-top: 16px;
 }
 
 .field {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .field--full {
@@ -522,10 +662,10 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 
 .input {
   width: 100%;
-  padding: 12px 14px;
-  border-radius: 14px;
+  padding: 9px 12px;
+  border-radius: 10px;
   border: 1px solid var(--border-color);
-  background: var(--bg-surface);
+  background: var(--bg-muted);
   color: var(--text-primary);
 }
 
@@ -594,43 +734,43 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   position: fixed;
   inset: 0;
   overflow: auto;
-  padding: 32px 24px;
+  padding: 24px 16px;
   background: rgba(22, 35, 59, 0.38);
 }
 
 .dialog-stack {
   width: min(720px, 100%);
-  margin: 0 auto;
+ margin: 0 auto;
   display: grid;
-  gap: 20px;
+  gap: 16px;
 }
 
 .banner {
-  padding: 14px 18px;
-  border-radius: 16px;
+  padding: 9px 14px;
+  border-radius: 10px;
   border: 1px solid var(--border-color);
 }
 
 .banner--warning {
-  background: #fff2d8;
-  border-color: #f0c87c;
-  color: #78551b;
+  background: rgba(255, 196, 92, 0.12);
+  border-color: rgba(255, 196, 92, 0.35);
+  color: #f6d58a;
 }
 
 .empty-state {
   display: grid;
-  gap: 14px;
+  gap: 8px;
   justify-items: start;
 }
 
 .empty-state h2,
 .empty-state h3,
 .holdings-panel__header h2 {
-  margin: 0;
+ margin: 0;
 }
 
 .empty-state p {
-  margin: 0;
+ margin: 0;
   color: var(--text-secondary);
 }
 
@@ -640,18 +780,18 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 
 .holdings-panel {
   display: grid;
-  gap: 18px;
+  gap: 12px;
 }
 
 section[aria-labelledby='limit-up-list-title'] {
   display: grid;
-  gap: 20px;
+  gap: 14px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
 
 section[aria-labelledby='limit-up-list-title'] .overview__header {
-  margin-bottom: 0;
+ gin-bottom: 0;
 }
 
 section[aria-labelledby='limit-up-list-title'] .overview__status-group {
@@ -659,7 +799,7 @@ section[aria-labelledby='limit-up-list-title'] .overview__status-group {
 }
 
 section[aria-labelledby='limit-up-list-title'] .banner {
-  margin: 0;
+ margin: 0;
 }
 
 section[aria-labelledby='limit-up-list-title'] .empty-state {
@@ -677,10 +817,10 @@ section[aria-labelledby='limit-up-list-title'] table {
 }
 
 section[aria-labelledby='limit-up-list-title'] thead th {
-  padding: 12px 14px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-secondary);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 600;
   text-align: left;
   white-space: nowrap;
@@ -688,7 +828,7 @@ section[aria-labelledby='limit-up-list-title'] thead th {
 
 section[aria-labelledby='limit-up-list-title'] tbody th,
 section[aria-labelledby='limit-up-list-title'] tbody td {
-  padding: 14px;
+  padding: 9px 10px;
   border-bottom: 1px solid rgba(216, 207, 191, 0.7);
   vertical-align: top;
 }
@@ -699,7 +839,7 @@ section[aria-labelledby='limit-up-list-title'] tbody tr:last-child td {
 }
 
 section[aria-labelledby='limit-up-list-title'] tbody tr:nth-child(even) {
-  background: rgba(241, 234, 220, 0.42);
+  background: rgba(21, 32, 51, 0.65);
 }
 
 section[aria-labelledby='limit-up-list-title'] tbody th {
@@ -709,7 +849,7 @@ section[aria-labelledby='limit-up-list-title'] tbody th {
 }
 
 section[aria-labelledby='limit-up-list-title'] tbody th div {
-  margin-top: 4px;
+ gin-top: 4px;
   color: var(--text-secondary);
   font-size: 0.9rem;
   font-weight: 500;
@@ -725,30 +865,21 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
   color: var(--rise);
 }
 
-.stale-note {
-  margin: 0;
-  color: var(--text-secondary);
-}
-
-.holding-list {
-  display: grid;
-  gap: 18px;
-}
-
 .holding-list--empty {
   text-align: center;
   color: var(--text-secondary);
 }
 
 .holding-card__symbol {
-  margin: 0 0 6px;
+ margin: 0 0 2px;
   color: var(--text-secondary);
   font-weight: 600;
+  font-size: 0.85rem;
 }
 
 .holding-card__header h3 {
-  margin: 0;
-  font-size: 1.3rem;
+ margin: 0;
+  font-size: 1.1rem;
 }
 
 .holding-card__actions {
@@ -758,30 +889,87 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
   gap: 8px;
 }
 
+.holding-list {
+  display: grid;
+  gap: 0;
+}
+
+.quote-table-wrap {
+  overflow-x: auto;
+}
+
+.quote-table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+}
+
+.quote-table th,
+.quote-table td {
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border-color);
+  font-variant-numeric: tabular-nums;
+}
+
+.quote-table thead th {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--bg-muted);
+}
+
+.quote-table tbody th {
+  font-weight: 600;
+}
+
+.quote-table__name {
+  color: var(--text-primary);
+}
+
+.quote-table tbody th div {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.holding-card.card {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 14px 16px;
+  background: transparent;
+}
+
 .holding-card__metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-  margin: 20px 0 18px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+ margin: 12px 0 10px;
+}
+
+.holding-card__metrics--quote-only {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .holding-card__metrics dt {
-  margin-bottom: 6px;
+ gin-bottom: 2px;
   color: var(--text-secondary);
 }
 
 .holding-card__metrics dd {
-  margin: 0;
+ margin: 0;
   font-weight: 600;
 }
 
 .holding-card__profit {
-  margin: 0;
+ margin: 0;
   font-weight: 600;
 }
 
 .holding-card__note {
-  margin: 16px 0 0;
+ margin: 8px 0 0;
   color: var(--text-secondary);
 }
 
@@ -803,16 +991,30 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
 }
 
 @media (max-width: 900px) {
-  .dashboard-layout {
-    padding: 24px 16px;
+  .app-topbar {
     grid-template-columns: 1fr;
-    gap: 16px;
+    justify-items: center;
+    padding: 12px;
+  }
+
+  .dashboard-layout {
+    padding: 16px 12px;
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .dashboard-rail {
+    position: static;
   }
 
   .dashboard-main,
   .holding-card__metrics,
   .form-grid {
-    gap: 16px;
+    gap: 12px;
+  }
+
+  .overview {
+    grid-template-columns: 1fr;
   }
 
   .overview__header,
@@ -824,6 +1026,19 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
     flex-direction: column;
   }
 
+  .overview__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .market-overview__grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .market-index-card {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-color);
+  }
+
   .market-overview__header {
     flex-direction: column;
   }
@@ -831,7 +1046,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
   nav.card[aria-label='一级导航'] {
     position: static;
     top: auto;
-    padding: 16px;
+    padding: 12px;
   }
 
   nav.card[aria-label='一级导航'] .group-sidebar__list {
@@ -857,9 +1072,13 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
   }
 
   .overview__metrics,
-  .holding-card__metrics,
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .holding-card__metrics,
+  .holding-card__metrics--quote-only {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   section[aria-labelledby='limit-up-list-title'] {
@@ -873,7 +1092,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
   }
 
   .market-overview {
-    padding: 20px;
+    padding: 14px;
   }
 
   .market-overview__toolbar {
@@ -883,5 +1102,93 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
 
   .market-overview__grid {
     grid-template-columns: 1fr;
+  }
+}
+
+
+.quote-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.2fr) minmax(0, 2fr) 92px auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  background: #fff;
+}
+
+.quote-row__identity h3 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.quote-row__quotes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.quote-row__quotes dt {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.quote-row__quotes dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.quote-row__chg {
+  min-width: 84px;
+  padding: 8px 6px;
+  border-radius: 4px;
+  text-align: center;
+  color: #fff;
+}
+
+.quote-row__chg.value--rise,
+.quote-row__chg.value--rise strong {
+  background: #e23c3c;
+  color: #fff;
+}
+
+.quote-row__chg.value--fall,
+.quote-row__chg.value--fall strong {
+  background: #1aaa38;
+  color: #fff;
+}
+
+.quote-row__chg.value--neutral,
+.quote-row__chg.value--neutral strong {
+  background: #bdbdbd;
+  color: #fff;
+}
+
+.quote-row__chg span {
+  display: none;
+}
+
+.quote-row__chg strong {
+  display: block;
+  font-size: 1rem;
+}
+
+.market-overview,
+.overview,
+.group-sidebar,
+.holdings-panel {
+  border-bottom: 1px solid var(--border-color);
+}
+
+@media (max-width: 900px) {
+  .quote-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .quote-row__quotes,
+  .holding-card__actions,
+  .holding-card__profit {
+    grid-column: 1 / -1;
   }
 }

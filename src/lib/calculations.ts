@@ -9,7 +9,7 @@ const assertOptionalPositiveNumber = (value: number | null, message: string): vo
   }
 };
 
-const hasPositionDetails = (holding: Holding): holding is Holding & {
+export const hasPositionDetails = (holding: Holding): holding is Holding & {
   openPrice: number;
   quantity: number;
 } => holding.openPrice !== null && holding.quantity !== null;

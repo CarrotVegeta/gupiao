@@ -19,6 +19,7 @@ import { LimitUpList } from './LimitUpList';
 import { MarketOverview } from './MarketOverview';
 import { Overview } from './Overview';
 import { PrimaryNav } from './PrimaryNav';
+import { Watchlist } from './Watchlist';
 
 const groupsFixture = (): StockGroup[] => [
   {
@@ -60,6 +61,7 @@ const quote = (overrides: Partial<Quote> = {}): Quote => ({
   price: 12,
   change: 2,
   pct: 20,
+  turnover: 1.23,
   preClose: 10,
   updatedAt: '2026-08-18T10:30:00.000Z',
   source: 'eastmoney',
@@ -410,13 +412,42 @@ describe('Task 6 dashboard components', () => {
       'true',
     );
 
+    expect(screen.queryByRole('button', { name: '编辑分组 长期持仓' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '删除分组 长期持仓' })).not.toBeInTheDocument();
+
     await user.click(screen.getByRole('button', { name: '长期持仓' }));
     await user.click(screen.getByRole('button', { name: '新建分组' }));
-    await user.click(screen.getByRole('button', { name: '编辑分组 长期持仓' }));
-    await user.click(screen.getByRole('button', { name: '删除分组 长期持仓' }));
 
     expect(onSelect).toHaveBeenCalledWith('long-term');
     expect(onCreate).toHaveBeenCalledTimes(1);
+    expect(onEdit).not.toHaveBeenCalled();
+    expect(onDelete).not.toHaveBeenCalled();
+  });
+
+  it('shows group edit and delete actions only for the selected custom group', async () => {
+    const user = userEvent.setup();
+    const onEdit = vi.fn();
+    const onDelete = vi.fn();
+
+    render(
+      <GroupSidebar
+        groups={groupsFixture()}
+        holdings={[
+          holding(),
+          holding({ id: 'h-2', groupId: 'long-term', symbol: '000001', name: '平安银行' }),
+        ]}
+        selectedGroupId="long-term"
+        onSelect={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={onEdit}
+        onDelete={onDelete}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: '编辑分组 系统观察' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '编辑分组 长期持仓' }));
+    await user.click(screen.getByRole('button', { name: '删除分组 长期持仓' }));
+
     expect(onEdit).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'long-term', name: '长期持仓' }),
     );
@@ -455,6 +486,25 @@ describe('Task 6 dashboard components', () => {
     expect(screen.getByText('观察业绩')).toBeInTheDocument();
   });
 
+  it('renders watchlist cards without position fields', () => {
+    render(
+      <Watchlist
+        holdings={[holding({ openPrice: 10, quantity: 100, note: '先观察' })]}
+        quotes={{ '600519': quote() }}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText('开仓价')).not.toBeInTheDocument();
+    expect(screen.queryByText('持有数量')).not.toBeInTheDocument();
+    expect(screen.queryByText(/持仓收益/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/观察项/)).not.toBeInTheDocument();
+    expect(screen.getByText('换手')).toBeInTheDocument();
+    expect(screen.getByText('最新价')).toBeInTheDocument();
+    expect(screen.getByText('先观察')).toBeInTheDocument();
+  });
+
   it('marks a holding without position details as an observation item', () => {
     render(
       <HoldingList
@@ -477,6 +527,7 @@ describe('Task 6 dashboard components', () => {
         price: 12,
         change: -0.2,
         pct: -1.64,
+        turnover: 2.5,
         preClose: 12.2,
         status: 'stale',
       }),
@@ -501,14 +552,14 @@ describe('Task 6 dashboard components', () => {
     );
 
     expect(screen.getByText('暂无行情')).toBeInTheDocument();
-    expect(screen.getByText('行情已过期')).toBeInTheDocument();
+    expect(screen.queryByText('行情已过期')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '编辑 平安银行' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '删除 平安银行' })).toBeInTheDocument();
     expect(screen.getByText('−1.64%')).toHaveClass('value--fall');
     expect(screen.getByText('持仓收益：+¥200.00（+20.00%）')).toHaveClass('value--rise');
   });
 
-  it('shows the runtime quote name, change amount, percent, and quote time', () => {
+  it('shows the runtime quote name, change amount, and percent', () => {
     render(
       <HoldingList
         holdings={[holding({ name: '持仓备用名称' })]}
@@ -523,7 +574,10 @@ describe('Task 6 dashboard components', () => {
     expect(screen.getByRole('heading', { name: '行情实时名称' })).toBeInTheDocument();
     expect(screen.getByText('+¥2.00')).toHaveClass('value--rise');
     expect(screen.getByText('+20.00%')).toHaveClass('value--rise');
-    expect(screen.getByText('2026-08-18 18:30:00')).toBeInTheDocument();
+    expect(screen.getByText('换手')).toBeInTheDocument();
+    expect(screen.getByText('1.23%')).toBeInTheDocument();
+    expect(screen.queryByText('更新时间')).not.toBeInTheDocument();
+    expect(screen.queryByText('2026-08-18 18:30:00')).not.toBeInTheDocument();
   });
 
   it('renders overview metrics and refresh status', () => {
@@ -564,20 +618,24 @@ describe('Task 6 dashboard components', () => {
       <PrimaryNav
         activePage="limit-up"
         holdingCount={12}
+        watchlistCount={3}
         limitUpCount={null}
         onNavigate={onNavigate}
       />,
     );
 
     expect(screen.getByRole('button', { name: '持仓 12' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('button', { name: '自选 3' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('button', { name: '涨停聚焦 —' })).toHaveAttribute(
       'aria-current',
       'page',
     );
 
     await user.click(screen.getByRole('button', { name: '持仓 12' }));
-
     expect(onNavigate).toHaveBeenCalledWith('holdings');
+
+    await user.click(screen.getByRole('button', { name: '自选 3' }));
+    expect(onNavigate).toHaveBeenCalledWith('watchlist');
     expect(screen.queryByRole('button', { name: /全部持仓|设置/ })).not.toBeInTheDocument();
   });
 
