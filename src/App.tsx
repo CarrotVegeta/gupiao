@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { calculatePortfolioSummary } from './lib/calculations';
+import { LimitUpList } from './components/LimitUpList';
+import { MarketOverview } from './components/MarketOverview';
+import { PrimaryNav } from './components/PrimaryNav';
 import { fetchQuotes, mergeQuotes } from './lib/quotes';
 import { searchStocks } from './lib/search';
 import { loadState, moveHoldingsToGroup, saveState } from './lib/storage';
@@ -8,7 +11,17 @@ import { GroupSidebar } from './components/GroupSidebar';
 import { HoldingForm, type HoldingFormValues } from './components/HoldingForm';
 import { HoldingList } from './components/HoldingList';
 import { Overview } from './components/Overview';
-import type { Holding, Quote, QuotesResponse, StorageState, StockGroup } from './types';
+import { fetchLimitUp, mergeLimitUp } from './lib/limitUp';
+import { fetchMarketOverview, mergeMarketOverview } from './lib/market';
+import type {
+  Holding,
+  LimitUpResponse,
+  MarketIndex,
+  Quote,
+  QuotesResponse,
+  StorageState,
+  StockGroup,
+} from './types';
 
 const REFRESH_INTERVAL_MS = 30_000;
 
@@ -36,13 +49,43 @@ const normalizeDisplayName = (value: string | null | undefined): string | null =
 
 const isQuoteStale = (quote: Quote | undefined): boolean => quote?.status === 'stale';
 
+const formatTradeDate = (date: Date = new Date()): string => {
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === 'year')?.value ?? '';
+  const month = parts.find((part) => part.type === 'month')?.value ?? '';
+  const day = parts.find((part) => part.type === 'day')?.value ?? '';
+
+  return `${year}${month}${day}`;
+};
+
+const emptyLimitUpResponse = (): LimitUpResponse => ({
+  tradeDate: formatTradeDate(),
+  items: [],
+  fetchedAt: '',
+  source: 'eastmoney',
+  status: 'stale',
+  error: null,
+});
+
 export default function App() {
   const [loadedState] = useState(() => loadState(localStorage));
   const [state, setState] = useState<StorageState>(loadedState.state);
+  const [activePage, setActivePage] = useState<'holdings' | 'limit-up'>('holdings');
   const [selectedGroupId, setSelectedGroupId] = useState<string>('all');
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [marketIndices, setMarketIndices] = useState<Record<string, MarketIndex>>({});
+  const [marketUpdatedAt, setMarketUpdatedAt] = useState<string | null>(null);
+  const [isMarketRefreshing, setIsMarketRefreshing] = useState(false);
+  const [limitUp, setLimitUp] = useState<LimitUpResponse>(emptyLimitUpResponse());
+  const [isLimitUpRefreshing, setIsLimitUpRefreshing] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState<string | null>(
     loadedState.recovered ? '本地数据已恢复为默认状态。' : null,
   );
@@ -81,6 +124,8 @@ export default function App() {
 
     return visibleQuotes.length > 0 && visibleQuotes.every(isQuoteStale);
   }, [filteredHoldings, quotes]);
+
+  const marketOverview = useMemo(() => Object.values(marketIndices), [marketIndices]);
 
   const commitState = useCallback((updater: (current: StorageState) => StorageState) => {
     setState((current) => {
@@ -137,6 +182,43 @@ export default function App() {
     [holdingSymbols],
   );
 
+  const refreshMarketOverview = useCallback(async (): Promise<void> => {
+    setIsMarketRefreshing(true);
+
+    try {
+      const response = await fetchMarketOverview();
+
+      setMarketIndices((current) => mergeMarketOverview(current, response));
+      setMarketUpdatedAt(response.fetchedAt);
+    } finally {
+      setIsMarketRefreshing(false);
+    }
+  }, []);
+
+  const refreshLimitUp = useCallback(async (): Promise<void> => {
+    setIsLimitUpRefreshing(true);
+
+    try {
+      const response = await fetchLimitUp(formatTradeDate());
+
+      setLimitUp((current) => mergeLimitUp(current, response));
+    } finally {
+      setIsLimitUpRefreshing(false);
+    }
+  }, []);
+
+  const refreshVisibleData = useCallback((): void => {
+    void refreshMarketOverview();
+
+    if (holdingSymbols.length > 0) {
+      void refreshQuotes(holdingSymbols);
+    }
+
+    if (activePage === 'limit-up') {
+      void refreshLimitUp();
+    }
+  }, [activePage, holdingSymbols, refreshLimitUp, refreshMarketOverview, refreshQuotes]);
+
   useEffect(() => {
     if (holdingSymbols.length === 0) {
       return;
@@ -146,10 +228,6 @@ export default function App() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (holdingSymbols.length === 0) {
-      return;
-    }
-
     let timerId: number | null = null;
 
     const clearTimer = (): void => {
@@ -162,18 +240,18 @@ export default function App() {
     const startTimer = (): void => {
       clearTimer();
 
-      if (document.visibilityState !== 'visible' || holdingSymbols.length === 0) {
+      if (document.visibilityState !== 'visible') {
         return;
       }
 
       timerId = window.setInterval(() => {
-        void refreshQuotes(holdingSymbols);
+        refreshVisibleData();
       }, REFRESH_INTERVAL_MS);
     };
 
     const handleVisibilityChange = (): void => {
-      if (document.visibilityState === 'visible' && holdingSymbols.length > 0) {
-        void refreshQuotes(holdingSymbols);
+      if (document.visibilityState === 'visible') {
+        refreshVisibleData();
         startTimer();
         return;
       }
@@ -188,7 +266,19 @@ export default function App() {
       clearTimer();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [holdingSymbols, refreshQuotes]);
+  }, [refreshVisibleData]);
+
+  useEffect(() => {
+    void refreshMarketOverview();
+  }, [refreshMarketOverview]);
+
+  useEffect(() => {
+    if (activePage !== 'limit-up') {
+      return;
+    }
+
+    void refreshLimitUp();
+  }, [activePage, refreshLimitUp]);
 
   const closeModal = (): void => setModal(null);
 
@@ -421,36 +511,56 @@ export default function App() {
 
   return (
     <>
-      <main className="app-shell">
-        <div className="dashboard-grid">
-          <div className="sidebar-column">
-            <GroupSidebar
-              groups={state.groups}
-              holdings={state.holdings}
-              selectedGroupId={selectedGroupId}
-              onSelect={setSelectedGroupId}
-              onCreate={() => setModal({ type: 'create-group' })}
-              onEdit={(group) => setModal({ type: 'edit-group', groupId: group.id })}
-              onDelete={(group) => setModal({ type: 'edit-group', groupId: group.id })}
-            />
-          </div>
+      <div className="dashboard-layout">
+        <PrimaryNav
+          activePage={activePage}
+          holdingCount={state.holdings.length}
+          limitUpCount={limitUp.fetchedAt ? limitUp.items.length : null}
+          onNavigate={setActivePage}
+        />
 
-          <div className="content-column">
-            {refreshMessage ? (
-              <section className="banner banner--warning" aria-live="polite">
-                {refreshMessage}
-              </section>
-            ) : null}
+        <main className="dashboard-main">
+          {refreshMessage ? (
+            <section className="banner banner--warning" aria-live="polite">
+              {refreshMessage}
+            </section>
+          ) : null}
 
-            {state.holdings.length === 0 ? (
-              <section className="card empty-state" aria-live="polite">
-                <p className="eyebrow">空白仪表盘</p>
-                <h2>先添加一只股票，开始跟踪收益表现</h2>
-                <p>你可以先新建分组，也可以直接把第一只持仓放到“未分组”。</p>
-                <button className="button" type="button" onClick={() => setModal({ type: 'create-holding' })}>
-                  添加股票
-                </button>
-              </section>
+          <MarketOverview
+            indices={marketOverview}
+            lastUpdated={marketUpdatedAt}
+            isRefreshing={isMarketRefreshing}
+            onRefresh={() => {
+              void refreshMarketOverview();
+            }}
+          />
+
+          {activePage === 'holdings' ? (
+            state.holdings.length === 0 ? (
+              <>
+                <GroupSidebar
+                  groups={state.groups}
+                  holdings={state.holdings}
+                  selectedGroupId={selectedGroupId}
+                  onSelect={setSelectedGroupId}
+                  onCreate={() => setModal({ type: 'create-group' })}
+                  onEdit={(group) => setModal({ type: 'edit-group', groupId: group.id })}
+                  onDelete={(group) => setModal({ type: 'edit-group', groupId: group.id })}
+                />
+
+                <section className="card empty-state" aria-live="polite">
+                  <p className="eyebrow">空白仪表盘</p>
+                  <h2>先添加一只股票，开始跟踪收益表现</h2>
+                  <p>你可以先新建分组，也可以直接把第一只持仓放到“未分组”。</p>
+                  <button
+                    className="button"
+                    type="button"
+                    onClick={() => setModal({ type: 'create-holding' })}
+                  >
+                    添加股票
+                  </button>
+                </section>
+              </>
             ) : (
               <>
                 <Overview
@@ -460,6 +570,16 @@ export default function App() {
                   onRefresh={() => {
                     void refreshQuotes();
                   }}
+                />
+
+                <GroupSidebar
+                  groups={state.groups}
+                  holdings={state.holdings}
+                  selectedGroupId={selectedGroupId}
+                  onSelect={setSelectedGroupId}
+                  onCreate={() => setModal({ type: 'create-group' })}
+                  onEdit={(group) => setModal({ type: 'edit-group', groupId: group.id })}
+                  onDelete={(group) => setModal({ type: 'edit-group', groupId: group.id })}
                 />
 
                 <section className="card holdings-panel">
@@ -502,10 +622,18 @@ export default function App() {
                   )}
                 </section>
               </>
-            )}
-          </div>
-        </div>
-      </main>
+            )
+          ) : (
+            <LimitUpList
+              data={limitUp}
+              isRefreshing={isLimitUpRefreshing}
+              onRefresh={() => {
+                void refreshLimitUp();
+              }}
+            />
+          )}
+        </main>
+      </div>
 
       {renderDialog()}
     </>

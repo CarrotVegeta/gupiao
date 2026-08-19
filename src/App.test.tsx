@@ -2,43 +2,313 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
-import type { QuotesResponse, StorageState } from './types';
+import type { LimitUpResponse, MarketOverviewResponse, QuotesResponse, StorageState } from './types';
 
-const makeResponse = (response: Partial<QuotesResponse> = {}): Response =>
-  new Response(
-    JSON.stringify({
-      quotes: [],
-      fetchedAt: '2026-08-18T10:30:00.000Z',
-      source: 'eastmoney',
-      errors: [],
-      ...response,
+type FetchPayload = QuotesResponse | MarketOverviewResponse | LimitUpResponse;
+type FetchReply = FetchPayload | Error | (() => Promise<Response>);
+
+const makeResponse = (payload: FetchPayload): Response => new Response(JSON.stringify(payload));
+
+const marketResponseFixture = (
+  response: Partial<MarketOverviewResponse> = {},
+): MarketOverviewResponse => ({
+  indices: [
+    {
+      symbol: '000001',
+      name: '上证指数',
+      price: 3301.25,
+      change: 12.38,
+      pct: 0.38,
+      updatedAt: '2026-08-19T07:30:00.000Z',
+      status: 'fresh',
+    },
+    {
+      symbol: '399001',
+      name: '深证成指',
+      price: 10500.88,
+      change: -25.12,
+      pct: -0.24,
+      updatedAt: '2026-08-19T07:30:00.000Z',
+      status: 'fresh',
+    },
+  ],
+  fetchedAt: '2026-08-19T07:35:00.000Z',
+  source: 'eastmoney',
+  errors: [],
+  ...response,
+});
+
+const quotesResponseFixture = (response: Partial<QuotesResponse> = {}): QuotesResponse => ({
+  quotes: [],
+  fetchedAt: '2026-08-18T10:30:00.000Z',
+  source: 'eastmoney',
+  errors: [],
+  ...response,
+});
+
+const limitUpResponseFixture = (response: Partial<LimitUpResponse> = {}): LimitUpResponse => ({
+  tradeDate: '20260819',
+  items: [
+    {
+      symbol: '002820',
+      name: '桂发祥',
+      price: 12.27,
+      pct: 10.04,
+      boardCount: 3,
+      firstSealTime: '09:25:00',
+      lastSealTime: '14:42:10',
+      industry: '食品饮料',
+      breakCount: 1,
+    },
+    {
+      symbol: '000017',
+      name: 'ST中华',
+      price: 5.21,
+      pct: 4.98,
+      boardCount: 2,
+      firstSealTime: null,
+      lastSealTime: null,
+      industry: null,
+      breakCount: 0,
+    },
+  ],
+  fetchedAt: '2026-08-19T07:32:00.000Z',
+  source: 'eastmoney',
+  status: 'fresh',
+  error: null,
+  ...response,
+});
+
+const resolveFetchReply = (reply: FetchReply): Promise<Response> => {
+  if (reply instanceof Error) {
+    return Promise.reject(reply);
+  }
+
+  if (typeof reply === 'function') {
+    return reply();
+  }
+
+  return Promise.resolve(makeResponse(reply));
+};
+
+const createFetchMock = ({
+  market = [marketResponseFixture()],
+  quotes = [
+    quotesResponseFixture({
+      quotes: [
+        {
+          symbol: '600519',
+          name: '贵州茅台',
+          price: 168.2,
+          change: 3.2,
+          pct: 1.98,
+          preClose: 165,
+          updatedAt: '2026-08-18T10:30:00.000Z',
+          source: 'eastmoney',
+          status: 'fresh',
+        },
+      ],
     }),
-  );
+  ],
+  limitUp = [limitUpResponseFixture()],
+}: {
+  market?: FetchReply[];
+  quotes?: FetchReply[];
+  limitUp?: FetchReply[];
+} = {}) => {
+  let marketIndex = 0;
+  let quotesIndex = 0;
+  let limitUpIndex = 0;
+
+  const nextReply = (queue: FetchReply[], index: number): FetchReply =>
+    queue[Math.min(index, queue.length - 1)];
+
+  return vi.fn((input: string | URL | Request) => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+        ? input.toString()
+        : input.url;
+
+    if (url === '/api/market-overview') {
+      const reply = nextReply(market, marketIndex);
+      marketIndex += 1;
+      return resolveFetchReply(reply);
+    }
+
+    if (url.startsWith('/api/quotes?')) {
+      const reply = nextReply(quotes, quotesIndex);
+      quotesIndex += 1;
+      return resolveFetchReply(reply);
+    }
+
+    if (url.startsWith('/api/limit-up')) {
+      const reply = nextReply(limitUp, limitUpIndex);
+      limitUpIndex += 1;
+      return resolveFetchReply(reply);
+    }
+
+    throw new Error(`Unexpected fetch URL: ${url}`);
+  });
+};
+
+const getFetchUrls = (fetchMock: ReturnType<typeof vi.fn>, prefix: string): string[] =>
+  fetchMock.mock.calls
+    .map(([input]) =>
+      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url,
+    )
+    .filter((url) => url.startsWith(prefix));
 
 describe('Task 7 app interactions', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        makeResponse({
-          quotes: [
-            {
-              symbol: '600519',
-              name: '贵州茅台',
-              price: 168.2,
-              change: 3.2,
-              pct: 1.98,
-              preClose: 165,
-              updatedAt: '2026-08-18T10:30:00.000Z',
-              source: 'eastmoney',
-              status: 'fresh',
-            },
-          ],
+    vi.stubGlobal('fetch', createFetchMock());
+  });
+
+  it('shows the market overview above the holdings page and places group navigation before the stock list', async () => {
+    const seededState: StorageState = {
+      groups: [
+        {
+          id: 'ungrouped',
+          name: '未分组',
+          isSystem: true,
+          createdAt: '2026-08-18T00:00:00.000Z',
+        },
+      ],
+      holdings: [
+        {
+          id: 'holding-1',
+          symbol: '600519',
+          name: '贵州茅台',
+          groupId: 'ungrouped',
+          openPrice: 1200,
+          quantity: 1,
+          note: '',
+          createdAt: '2026-08-18T00:00:00.000Z',
+          updatedAt: '2026-08-18T00:00:00.000Z',
+        },
+      ],
+    };
+    localStorage.setItem('stock-dashboard:v1', JSON.stringify(seededState));
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '大盘概览' })).toBeInTheDocument();
+    expect(screen.getByText('上证指数')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '持仓 1' })).toHaveAttribute('aria-current', 'page');
+
+    const groupHeading = screen.getByRole('heading', { name: '持仓分组' });
+    const listHeading = screen.getByRole('heading', { name: '股票列表' });
+
+    expect(
+      groupHeading.compareDocumentPosition(listHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+  });
+
+  it('requests and renders limit-up data when navigating, then restores holdings-only sections', async () => {
+    const user = userEvent.setup();
+    const seededState: StorageState = {
+      groups: [
+        {
+          id: 'ungrouped',
+          name: '未分组',
+          isSystem: true,
+          createdAt: '2026-08-18T00:00:00.000Z',
+        },
+      ],
+      holdings: [
+        {
+          id: 'holding-1',
+          symbol: '600519',
+          name: '贵州茅台',
+          groupId: 'ungrouped',
+          openPrice: 1200,
+          quantity: 1,
+          note: '',
+          createdAt: '2026-08-18T00:00:00.000Z',
+          updatedAt: '2026-08-18T00:00:00.000Z',
+        },
+      ],
+    };
+    const fetchMock = createFetchMock();
+    localStorage.setItem('stock-dashboard:v1', JSON.stringify(seededState));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: '大盘概览' });
+
+    expect(getFetchUrls(fetchMock, '/api/limit-up')).toHaveLength(0);
+
+    await user.click(screen.getByRole('button', { name: /涨停聚焦/ }));
+
+    expect(await screen.findByRole('heading', { name: '涨停列表' })).toBeInTheDocument();
+    expect(screen.getByText('桂发祥')).toBeInTheDocument();
+    expect(getFetchUrls(fetchMock, '/api/limit-up')).toHaveLength(1);
+    expect(getFetchUrls(fetchMock, '/api/limit-up')[0]).toMatch(/^\/api\/limit-up\?date=\d{8}$/);
+    expect(screen.queryByRole('heading', { name: '总收益率' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '持仓分组' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '添加股票' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /持仓/ }));
+
+    expect(await screen.findByRole('heading', { name: '总收益率' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '持仓分组' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '添加股票' })).toBeInTheDocument();
+  });
+
+  it('shows a stale limit-up notice for unavailable responses without mutating saved holdings', async () => {
+    const user = userEvent.setup();
+    const seededState: StorageState = {
+      groups: [
+        {
+          id: 'ungrouped',
+          name: '未分组',
+          isSystem: true,
+          createdAt: '2026-08-18T00:00:00.000Z',
+        },
+      ],
+      holdings: [
+        {
+          id: 'holding-1',
+          symbol: '600519',
+          name: '贵州茅台',
+          groupId: 'ungrouped',
+          openPrice: 1200,
+          quantity: 1,
+          note: '长期观察',
+          createdAt: '2026-08-18T00:00:00.000Z',
+          updatedAt: '2026-08-18T00:00:00.000Z',
+        },
+      ],
+    };
+    const fetchMock = createFetchMock({
+      limitUp: [
+        limitUpResponseFixture({
+          tradeDate: '20260819',
+          items: [],
+          status: 'unavailable',
+          error: { symbol: 'limit-up', message: '数据暂不可用' },
         }),
-      ),
-    );
+      ],
+    });
+    localStorage.setItem('stock-dashboard:v1', JSON.stringify(seededState));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: '大盘概览' });
+
+    await user.click(screen.getByRole('button', { name: /涨停聚焦/ }));
+
+    expect(await screen.findByText('数据已过期')).toBeInTheDocument();
+    expect(screen.getByText('暂无涨停数据')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /持仓/ }));
+
+    expect(await screen.findByText('贵州茅台')).toBeInTheDocument();
+    expect(screen.getByText('长期观察')).toBeInTheDocument();
+    expect(localStorage.getItem('stock-dashboard:v1')).toContain('长期观察');
   });
 
   it('adds a holding, persists its note, and filters by group', async () => {
@@ -85,7 +355,9 @@ describe('Task 7 app interactions', () => {
     const pendingFetch = new Promise<Response>((_resolve, reject) => {
       rejectFetch = reject;
     });
-    const fetchMock = vi.fn(() => pendingFetch);
+    const fetchMock = createFetchMock({
+      quotes: [() => pendingFetch],
+    });
     vi.stubGlobal('fetch', fetchMock);
 
     render(<App />);
@@ -97,8 +369,7 @@ describe('Task 7 app interactions', () => {
 
     expect(localStorage.getItem('stock-dashboard:v1')).toContain('600519');
     expect(screen.getByRole('button', { name: '保存中…' })).toBeDisabled();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock).toHaveBeenCalledWith('/api/quotes?symbols=600519');
+    expect(getFetchUrls(fetchMock, '/api/quotes?')).toEqual(['/api/quotes?symbols=600519']);
 
     await act(async () => rejectFetch(new Error('network down')));
 
@@ -112,10 +383,9 @@ describe('Task 7 app interactions', () => {
     const pendingFetch = new Promise<Response>((_resolve, reject) => {
       rejectFetch = reject;
     });
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        makeResponse({
+    const fetchMock = createFetchMock({
+      quotes: [
+        quotesResponseFixture({
           quotes: [
             {
               symbol: '600519', name: '贵州茅台', price: 1297.99, change: 4.9,
@@ -124,8 +394,9 @@ describe('Task 7 app interactions', () => {
             },
           ],
         }),
-      )
-      .mockImplementationOnce(() => pendingFetch);
+        () => pendingFetch,
+      ],
+    });
     const seededState: StorageState = {
       groups: [
         {
@@ -154,7 +425,7 @@ describe('Task 7 app interactions', () => {
     expect(localStorage.getItem('stock-dashboard:v1')).toContain('000001');
     expect(localStorage.getItem('stock-dashboard:v1')).not.toContain('600519');
     expect(screen.getByRole('button', { name: '保存中…' })).toBeDisabled();
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/quotes?symbols=000001');
+    expect(getFetchUrls(fetchMock, '/api/quotes?').at(-1)).toBe('/api/quotes?symbols=000001');
 
     await act(async () => rejectFetch(new Error('network down')));
     await waitFor(() =>
@@ -179,20 +450,22 @@ describe('Task 7 app interactions', () => {
         },
       ],
     };
-    const fetchMock = vi.fn().mockResolvedValue(makeResponse());
+    const fetchMock = createFetchMock({
+      quotes: [quotesResponseFixture(), quotesResponseFixture()],
+    });
     localStorage.setItem('stock-dashboard:v1', JSON.stringify(seededState));
     vi.stubGlobal('fetch', fetchMock);
 
     render(<App />);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(getFetchUrls(fetchMock, '/api/quotes?')).toHaveLength(1));
     await user.click(screen.getByRole('button', { name: '添加股票' }));
     await user.type(screen.getByLabelText('股票代码'), '000001');
     await user.type(screen.getByLabelText('开仓价'), '10');
     await user.type(screen.getByLabelText('持有数量'), '1');
     await user.click(screen.getByRole('button', { name: '保存股票' }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/quotes?symbols=600519%2C000001');
+    await waitFor(() => expect(getFetchUrls(fetchMock, '/api/quotes?')).toHaveLength(2));
+    expect(getFetchUrls(fetchMock, '/api/quotes?').at(-1)).toBe('/api/quotes?symbols=600519%2C000001');
   });
 
   it('moves holdings to ungrouped when a custom group is deleted', async () => {
@@ -273,10 +546,9 @@ describe('Task 7 app interactions', () => {
         },
       ],
     };
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        makeResponse({
+    const fetchMock = createFetchMock({
+      quotes: [
+        quotesResponseFixture({
           quotes: [
             {
               symbol: '600519', name: '贵州茅台', price: 1297.99, change: 4.9,
@@ -290,8 +562,9 @@ describe('Task 7 app interactions', () => {
             },
           ],
         }),
-      )
-      .mockRejectedValueOnce(new Error('network down'));
+        new Error('network down'),
+      ],
+    });
 
     localStorage.setItem('stock-dashboard:v1', JSON.stringify(seededState));
     vi.stubGlobal('fetch', fetchMock);
@@ -307,9 +580,9 @@ describe('Task 7 app interactions', () => {
 
   it('falls back to the edited symbol until a later refresh provides the runtime quote name', async () => {
     const user = userEvent.setup();
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(
-        makeResponse({
+    const fetchMock = createFetchMock({
+      quotes: [
+        quotesResponseFixture({
           quotes: [
             {
               symbol: '600519',
@@ -324,9 +597,7 @@ describe('Task 7 app interactions', () => {
             },
           ],
         }),
-      )
-      .mockResolvedValueOnce(
-        makeResponse({
+        quotesResponseFixture({
           quotes: [
             {
               symbol: '000001',
@@ -341,9 +612,7 @@ describe('Task 7 app interactions', () => {
             },
           ],
         }),
-      )
-      .mockResolvedValueOnce(
-        makeResponse({
+        quotesResponseFixture({
           quotes: [
             {
               symbol: '000001',
@@ -358,7 +627,8 @@ describe('Task 7 app interactions', () => {
             },
           ],
         }),
-      );
+      ],
+    });
 
     vi.stubGlobal('fetch', fetchMock);
 

@@ -22,7 +22,7 @@ export const GroupSidebar = ({
   onEdit,
   onDelete,
 }: GroupSidebarProps) => (
-  <aside className="group-sidebar card" aria-labelledby="group-sidebar-title">
+  <section className="group-sidebar card" aria-labelledby="group-sidebar-title">
     <div className="group-sidebar__header">
       <div>
         <p className="eyebrow">分组导航</p>
@@ -87,5 +87,5 @@ export const GroupSidebar = ({
         ))}
       </ul>
     </nav>
-  </aside>
+  </section>
 );

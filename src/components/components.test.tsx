@@ -425,6 +425,23 @@ describe('Task 6 dashboard components', () => {
     );
   });
 
+  it('exposes the group navigation as a named region instead of a complementary sidebar landmark', () => {
+    render(
+      <GroupSidebar
+        groups={groupsFixture()}
+        holdings={[holding()]}
+        selectedGroupId="all"
+        onSelect={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('region', { name: '持仓分组' })).toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: '持仓分组' })).not.toBeInTheDocument();
+  });
+
   it('shows an edited note on the holding card', () => {
     render(
       <HoldingList
