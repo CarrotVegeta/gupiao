@@ -167,4 +167,70 @@ describe('eastmoney limit-up adapter', () => {
       },
     });
   });
+
+  it('returns unavailable when upstream payload misses the pool array', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            tc: 1,
+            pagesize: 100,
+          },
+        }),
+      ),
+    );
+
+    await expect(fetchEastmoneyLimitUp('20260818', fetchImpl)).resolves.toMatchObject({
+      tradeDate: '20260818',
+      items: [],
+      source: 'eastmoney',
+      status: 'unavailable',
+      error: {
+        symbol: 'limit-up',
+        message: '涨停池上游数据格式错误',
+      },
+    });
+  });
+
+  it('returns unavailable when upstream payload has a non-array pool', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            pool: {},
+            tc: 1,
+            pagesize: 100,
+          },
+        }),
+      ),
+    );
+
+    await expect(fetchEastmoneyLimitUp('20260818', fetchImpl)).resolves.toMatchObject({
+      tradeDate: '20260818',
+      items: [],
+      source: 'eastmoney',
+      status: 'unavailable',
+      error: {
+        symbol: 'limit-up',
+        message: '涨停池上游数据格式错误',
+      },
+    });
+  });
+
+  it('returns unavailable when the upstream request aborts', async () => {
+    const abortError = new Error('aborted');
+    abortError.name = 'AbortError';
+    const fetchImpl = vi.fn<typeof fetch>().mockRejectedValue(abortError);
+
+    await expect(fetchEastmoneyLimitUp('20260818', fetchImpl)).resolves.toMatchObject({
+      tradeDate: '20260818',
+      items: [],
+      source: 'eastmoney',
+      status: 'unavailable',
+      error: {
+        symbol: 'limit-up',
+        message: '涨停池上游请求超时',
+      },
+    });
+  });
 });

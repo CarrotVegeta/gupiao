@@ -87,7 +87,7 @@ export const mapEastmoneyLimitUpItem = (raw: EastmoneyLimitUpRow): LimitUpItem |
     return null;
   }
 
-  const normalized = {
+  const normalized: LimitUpItem = {
     symbol,
     name,
     price: price / 1000,
@@ -99,7 +99,7 @@ export const mapEastmoneyLimitUpItem = (raw: EastmoneyLimitUpRow): LimitUpItem |
     breakCount,
   };
 
-  return normalized as unknown as LimitUpItem;
+  return normalized;
 };
 
 const toRequestUrl = (tradeDate: string, pageIndex: number): string => {
@@ -156,11 +156,15 @@ export const fetchEastmoneyLimitUp = async (
       const payload = (await response.json()) as EastmoneyLimitUpPayload;
       const data = payload.data;
 
-      if (!data) {
+      if (!data || typeof data !== 'object') {
         return buildUnavailableResponse(tradeDate, '涨停池上游未返回有效数据', fetchedAt);
       }
 
-      const pool = Array.isArray(data.pool) ? data.pool : [];
+      if (!('pool' in data) || !Array.isArray(data.pool)) {
+        return buildUnavailableResponse(tradeDate, '涨停池上游数据格式错误', fetchedAt);
+      }
+
+      const pool = data.pool;
       totalCount = asInteger(data.tc) ?? totalCount;
       currentPageSize = asInteger(data.pagesize) ?? currentPageSize;
 

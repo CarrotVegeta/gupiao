@@ -156,3 +156,42 @@ null
 
 1. 已在后续修正提交中将 `src/types.ts` 的 `LimitUpItem.firstSealTime / lastSealTime / industry` 调整为 `string | null`，并同步更新 Task 1 的类型夹具，使共享契约与设计文档、服务端输出保持一致。
 2. 本地接口 400 验证受当前沙箱回环网络限制，已用 `parseTradeDate` focused check 替代。
+
+---
+
+## 2026-08-19 评审返修追加
+
+### 本轮修复点
+
+- 修复 `server/limit-up/eastmoney.ts`：`data.pool` 缺失或非数组时，不再通过 `[]` 静默当成空池，而是返回 `status: 'unavailable'` 和中文错误 `涨停池上游数据格式错误`。
+- 保持共享类型与运行时一致：本轮未回退 nullability，继续沿用上一修正提交中的 `LimitUpItem.firstSealTime / lastSealTime / industry: string | null`。
+- 去掉 `mapEastmoneyLimitUpItem` 中的 `as unknown as LimitUpItem`，改为让编译器直接检查 `LimitUpItem` 返回对象。
+- 为 `server/limit-up/eastmoney.test.ts` 补充回归：
+  - `pool` 缺失时返回 `unavailable`
+  - `pool` 非数组时返回 `unavailable`
+  - `AbortError` 时返回中文超时错误
+
+### 本轮验证命令与实际结果
+
+命令：
+
+```bash
+npm test -- server/limit-up/eastmoney.test.ts server/market/eastmoney.test.ts src/lib/limitUp.test.ts
+npm run typecheck
+```
+
+实际输出：
+
+```text
+Test Files  3 passed (3)
+     Tests  12 passed (12)
+
+> typecheck
+> tsc -b --pretty false tsconfig.json tsconfig.server.json
+```
+
+### 本轮自查
+
+- 评审指出的主问题已修复：坏上游 payload 不再伪装成“空池 fresh”。
+- `AbortError` 与 malformed payload 已有回归测试覆盖。
+- 未改动其他业务逻辑或前端代码。
