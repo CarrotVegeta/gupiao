@@ -95,15 +95,23 @@ export const MarketOverview = ({
   isRefreshing,
   onRefresh,
 }: MarketOverviewProps) => (
-  <section className="overview card" aria-labelledby="market-overview-title">
-    <div className="overview__header">
-      <div>
-        <p className="eyebrow">涨停聚焦</p>
-        <h2 id="market-overview-title">大盘概览</h2>
+  <section className="market-overview card" aria-labelledby="market-overview-title">
+    <div className="market-overview__header">
+      <div className="market-overview__title">
+        <p className="eyebrow">MARKET OVERVIEW</p>
+        <div className="market-overview__heading-row">
+          <h2 id="market-overview-title">大盘概览</h2>
+          <span className="market-overview__live">实时指数</span>
+        </div>
+        <p className="market-overview__description">
+          <span>四大核心指数</span>
+          <span aria-hidden="true"> · </span>
+          <span>及时把握市场节奏</span>
+        </p>
       </div>
-      <div className="overview__actions">
-        <p className="overview__meta" aria-live="polite">
-          最后刷新：{formatDateTime(lastUpdated)}
+      <div className="market-overview__toolbar">
+        <p className="market-overview__updated" aria-live="polite">
+          <span>最后刷新：{formatDateTime(lastUpdated)}</span>
         </p>
         <button
           className="button button--secondary"
@@ -116,23 +124,40 @@ export const MarketOverview = ({
       </div>
     </div>
 
-    <dl className="overview__metrics">
+    <dl className="market-overview__grid">
       {indices.map((index) => {
         const statusText = getStatusText(index.status);
 
         return (
-          <div key={index.symbol} className="metric-card">
-            <dt>{index.name}</dt>
-            <dd className={getMarketToneClass(index.status, index.change)}>
-              {formatIndexValue(index.price)}
+          <div key={index.symbol} className={`market-index-card market-index-card--${index.status}`}>
+            <div className="market-index-card__topline">
+              <dt>{index.name}</dt>
+              {statusText ? (
+                <span className="market-index-card__status value--neutral">{statusText}</span>
+              ) : (
+                <span className="market-index-card__status market-index-card__status--fresh">
+                  正常
+                </span>
+              )}
+            </div>
+            <dd className={`market-index-card__price ${getMarketToneClass(index.status, index.change)}`}>
+              <span>点位</span>
+              <strong>{formatIndexValue(index.price)}</strong>
             </dd>
-            <p className={getMarketToneClass(index.status, index.change)}>
-              {formatSignedNumber(index.change)}
-            </p>
-            <p className={getMarketToneClass(index.status, index.pct)}>
-              {formatSignedPercent(index.pct)}
-            </p>
-            {statusText ? <p className="stale-note value--neutral">{statusText}</p> : null}
+            <div className="market-index-card__changes">
+              <p className={getMarketToneClass(index.status, index.change)}>
+                <span>涨跌额</span>
+                <strong className={getMarketToneClass(index.status, index.change)}>
+                  {formatSignedNumber(index.change)}
+                </strong>
+              </p>
+              <p className={getMarketToneClass(index.status, index.pct)}>
+                <span>涨跌幅</span>
+                <strong className={getMarketToneClass(index.status, index.pct)}>
+                  {formatSignedPercent(index.pct)}
+                </strong>
+              </p>
+            </div>
           </div>
         );
       })}

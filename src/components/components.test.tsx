@@ -601,6 +601,26 @@ describe('Task 6 dashboard components', () => {
     expect(screen.getByRole('button', { name: '刷新大盘' })).not.toBeDisabled();
   });
 
+  it('uses a clear market overview hierarchy for the index cards', () => {
+    render(
+      <MarketOverview
+        indices={marketIndicesFixture()}
+        lastUpdated="2026-08-19T07:35:00.000Z"
+        isRefreshing={false}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    const overview = screen.getByRole('region', { name: '大盘概览' });
+
+    expect(overview).toHaveClass('market-overview');
+    expect(screen.getByText('实时指数')).toBeInTheDocument();
+    expect(screen.getByText('四大核心指数')).toBeInTheDocument();
+    expect(screen.getAllByText('涨跌额')).toHaveLength(4);
+    expect(screen.getAllByText('涨跌幅')).toHaveLength(4);
+    expect(screen.getAllByText('点位')).toHaveLength(4);
+  });
+
   it('renders stale and unavailable market indices with neutral semantics', () => {
     render(
       <MarketOverview

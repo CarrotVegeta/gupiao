@@ -265,6 +265,181 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   margin: 0;
 }
 
+.market-overview {
+  padding: 26px;
+  overflow: hidden;
+}
+
+.market-overview__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-start;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.market-overview__title {
+  min-width: 0;
+}
+
+.market-overview__heading-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.market-overview__heading-row h2 {
+  margin: 0;
+  font-size: clamp(1.45rem, 2vw, 1.8rem);
+  letter-spacing: -0.03em;
+}
+
+.market-overview__live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #edf6f1;
+  color: var(--fall);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.market-overview__live::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  content: '';
+}
+
+.market-overview__description {
+  margin: 7px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+}
+
+.market-overview__toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.market-overview__updated {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.market-overview__updated strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.market-overview__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 22px 0 0;
+}
+
+.market-index-card {
+  min-width: 0;
+  padding: 17px 18px 15px;
+  border: 1px solid var(--border-color);
+  border-top: 3px solid var(--neutral);
+  border-radius: 16px;
+  background: linear-gradient(145deg, var(--bg-surface), #fbf8f1);
+}
+
+.market-index-card--fresh {
+  border-top-color: var(--accent-primary);
+}
+
+.market-index-card--stale,
+.market-index-card--unavailable {
+  background: #faf8f3;
+}
+
+.market-index-card__topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.market-index-card__topline dt {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.market-index-card__status {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.market-index-card__status--fresh {
+  color: var(--fall);
+}
+
+.market-index-card__price {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 13px 0 15px;
+}
+
+.market-index-card__price > span,
+.market-index-card__changes p > span {
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+}
+
+.market-index-card__price strong {
+  color: var(--text-primary);
+  font-size: clamp(1.4rem, 2.2vw, 1.85rem);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+}
+
+.market-index-card__changes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding-top: 11px;
+  border-top: 1px solid rgba(216, 207, 191, 0.75);
+}
+
+.market-index-card__changes p {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  margin: 0;
+}
+
+.market-index-card__changes strong {
+  overflow: hidden;
+  font-size: 0.94rem;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .metric-card {
   display: grid;
   gap: 6px;
@@ -649,6 +824,10 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
     flex-direction: column;
   }
 
+  .market-overview__header {
+    flex-direction: column;
+  }
+
   nav.card[aria-label='一级导航'] {
     position: static;
     top: auto;
@@ -666,6 +845,17 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
     align-items: flex-start;
   }
 
+  .market-overview__toolbar {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .market-overview__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .overview__metrics,
   .holding-card__metrics,
   .form-grid {
@@ -679,6 +869,19 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
 
 @media (max-width: 640px) {
   nav.card[aria-label='一级导航'] .group-sidebar__list {
+    grid-template-columns: 1fr;
+  }
+
+  .market-overview {
+    padding: 20px;
+  }
+
+  .market-overview__toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .market-overview__grid {
     grid-template-columns: 1fr;
   }
 }
