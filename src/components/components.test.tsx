@@ -923,6 +923,35 @@ describe('Task 6 dashboard components', () => {
     expect(screen.getByText('先观察')).toBeInTheDocument();
   });
 
+  it('hides the sort arrow until a column is actually sorted', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <Watchlist
+        holdings={[holding({ id: 'h-1', symbol: '600519' })]}
+        quotes={{ '600519': quote({ pct: 1 }) }}
+        onEdit={vi.fn()}
+      />,
+    );
+
+    const indicator = () => document.querySelector('.sort-button__glyph');
+
+    // 默认（添加时间倒序）不画箭头，表头保持干净
+    expect(indicator()).toBeNull();
+    expect(screen.queryByText('▾')).not.toBeInTheDocument();
+    expect(screen.queryByText('▴')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '涨跌幅' }));
+    expect(indicator()?.textContent).toBe('▾');
+
+    await user.click(screen.getByRole('button', { name: '涨跌幅' }));
+    expect(indicator()?.textContent).toBe('▴');
+
+    // 回到默认后箭头再次消失
+    await user.click(screen.getByRole('button', { name: '涨跌幅' }));
+    expect(indicator()).toBeNull();
+  });
+
   it('sorts the watchlist by any column, defaulting to newest first', async () => {
     const user = userEvent.setup();
     const holdings = [
