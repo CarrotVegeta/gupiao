@@ -3085,43 +3085,65 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 /*
  * 自选表最后三列：「自选日」（年月日）→「自选价」（基准价）→「自选收益」（带色百分比）。
  *
- * 它们都不走通用的 `.quote-table thead th:last-child` 那套 132px 居中样式
- * ——那是给「操作」列留的宽度和居中，这三列偏窄、且各要自己的对齐。
+ * 表头格子不带类名（列是 SortableHeader 渲染的），所以表头这半只能按列位置选。
+ * 内容格子带类名，但「自选收益」是最后一列，和通用规则
+ * `.quote-table thead th:last-child / tbody td:last-child`（132px + 居中）
+ * 同权重，必须显式带 `:last-child` 才压得住它。
+ *
+ * 这三列**只调对齐和宽度，不碰颜色**：表头颜色由 `.quote-table thead th` 统一给
+ * （--text-tertiary #8a93a5），值走单元格默认色（--text-primary #111827）。
+ * 之前这里多写过一句 color: var(--text-secondary)，结果「自选日」的表头比别的表头深、
+ * 值又比别的值灰，看着就是「这一列和其他列不一样」。
  */
-.quote-table--watchlist thead th.quote-table__watch-date,
+.quote-table--watchlist thead th:nth-last-child(3) {
+  text-align: center;
+}
+
+/* 「自选收益」和「自选日」一样居中：表头和数值同一中心线 */
+.quote-table--watchlist thead th:last-child {
+  text-align: center;
+}
+
 .quote-table--watchlist tbody td.quote-table__watch-date {
   width: 96px;
   min-width: 96px;
   padding-left: 10px;
   text-align: center;
-  color: var(--text-secondary);
   white-space: nowrap;
 }
 
-/* 自选价是价格：和「最新价」一样右对齐，宽度和收益列对齐 */
-.quote-table--watchlist thead th.quote-table__watch-price,
+/* 自选价是价格：和「最新价」一样右对齐 */
 .quote-table--watchlist tbody td.quote-table__watch-price {
   width: 92px;
   min-width: 92px;
   padding-left: 10px;
+  padding-right: 10px;
   white-space: nowrap;
 }
 
-/* 收益是数字列：跟其它数字列一样右对齐，只把宽度收窄一点 */
-.quote-table--watchlist thead th.quote-table__watch-return,
-.quote-table--watchlist tbody td.quote-table__watch-return {
+/*
+ * 自选收益：居中，和左边的「自选日」对齐（用户明确要的这个口径，
+ * 不跟上面那些右对齐的数字列走）；表头也是居中，两者同一中心线。
+ * 右内边距仍显式写成 10px，免得继承通用 `:last-child` 留给「操作」列的 18px。
+ */
+.quote-table--watchlist tbody td.quote-table__watch-return:last-child {
   width: 96px;
   min-width: 96px;
   padding-left: 10px;
+  padding-right: 10px;
+  text-align: center;
   white-space: nowrap;
 }
 
+/*
+ * 涨跌幅/自选收益这类带色百分比：12px、加粗，数字用等宽字形。
+ * 这里不能设 min-width：宽度一固定，单元格就撑到那个宽度，
+ * 右对齐的数字会离列的右边缘老远，看着就是「这一列怎么靠右」。
+ * 列宽交给内容 + 表头的 padding 决定，和其它数字列一样。
+ */
 .watch-pct {
-  display: inline-block;
-  min-width: 70px;
   font-size: 12px;
   font-weight: 650;
-  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
