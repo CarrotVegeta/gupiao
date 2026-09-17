@@ -923,6 +923,137 @@ describe('Task 6 dashboard components', () => {
     expect(screen.getByText('先观察')).toBeInTheDocument();
   });
 
+  it('sorts the watchlist by any column, defaulting to newest first', async () => {
+    const user = userEvent.setup();
+    const holdings = [
+      holding({ id: 'h-1', symbol: '600519', name: '贵州茅台', createdAt: '2026-09-01T00:00:00.000Z' }),
+      holding({ id: 'h-2', symbol: '000001', name: '平安银行', createdAt: '2026-09-03T00:00:00.000Z' }),
+      holding({ id: 'h-3', symbol: '300750', name: '宁德时代', createdAt: '2026-09-02T00:00:00.000Z' }),
+    ];
+    const quotes: QuoteMap = {
+      '600519': quote({ symbol: '600519', pct: 1 }),
+      '000001': quote({ symbol: '000001', pct: 5 }),
+      '300750': quote({ symbol: '300750', pct: 3 }),
+    };
+
+    render(<Watchlist holdings={holdings} quotes={quotes} onEdit={vi.fn()} />);
+
+    // 代码是每行里唯一稳定的标识（首字头像会和名称首字重复）
+    const codes = () =>
+      Array.from(document.querySelectorAll('.stock-identity__code')).map(
+        (cell) => cell.textContent,
+      );
+
+    // 默认：添加时间倒序
+    expect(codes()).toEqual(['000001', '300750', '600519']);
+
+    const pctHeader = () => screen.getByRole('columnheader', { name: '涨跌幅' });
+
+    await user.click(screen.getByRole('button', { name: '涨跌幅' }));
+    expect(codes()).toEqual(['000001', '300750', '600519']);
+    expect(pctHeader()).toHaveAttribute('aria-sort', 'descending');
+
+    await user.click(screen.getByRole('button', { name: '涨跌幅' }));
+    expect(codes()).toEqual(['600519', '300750', '000001']);
+    expect(pctHeader()).toHaveAttribute('aria-sort', 'ascending');
+
+    // 第三次点击回到默认的添加时间倒序，并且不再声明已排序
+    await user.click(screen.getByRole('button', { name: '涨跌幅' }));
+    expect(codes()).toEqual(['000001', '300750', '600519']);
+    expect(pctHeader()).not.toHaveAttribute('aria-sort');
+
+    // 换一列：新列从降序开始
+    await user.click(screen.getByRole('button', { name: '股票' }));
+    expect(codes()).toEqual(['600519', '300750', '000001']);
+    expect(screen.getByRole('columnheader', { name: '股票' })).toHaveAttribute(
+      'aria-sort',
+      'descending',
+    );
+  });
+
+  it('keeps rows without a quote at the bottom of a sorted watchlist', async () => {
+    const user = userEvent.setup();
+    const holdings = [
+      holding({ id: 'h-1', symbol: '600519', name: '贵州茅台', createdAt: '2026-09-01T00:00:00.000Z' }),
+      holding({ id: 'h-2', symbol: '000001', name: '平安银行', createdAt: '2026-09-02T00:00:00.000Z' }),
+    ];
+
+    render(
+      <Watchlist holdings={holdings} quotes={{ '600519': quote({ pct: 1 }) }} onEdit={vi.fn()} />,
+    );
+
+    // 代码是每行里唯一稳定的标识（首字头像会和名称首字重复）
+    const codes = () =>
+      Array.from(document.querySelectorAll('.stock-identity__code')).map(
+        (cell) => cell.textContent,
+      );
+
+    await user.click(screen.getByRole('button', { name: '涨跌幅' }));
+    expect(codes()).toEqual(['600519', '000001']);
+
+    // 升序时缺行情的票也不能被顶到最前面
+    await user.click(screen.getByRole('button', { name: '涨跌幅' }));
+    expect(codes()).toEqual(['600519', '000001']);
+  });
+
+  it('sorts the holdings table by 持仓收益 and by 开仓价', async () => {
+    const user = userEvent.setup();
+    const holdings = [
+      holding({
+        id: 'h-1',
+        symbol: '600519',
+        name: '贵州茅台',
+        openPrice: 10,
+        quantity: 100,
+        createdAt: '2026-09-01T00:00:00.000Z',
+      }),
+      holding({
+        id: 'h-2',
+        symbol: '000001',
+        name: '平安银行',
+        openPrice: 20,
+        quantity: 100,
+        createdAt: '2026-09-02T00:00:00.000Z',
+      }),
+      // 没补录开仓价/数量：收益是 null，排序时永远沉底
+      holding({
+        id: 'h-3',
+        symbol: '300750',
+        name: '宁德时代',
+        openPrice: null,
+        quantity: null,
+        createdAt: '2026-09-03T00:00:00.000Z',
+      }),
+    ];
+    const quotes: QuoteMap = {
+      '600519': quote({ symbol: '600519', price: 12 }),
+      '000001': quote({ symbol: '000001', price: 15 }),
+      '300750': quote({ symbol: '300750', price: 99 }),
+    };
+
+    render(<HoldingList holdings={holdings} quotes={quotes} onEdit={vi.fn()} />);
+
+    // 代码是每行里唯一稳定的标识（首字头像会和名称首字重复）
+    const codes = () =>
+      Array.from(document.querySelectorAll('.stock-identity__code')).map(
+        (cell) => cell.textContent,
+      );
+
+    // 默认：添加时间倒序
+    expect(codes()).toEqual(['300750', '000001', '600519']);
+
+    // 收益降序：茅台 (12-10)*100=200 高于平安 (15-20)*100=-500，宁德没数据沉底
+    await user.click(screen.getByRole('button', { name: '持仓收益' }));
+    expect(codes()).toEqual(['600519', '000001', '300750']);
+
+    // 收益升序：亏损的排前面，宁德仍在最后
+    await user.click(screen.getByRole('button', { name: '持仓收益' }));
+    expect(codes()).toEqual(['000001', '600519', '300750']);
+
+    await user.click(screen.getByRole('button', { name: '开仓价' }));
+    expect(codes()).toEqual(['000001', '600519', '300750']);
+  });
+
   it('keeps stock identity columns left and right-aligns every numeric column', () => {
     render(
       <>

@@ -1960,6 +1960,45 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
   text-align: center;
 }
 
+/* 表头排序按钮：沿用表头的弱化色，激活后提亮并显示方向箭头 */
+.sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+
+.sort-button:hover {
+  color: var(--text-secondary);
+}
+
+.sort-button:focus-visible {
+  outline: 2px solid var(--text-secondary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.sort-button--on {
+  color: var(--text-primary);
+}
+
+.sort-button__glyph {
+  font-size: 9px;
+  line-height: 1;
+}
+
+/* 首列是左对齐的，排序按钮要跟着靠左，否则会和列名错位 */
+.quote-table thead th:first-child .sort-button {
+  justify-content: flex-start;
+}
+
 .quote-table .button--secondary,
 .quote-table .button--ghost,
 .quote-table .icon-button {
