@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>方案C 三栏工作站</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --rail:#0E1526; --rail2:#18213A; --bg:#F4F6FB; --surface:#fff; --border:#E4E8F1; --border2:#EFF2F8;
+    --text:#0F172A; --muted:#64748B; --dim:#94A3B8;
+    --rise:#E5484D; --fall:#16A34A; --accent:#2563EB;
+    --mono:'JetBrains Mono','WenQuanYi Zen Hei Mono',ui-monospace,monospace;
+  }
+  body{width:1440px;height:900px;overflow:hidden;background:var(--bg);color:var(--text);
+    font:400 13px/1.45 -apple-system,'Segoe UI','WenQuanYi Zen Hei',sans-serif;
+    display:grid;grid-template-columns:70px 1fr;-webkit-font-smoothing:antialiased}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .rise{color:var(--rise)} .fall{color:var(--fall)} .muted{color:var(--muted)} .dim{color:var(--dim)}
+
+  /* left rail */
+  .rail{background:var(--rail);display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:4px}
+  .logo{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#2563EB,#5B8DEF);
+    display:grid;place-items:center;color:#fff;font-weight:700;font-size:15px;margin-bottom:14px}
+  .rail a{width:56px;padding:9px 0;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:5px;
+    color:#7C8AA8;text-decoration:none;font-size:10.5px}
+  .rail a.on{background:var(--rail2);color:#CBD8F5}
+  .rail a svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+
+  .body{display:flex;flex-direction:column;overflow:hidden}
+  /* header */
+  .top{height:54px;background:var(--surface);border-bottom:1px solid var(--border);
+    display:flex;align-items:center;gap:20px;padding:0 20px}
+  .top h1{font-size:15px;font-weight:700}
+  .ql{display:flex;gap:22px;margin-left:6px}
+  .ql div{display:flex;flex-direction:column;gap:2px}
+  .ql .k{font-size:10.5px;color:var(--dim)}
+  .ql .v{font-size:14px;font-weight:650;font-family:var(--mono);letter-spacing:-.3px}
+  .top .sp{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .btn{height:32px;padding:0 14px;border-radius:8px;border:1px solid var(--border);background:#fff;
+    font:500 12.5px inherit;color:var(--text)}
+  .btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+
+  /* 3 panes */
+  .panes{display:grid;grid-template-columns:268px 1fr 296px;gap:12px;padding:12px 20px;height:calc(900px - 54px);overflow:hidden}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
+  .ch{padding:10px 13px;border-bottom:1px solid var(--border2);display:flex;align-items:center;gap:8px}
+  .ch h2{font-size:12.5px;font-weight:650}
+  .ch .n{font-size:11px;color:var(--dim);font-family:var(--mono);margin-left:auto}
+
+  /* watchlist */
+  .wl{flex:1;overflow:hidden}
+  .wli{display:flex;align-items:center;justify-content:space-between;padding:9px 13px;border-bottom:1px solid var(--border2)}
+  .wli.on{background:#EEF4FF;border-left:2px solid var(--accent);padding-left:11px}
+  .wli .l{display:flex;flex-direction:column;gap:2px}
+  .wli .t{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px}
+  .wli .c{font-size:10.5px;color:var(--dim);font-family:var(--mono)}
+  .wli .r{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+  .wli .p{font-size:12.5px;font-weight:650;font-family:var(--mono)}
+  .wli .d{font-size:11px;font-family:var(--mono)}
+  .tag{font-size:9.5px;padding:1px 5px;border-radius:4px;background:#FDECEC;color:#D93A3F;font-weight:600}
+
+  /* chart */
+  .chart{flex:1;display:flex;flex-direction:column}
+  .ctabs{display:flex;gap:4px;margin-left:auto}
+  .ctabs span{font-size:11px;padding:3px 9px;border-radius:6px;color:var(--muted)}
+  .ctabs span.on{background:#EEF4FF;color:var(--accent);font-weight:600}
+  .cwrap{flex:1;position:relative;padding:8px 6px 0}
+  .ohlc{position:absolute;left:14px;top:10px;display:flex;gap:14px;font-size:11.5px;font-family:var(--mono);z-index:2}
+  .ohlc b{font-weight:600}
+  .legend{position:absolute;left:14px;top:30px;display:flex;gap:12px;font-size:10.5px;color:var(--dim);z-index:2}
+  .legend i{display:inline-block;width:9px;height:2px;vertical-align:middle;margin-right:4px}
+
+  /* right detail */
+  .kv{display:flex;justify-content:space-between;padding:8px 13px;border-bottom:1px solid var(--border2);font-size:12.5px}
+  .kv .k{color:var(--muted)}
+  .kv .v{font-family:var(--mono);font-weight:600}
+  .book{padding:6px 13px 0}
+  .brow{display:grid;grid-template-columns:34px 1fr 58px;align-items:center;gap:8px;height:22px;font-size:11.5px;font-family:var(--mono)}
+  .brow .lab{color:var(--dim);font-size:10px;font-family:inherit}
+  .brow .b{height:12px;border-radius:3px}
+  .brow .b.s{background:rgba(229,72,77,.14)}
+  .brow .b.b{background:rgba(22,163,74,.14)}
+  .brow .p{text-align:right}
+  .actions{padding:12px 13px;display:flex;gap:8px;border-top:1px solid var(--border2);margin-top:auto}
+  .actions button{flex:1;height:34px;border-radius:8px;border:1px solid var(--border);background:#fff;font:600 12.5px inherit}
+  .actions .buy{background:var(--rise);border-color:var(--rise);color:#fff}
+  .actions .sell{background:var(--fall);border-color:var(--fall);color:#fff}
+</style></head><body>
+
+<aside class="rail">
+  <div class="logo">A</div>
+  <a href="#" class="on"><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16"/><path d="M8 15l3-5 3 3 5-7"/></svg>自选</a>
+  <a href="#"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>持仓</a>
+  <a href="#"><svg viewBox="0 0 24 24"><path d="M12 3v18M5 8l7-5 7 5M5 16l7 5 7-5"/></svg>涨停</a>
+  <a href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>竞价</a>
+  <a href="#"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>龙虎榜</a>
+</aside>
+
+<div class="body">
+  <div class="top">
+    <h1>自选 · 农发种业</h1>
+    <div class="ql">
+      <div><span class="k">最新</span><span class="v rise">7.11</span></div>
+      <div><span class="k">涨跌幅</span><span class="v rise">+5.18%</span></div>
+      <div><span class="k">换手</span><span class="v">9.84%</span></div>
+      <div><span class="k">量比</span><span class="v">1.09</span></div>
+      <div><span class="k">成交额</span><span class="v">6.4亿</span></div>
+      <div><span class="k">总市值</span><span class="v">82.3亿</span></div>
+    </div>
+    <div class="sp">
+      <button class="btn">刷新</button>
+      <button class="btn pri">+ 添加</button>
+    </div>
+  </div>
+
+  <div class="panes">
+    <section class="card">
+      <div class="ch"><h2>我的票</h2><span class="n">13</span></div>
+      <div class="wl" id="wl"></div>
+    </section>
+
+    <section class="card chart">
+      <div class="ch"><h2>日线</h2>
+        <div class="ctabs"><span>分时</span><span class="on">日K</span><span>周K</span><span>月K</span></div>
+      </div>
+      <div class="cwrap">
+        <div class="ohlc" id="ohlc"></div>
+        <div class="legend">
+          <span><i style="background:#E5A50A"></i>MA5</span>
+          <span><i style="background:#2563EB"></i>MA10</span>
+          <span><i style="background:#A855F7"></i>MA20</span>
+        </div>
+        <svg id="kline" width="100%" height="100%" viewBox="0 0 720 620" preserveAspectRatio="none"></svg>
+      </div>
+    </section>
+
+    <aside class="card">
+      <div class="ch"><h2>关键数据</h2></div>
+      <div class="kv"><span class="k">今开</span><span class="v">6.78</span></div>
+      <div class="kv"><span class="k">最高 / 最低</span><span class="v">7.19 / 6.74</span></div>
+      <div class="kv"><span class="k">昨收</span><span class="v">6.76</span></div>
+      <div class="kv"><span class="k">振幅</span><span class="v">7.2%</span></div>
+      <div class="kv"><span class="k">流通市值</span><span class="v">72.1亿</span></div>
+      <div class="kv"><span class="k">距 60 日高</span><span class="v">-17.6%</span></div>
+      <div class="ch" style="border-top:1px solid var(--border2)"><h2>五档盘口</h2></div>
+      <div class="book" id="book"></div>
+      <div class="actions">
+        <button class="buy">买入</button>
+        <button class="sell">卖出</button>
+        <button>备注</button>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+// —— 自选列表 ——
+const rows=[
+ ['农发种业','600313','7.11','+5.18%',true,true],['金健米业','600127','13.02','+9.97%',true,false],
+ ['深桑达Ａ','000032','14.39','-1.71%',false,true],['金螳螂','002081','4.79','-1.44%',false,true],
+ ['招金黄金','000506','18.57','-5.21%',false,true],['登海种业','002041','10.36','+5.50%',true,true],
+ ['贵州茅台','600519','1266.66','+0.69%',true,true],['平安银行','000001','11.62','-0.68%',false,true],
+ ['澳弘电子','605058','48.76','+9.99%',true,false],['华瓷股份','001216','19.88','+10.02%',true,false],
+ ['中晶科技','003026','26.41','+9.99%',true,false],['内蒙新华','603230','15.28','+9.96%',true,false],
+ ['西陇科学','002584','9.94','+2.41%',true,true]];
+document.getElementById('wl').innerHTML=rows.map((r,i)=>
+ `<div class="wli${i===0?' on':''}"><div class="l"><div class="t">${r[0]}${r[4]?'<span class="tag">涨停</span>':''}</div><div class="c">${r[1]}</div></div>
+  <div class="r"><div class="p ${r[3][0]==='+'?'rise':'fall'}">${r[2]}</div><div class="d ${r[3][0]==='+'?'rise':'fall'}">${r[3]}</div></div></div>`).join('');
+
+// —— 五档盘口 ——
+const asks=[['卖5','7.16',320],['卖4','7.15',610],['卖3','7.14',880],['卖2','7.13',1240],['卖1','7.12',2030]];
+const bids=[['买1','7.11',2640],['买2','7.10',1880],['买3','7.09',940],['买4','7.08',520],['买5','7.07',260]];
+document.getElementById('book').innerHTML=
+ asks.map(a=>`<div class="brow"><span class="lab">${a[0]}</span><span class="b s" style="width:${a[2]/2640*100}%"></span><span class="p fall">${a[1]}</span></div>`).join('')
+ +bids.map(b=>`<div class="brow"><span class="lab">${b[0]}</span><span class="b b" style="width:${b[2]/2640*100}%"></span><span class="p rise">${b[1]}</span></div>`).join('');
+
+// —— K线 ——
+let seed=987654321; const rnd=()=>{seed=(seed*1103515245+12345)&0x7fffffff;return seed/0x7fffffff;};
+let price=5.42; const candles=[];
+for(let i=0;i<61;i++){
+  const o=price, c=Math.max(5.2,o+0.022+(rnd()-0.5)*0.15);
+  const h=Math.max(o,c)+rnd()*0.07, l=Math.min(o,c)-rnd()*0.07;
+  candles.push({o,c,h,l,v:34000+rnd()*38000});
+  price=c;
+}
+// 把整段走势平滑校正到「昨收 6.76」，避免最后一根跳空太夸张
+const diff=6.76-candles[60].c;
+candles.forEach((d,i)=>{const k=i/60;d.o+=diff*k;d.c+=diff*k;d.h+=diff*k;d.l+=diff*k;});
+candles.push({o:6.78,c:7.11,h:7.19,l:6.74,v:92000});
+
+const N=candles.length, W=720, H=620, volH=110, gap=16, chartH=H-volH-gap;
+const hi=Math.max(...candles.map(d=>d.h))+0.05, lo=Math.min(...candles.map(d=>d.l))-0.05;
+const y=v=>chartH-((v-lo)/(hi-lo))*(chartH-40)-20;
+const cw=W/N, bw=cw*0.62;
+let svg='';
+// 网格 + 右侧价格刻度
+for(let g=0;g<=4;g++){
+  const yy=20+g*((chartH-40)/4); const pv=hi-(hi-lo)*g/4;
+  svg+=`<line x1="0" y1="${yy}" x2="${W-52}" y2="${yy}" stroke="#EDF1F7" stroke-width="1"/>`;
+  svg+=`<text x="${W-46}" y="${yy+3.5}" font-size="10" fill="#94A3B8" font-family="JetBrains Mono, monospace">${pv.toFixed(2)}</text>`;
+}
+candles.forEach((d,i)=>{const x=i*cw+cw/2;const up=d.c>=d.o;const col=up?'#E5484D':'#16A34A';
+  svg+=`<line x1="${x}" y1="${y(d.h)}" x2="${x}" y2="${y(d.l)}" stroke="${col}" stroke-width="1"/>`;
+  const top=y(Math.max(d.o,d.c)),bh=Math.max(1.5,Math.abs(y(d.o)-y(d.c)));
+  svg+=`<rect x="${x-bw/2}" y="${top}" width="${bw}" height="${bh}" fill="${up?'#fff':'#16A34A'}" stroke="${col}" stroke-width="1.1"/>`;});
+// 均线
+const ma=(n,i)=>{if(i<n-1)return null;let s=0;for(let k=i-n+1;k<=i;k++)s+=candles[k].c;return s/n;};
+[[5,'#E5A50A'],[10,'#2563EB'],[20,'#A855F7']].forEach(([n,col])=>{
+  let path='';candles.forEach((d,i)=>{const m=ma(n,i);if(m===null)return;path+=(path?'L':'M')+(i*cw+cw/2).toFixed(1)+' '+y(m).toFixed(1)+' ';});
+  svg+=`<path d="${path}" fill="none" stroke="${col}" stroke-width="1.4" opacity=".9"/>`;});
+// 成交量
+const vmax=Math.max(...candles.map(d=>d.v));
+candles.forEach((d,i)=>{const x=i*cw+cw/2;const h=d.v/vmax*volH;const up=d.c>=d.o;
+  svg+=`<rect x="${x-bw/2}" y="${chartH+gap+volH-h}" width="${bw}" height="${h}" fill="${up?'#F3B4B6':'#A8DDBE'}"/>`;});
+// 今日价格虚线
+svg+=`<line x1="0" y1="${y(7.11)}" x2="${W-52}" y2="${y(7.11)}" stroke="#E5484D" stroke-width="1" stroke-dasharray="3 3" opacity=".55"/>`;
+document.getElementById('kline').innerHTML=svg;
+const last=candles[candles.length-1];
+document.getElementById('ohlc').innerHTML=
+ `<span>开 <b class="rise">${last.o.toFixed(2)}</b></span><span>高 <b class="rise">${last.h.toFixed(2)}</b></span>
+  <span>低 <b class="fall">${last.l.toFixed(2)}</b></span><span>收 <b class="rise">${last.c.toFixed(2)}</b></span>
+  <span>量 <b>18.6万手</b></span>`;
+</script>
+</body></html>

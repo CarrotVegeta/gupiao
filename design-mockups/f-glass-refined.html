@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>方案F 精修玻璃</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{--ink:#111827;--ink2:#4B5563;--ink3:#8A93A5;--line:rgba(17,24,39,.09);
+    --rise:#DC2F35;--fall:#0E9F52;--brand:#3B6FF5;
+    --card:rgba(255,255,255,.72);--card-solid:#fff;
+    --mono:'JetBrains Mono','WenQuanYi Zen Hei Mono',ui-monospace,monospace}
+  html,body{width:1440px;height:900px;overflow:hidden}
+  body{position:relative;color:var(--ink);font:400 13px/1.45 -apple-system,'Segoe UI','WenQuanYi Zen Hei',sans-serif;-webkit-font-smoothing:antialiased;
+    background:linear-gradient(158deg,#EAF0FA 0%,#F3F5FA 42%,#EDF1F8 100%)}
+  /* 背景只用一层柔光，不再让走势图穿到表格后面 */
+  .glow{position:absolute;border-radius:50%;filter:blur(80px);pointer-events:none}
+  .g1{width:620px;height:620px;left:-160px;top:-220px;background:rgba(96,140,255,.28)}
+  .g2{width:520px;height:520px;right:-120px;top:60px;background:rgba(255,140,120,.18)}
+  .g3{width:460px;height:460px;left:38%;bottom:-260px;background:rgba(120,220,190,.16)}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+  .rise{color:var(--rise)}.fall{color:var(--fall)}.muted{color:var(--ink2)}.dim{color:var(--ink3)}
+
+  .shell{position:relative;z-index:1;height:100%;display:flex;flex-direction:column;padding:16px 22px 18px;gap:14px}
+
+  /* header：玻璃条 + 分段导航 */
+  header{display:flex;align-items:center;gap:16px;height:54px;padding:0 18px;border-radius:16px;
+    background:var(--card);backdrop-filter:blur(18px) saturate(160%);border:1px solid rgba(255,255,255,.9);
+    box-shadow:0 8px 24px rgba(20,35,70,.07),inset 0 1px 0 rgba(255,255,255,.85)}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:750;font-size:15px;letter-spacing:-.2px}
+  .mark{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,#3B6FF5,#6E9BFF);
+    display:grid;place-items:center;color:#fff;font-size:13px;font-weight:700;box-shadow:0 3px 8px rgba(59,111,245,.35)}
+  nav{display:flex;gap:2px;background:rgba(17,24,39,.05);padding:3px;border-radius:11px}
+  nav a{padding:6px 14px;border-radius:9px;color:var(--ink2);text-decoration:none;font-size:12.5px;font-weight:550}
+  nav a.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(20,35,70,.12)}
+  .sp{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .stamp{font-size:11.5px;color:var(--ink3);font-family:var(--mono)}
+  .btn{height:33px;padding:0 14px;border-radius:10px;border:1px solid rgba(17,24,39,.1);background:rgba(255,255,255,.85);
+    font:550 12.5px inherit;color:var(--ink);cursor:pointer}
+  .btn.pri{background:var(--brand);border-color:var(--brand);color:#fff;box-shadow:0 4px 12px rgba(59,111,245,.3)}
+
+  /* 指数：一条三列，不再四张厚卡 */
+  .strip{display:grid;grid-template-columns:repeat(4,1fr);border-radius:14px;overflow:hidden;
+    background:var(--card);backdrop-filter:blur(18px) saturate(160%);border:1px solid rgba(255,255,255,.9);
+    box-shadow:0 8px 24px rgba(20,35,70,.06)}
+  .strip > div{padding:13px 18px;border-right:1px solid var(--line)}
+  .strip > div:last-child{border-right:0}
+  .strip .k{font-size:11.5px;color:var(--ink3);margin-bottom:6px}
+  .strip .v{font-size:21px;font-weight:700;letter-spacing:-.6px}
+  .strip .c{font-size:12px;margin-top:5px;display:flex;gap:10px;font-weight:600}
+
+  .cols{display:grid;grid-template-columns:1fr 348px;gap:14px;flex:1;min-height:0}
+  .card{background:var(--card);backdrop-filter:blur(18px) saturate(160%);border:1px solid rgba(255,255,255,.92);
+    border-radius:16px;box-shadow:0 10px 30px rgba(20,35,70,.07),inset 0 1px 0 rgba(255,255,255,.85);
+    display:flex;flex-direction:column;overflow:hidden}
+  .ch{display:flex;align-items:center;gap:10px;padding:14px 18px 12px}
+  .ch h2{font-size:14.5px;font-weight:700;letter-spacing:-.2px}
+  .ch .n{font-size:11.5px;color:var(--ink3);font-family:var(--mono)}
+  .ch .rt{margin-left:auto;display:flex;gap:4px;background:rgba(17,24,39,.05);padding:3px;border-radius:10px}
+  .seg{padding:5px 12px;border-radius:8px;font-size:12px;color:var(--ink2);font-weight:550}
+  .seg.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(20,35,70,.1)}
+
+  table{width:100%;border-collapse:collapse}
+  thead th{font-size:11px;font-weight:600;color:var(--ink3);text-align:right;padding:8px 18px 9px;letter-spacing:.2px;
+    border-bottom:1px solid var(--line)}
+  thead th:first-child{text-align:left}
+  tbody td{height:43px;padding:0 18px;text-align:right;font-size:13px;border-bottom:1px solid rgba(17,24,39,.05)}
+  tbody td:first-child{text-align:left}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr:hover{background:rgba(255,255,255,.7)}
+  tbody tr.sel{background:rgba(59,111,245,.07)}
+  .stock{display:flex;align-items:center;gap:11px}
+  .badge{width:26px;height:26px;border-radius:9px;display:grid;place-items:center;font-size:11.5px;font-weight:700;
+    background:rgba(59,111,245,.12);color:var(--brand)}
+  .badge.sz{background:rgba(14,159,82,.12);color:var(--fall)}
+  .sname{font-weight:650;font-size:13px;display:flex;align-items:center;gap:6px}
+  .scode{font-size:11px;color:var(--ink3);font-family:var(--mono)}
+  .tag{font-size:10px;padding:1.5px 6px;border-radius:6px;background:rgba(220,47,53,.1);color:var(--rise);font-weight:650}
+  .dlt{font-size:12px;font-weight:650;font-family:var(--mono)}
+
+  .rows{overflow:hidden}
+  .row{display:flex;align-items:center;justify-content:space-between;padding:11px 18px;border-bottom:1px solid rgba(17,24,39,.05)}
+  .row:last-child{border-bottom:0}
+  .row .l{display:flex;flex-direction:column;gap:3px}
+  .row .t{font-size:12.5px;font-weight:600}
+  .row .s{font-size:11px;color:var(--ink3)}
+  .meter{width:112px;height:5px;border-radius:3px;background:rgba(17,24,39,.08);overflow:hidden}
+  .meter i{display:block;height:100%;border-radius:3px;background:var(--brand)}
+  .meter i.hi{background:linear-gradient(90deg,#DC2F35,#F07277)}
+  footer{display:flex;align-items:center;gap:16px;font-size:11.5px;color:var(--ink3);padding:0 4px}
+  footer .sep{width:1px;height:11px;background:var(--line)}
+</style></head><body>
+<div class="glow g1"></div><div class="glow g2"></div><div class="glow g3"></div>
+
+<div class="shell">
+  <header>
+    <div class="brand"><span class="mark">A</span>A股看板</div>
+    <nav><a href="#" class="on">自选</a><a href="#">持仓</a><a href="#">涨停聚焦</a><a href="#">竞价</a><a href="#">龙虎榜</a></nav>
+    <div class="sp">
+      <span class="stamp">09-17 15:00 收盘</span>
+      <button class="btn">刷新行情</button>
+      <button class="btn pri">+ 添加股票</button>
+    </div>
+  </header>
+
+  <div class="strip">
+    <div><div class="k">上证指数</div><div class="v num fall">3873.07</div><div class="c num"><span class="fall">-18.53</span><span class="fall">-0.48%</span><span class="dim">1.02万亿</span></div></div>
+    <div><div class="k">深证成指</div><div class="v num rise">12864.31</div><div class="c num"><span class="rise">+42.11</span><span class="rise">+0.33%</span><span class="dim">1.34万亿</span></div></div>
+    <div><div class="k">创业板指</div><div class="v num rise">2712.88</div><div class="c num"><span class="rise">+9.06</span><span class="rise">+0.34%</span><span class="dim">5842亿</span></div></div>
+    <div><div class="k">两市成交</div><div class="v num">2.36万亿</div><div class="c num"><span class="muted">涨停 94</span><span class="muted">炸板 25</span><span class="muted">晋级 4.5%</span></div></div>
+  </div>
+
+  <div class="cols">
+    <section class="card">
+      <div class="ch"><h2>我的票</h2><span class="n">13</span>
+        <div class="rt"><span class="seg on">全部 13</span><span class="seg">持仓 2</span><span class="seg">观察 11</span></div>
+      </div>
+      <table>
+        <thead><tr><th>股票</th><th>最新价</th><th>涨跌幅</th><th>涨跌额</th><th>换手</th><th>量比</th><th>成交额</th></tr></thead>
+        <tbody class="num" id="tb"></tbody>
+      </table>
+    </section>
+
+    <aside class="card">
+      <div class="ch"><h2>竞价候选</h2><span class="n">89</span>
+        <div class="rt"><span class="seg on">合格 3</span><span class="seg">观察 5</span></div>
+      </div>
+      <div class="rows" id="auc"></div>
+    </aside>
+  </div>
+
+  <footer>
+    <span>数据源 腾讯 / 东方财富</span><i class="sep"></i>
+    <span>行情 15:00:03</span><i class="sep"></i>
+    <span>竞价快照 09:25:00</span><i class="sep"></i>
+    <span>昨涨停 89 · 今封板 4 · 晋级率 4.5%</span>
+  </footer>
+</div>
+
+<script>
+const rows=[['农发种业','600313','7.11','+5.18%','+0.35','9.84%','1.09','6.4亿',false,''],
+['金健米业','600127','13.02','+9.97%','+1.18','29.82%','1.02','21.7亿',false,'涨停'],
+['深桑达Ａ','000032','14.39','-1.71%','-0.25','2.21%','0.86','3.9亿',true,''],
+['金螳螂','002081','4.79','-1.44%','-0.07','4.55%','0.79','2.2亿',true,''],
+['招金黄金','000506','18.57','-5.21%','-1.02','6.52%','1.52','11.3亿',true,''],
+['登海种业','002041','10.36','+5.50%','+0.54','7.63%','1.56','9.8亿',true,''],
+['贵州茅台','600519','1266.66','+0.69%','+8.66','0.14%','0.94','38.2亿',false,''],
+['平安银行','000001','11.62','-0.68%','-0.08','0.35%','0.88','12.4亿',true,''],
+['澳弘电子','605058','48.76','+9.99%','+4.43','11.47%','2.10','8.6亿',false,'4连板'],
+['华瓷股份','001216','19.88','+10.02%','+1.81','8.88%','1.34','5.1亿',true,'2连板'],
+['中晶科技','003026','26.41','+9.99%','+2.40','12.05%','1.88','4.2亿',true,'3连板'],
+['内蒙新华','603230','15.28','+9.96%','+1.38','14.62%','2.31','3.2亿',false,'涨停']];
+document.getElementById('tb').innerHTML=rows.map((r,i)=>{const up=r[3][0]==='+';const col=up?'rise':'fall';
+ return `<tr class="${i===0?'sel':''}"><td><div class="stock"><span class="badge${r[8]?' sz':''}">${r[0][0]}</span>
+ <div><div class="sname">${r[0]}${r[9]?`<span class="tag">${r[9]}</span>`:''}</div><div class="scode">${r[1]}</div></div></div></td>
+ <td class="num">${r[2]}</td><td class="dlt ${col}">${r[3]}</td><td class="dlt ${col}">${r[4]}</td>
+ <td class="num">${r[5]}</td><td class="num">${r[6]}</td><td class="num">${r[7]}</td></tr>`}).join('');
+const auc=[['华瓷股份','2 连板 · 封单 5400万',67,'追高'],['中晶科技','2 连板 · 封单 8600万',62,'追高'],
+['内蒙新华','1 连板 · 封单 3100万',59,'追高'],['澳弘电子','4 连板 · 封单 1.2亿',51,'追高'],
+['西陇科学','2 连板 · 封单 2200万',46,'追高'],['世联行','1 连板 · 封单 3100万',37,'追高'],
+['洪兴股份','1 连板 · 封单 1500万',33,'溢价偏高']];
+document.getElementById('auc').innerHTML=auc.map(r=>`<div class="row"><div class="l"><div class="t">${r[0]}</div><div class="s">${r[1]}</div></div>
+ <div style="text-align:right"><div class="num" style="font-size:13px;font-weight:700">${r[2]}%</div>
+ <div class="meter"><i class="${r[2]>=55?'hi':''}" style="width:${r[2]}%"></i></div></div></div>`).join('');
+</script>
+</body></html>

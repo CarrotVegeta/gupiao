@@ -2,18 +2,30 @@ import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import type {
+  MarketIndicesResponse,
+  AuctionResponse,
+  DragonTigerResponse,
   LimitUpResponse,
   MarketOverviewResponse,
   QuotesResponse,
+  SprintLimitUpResponse,
   StockSearchResponse,
 } from '../src/types.js';
+import { fetchEastmoneyDragonTiger } from './dragon-tiger/eastmoney.js';
+import { fetchEastmoneyAuction } from './auction/eastmoney.js';
+import { createAuctionCache } from './auction/cache.js';
+import { mergeMarketIndices, mergeQuoteBundles } from './merge.js';
 import { fetchEastmoneyLimitUp } from './limit-up/eastmoney.js';
+import { fetchMarketBreadth } from './market/breadth.js';
 import { fetchEastmoneyMarket } from './market/eastmoney.js';
+import { fetchTencentMarket } from './market/tencent.js';
+import { fetchEastmoneySprintLimitUp } from './sprint-limit-up/eastmoney.js';
 import {
   fetchEastmoneyQuotes,
   fetchEastmoneySearch,
   normalizeSymbol,
 } from './quotes/eastmoney.js';
+import { fetchTencentQuotes } from './quotes/tencent.js';
 
 const DIST_DIR = path.resolve(process.cwd(), 'dist');
 const INDEX_HTML = path.join(DIST_DIR, 'index.html');
@@ -45,6 +57,14 @@ const getShanghaiToday = (): string => {
   return `${year}${month}${day}`;
 };
 
+/** 服务器当前日期（东八区）的 YYYYMMDD，作为默认交易日 */
+export const toTodayTradeDate = (): string => {
+  const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  return `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}${String(
+    now.getUTCDate(),
+  ).padStart(2, '0')}`;
+};
+
 export const parseTradeDate = (input: unknown): string | null => {
   if (input === undefined) {
     return getShanghaiToday();
@@ -56,9 +76,30 @@ export const parseTradeDate = (input: unknown): string | null => {
 
 export const createApp = () => {
   const app = express();
+  const auctionCache = createAuctionCache();
 
-  app.get('/api/market-overview', async (_req, res) => {
-    const body: MarketOverviewResponse = await fetchEastmoneyMarket();
+  app.get('/api/market-overview', async (req, res) => {
+    const tradeDate = parseTradeDate(req.query.date) ?? toTodayTradeDate();
+
+    // 指数和情绪各走各的源，互不阻塞
+    const [primary, breadth] = await Promise.all([
+      fetchTencentMarket(),
+      fetchMarketBreadth(tradeDate).catch(() => null),
+    ]);
+
+    const merged: MarketIndicesResponse = primary.indices.every(
+      (index) => index.status === 'fresh',
+    )
+      ? primary
+      : mergeMarketIndices(primary, await fetchEastmoneyMarket());
+
+    // 两市成交 = 沪市 + 深市（上证指数 / 深证成指的成交额就是两市总额）
+    const shanghai = merged.indices.find((index) => index.symbol === '000001')?.amount ?? null;
+    const shenzhen = merged.indices.find((index) => index.symbol === '399001')?.amount ?? null;
+    const turnover =
+      shanghai !== null && shenzhen !== null ? shanghai + shenzhen : (shanghai ?? shenzhen);
+
+    const body: MarketOverviewResponse = { ...merged, turnover, breadth };
     return res.status(200).json(body);
   });
 
@@ -70,6 +111,50 @@ export const createApp = () => {
     }
 
     const body: LimitUpResponse = await fetchEastmoneyLimitUp(tradeDate);
+    return res.status(200).json(body);
+  });
+
+  app.get('/api/sprint-limit-up', async (req, res) => {
+    const tradeDate = parseTradeDate(req.query.date);
+
+    if (tradeDate === null) {
+      return res.status(400).json({ message: 'date 必须是 YYYYMMDD 格式' });
+    }
+
+    const body: SprintLimitUpResponse = await fetchEastmoneySprintLimitUp(tradeDate);
+    return res.status(200).json(body);
+  });
+
+  app.get('/api/dragon-tiger', async (req, res) => {
+    const tradeDate = parseTradeDate(req.query.date);
+
+    if (tradeDate === null) {
+      return res.status(400).json({ message: 'date 必须是 YYYYMMDD 格式' });
+    }
+
+    const body: DragonTigerResponse = await fetchEastmoneyDragonTiger(tradeDate);
+    return res.status(200).json(body);
+  });
+
+  app.get('/api/auction', async (req, res) => {
+    const tradeDate = parseTradeDate(req.query.date);
+
+    if (tradeDate === null) {
+      return res.status(400).json({ message: 'date 必须是 YYYYMMDD 格式' });
+    }
+
+    const cached = auctionCache.get(tradeDate);
+    if (cached !== null) {
+      return res.status(200).json(cached);
+    }
+
+    const body: AuctionResponse = await fetchEastmoneyAuction(tradeDate);
+
+    // 只缓存成功结果：失败结果留给下次请求重试，避免把偶发故障固化 5 分钟。
+    if (body.status === 'fresh') {
+      auctionCache.set(tradeDate, body);
+    }
+
     return res.status(200).json(body);
   });
 
@@ -93,13 +178,13 @@ export const createApp = () => {
     }
 
     const fetchedAt = new Date().toISOString();
-    const result = await fetchEastmoneyQuotes(symbols);
-    const body: QuotesResponse = {
-      quotes: result.quotes,
-      fetchedAt,
-      source: 'eastmoney',
-      errors: result.errors,
-    };
+    const primary = await fetchTencentQuotes(symbols);
+    const resolved = new Set(primary.quotes.map((quote) => quote.symbol));
+    const missing = symbols.filter((symbol) => !resolved.has(symbol));
+    const fallback =
+      missing.length > 0 ? await fetchEastmoneyQuotes(missing) : { quotes: [], errors: [] };
+
+    const body: QuotesResponse = mergeQuoteBundles(primary, fallback, fetchedAt);
 
     return res.status(200).json(body);
   });

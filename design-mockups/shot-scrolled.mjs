@@ -1,0 +1,22 @@
+/** 在指定视口尺寸下滚动后截图，用于复现「顶栏压住指数条」这类问题 */
+const [, , out, w = '1440', h = '640', scrollY = '90'] = process.argv;
+const PORT = process.env.CDP_PORT ?? 9222;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const targets = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
+const t = targets.find((x) => x.type === 'page');
+const ws = new WebSocket(t.webSocketDebuggerUrl);
+let id = 0; const pending = new Map();
+ws.addEventListener('message', (e) => { const m = JSON.parse(e.data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m.result); pending.delete(m.id); } });
+await new Promise((r) => ws.addEventListener('open', r));
+const send = (method, params = {}) => new Promise((res) => { const i = ++id; pending.set(i, res); ws.send(JSON.stringify({ id: i, method, params })); });
+await send('Page.enable');
+await send('Emulation.setDeviceMetricsOverride', { width: Number(w), height: Number(h), deviceScaleFactor: 2, mobile: false });
+await send('Page.navigate', { url: 'http://localhost:5174/' });
+await sleep(3500);
+await send('Runtime.evaluate', { expression: `window.scrollTo(0, ${Number(scrollY)})` });
+await sleep(600);
+const shot = await send('Page.captureScreenshot', { format: 'png' });
+const { writeFileSync } = await import('node:fs');
+writeFileSync(out, Buffer.from(shot.data, 'base64'));
+console.log('saved', out);
+ws.close(); process.exit(0);

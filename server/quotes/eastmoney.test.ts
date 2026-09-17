@@ -135,12 +135,70 @@ describe('eastmoney quote adapter', () => {
           }),
         ),
       )
+      .mockRejectedValueOnce(new Error('push2 timeout'))
       .mockRejectedValueOnce(new Error('upstream timeout'));
 
     const result = await fetchEastmoneyQuotes(['600519', '000001'], fetchImpl);
 
     expect(result.quotes).toHaveLength(1);
     expect(result.errors).toEqual([{ symbol: '000001', message: 'upstream timeout' }]);
+  });
+
+  it('falls back to the push2delay mirror when push2 drops the connection', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              diff: [
+                {
+                  f2: 1297.99,
+                  f3: 0.38,
+                  f4: 4.9,
+                  f8: 0.17,
+                  f12: '600519',
+                  f14: '贵州茅台',
+                  f18: 1293.09,
+                },
+              ],
+            },
+          }),
+        ),
+      )
+      .mockRejectedValueOnce(new Error('other side closed'))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { ...validPayload('000001'), f58: '平安银行' } })),
+      );
+
+    const result = await fetchEastmoneyQuotes(['600519', '000001'], fetchImpl);
+
+    expect(result.quotes).toMatchObject([
+      { symbol: '600519', status: 'fresh' },
+      { symbol: '000001', name: '平安银行', status: 'fresh' },
+    ]);
+    expect(result.errors).toEqual([]);
+    expect(String(fetchImpl.mock.calls[2]?.[0])).toContain('push2delay.eastmoney.com');
+  });
+
+  it('reports the last transport error when push2 and its mirror both fail', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = String(input);
+      throw new Error(url.includes('push2delay') ? 'mirror unreachable' : 'push2 unreachable');
+    });
+
+    const result = await fetchEastmoneyQuotes(['600519'], fetchImpl);
+
+    expect(result.quotes).toEqual([]);
+    expect(result.errors).toEqual([{ symbol: '600519', message: 'mirror unreachable' }]);
+    // 批量 + 单只各试了两个域名
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(fetchImpl.mock.calls.map(([url]) => String(url))).toEqual([
+      expect.stringContaining('push2.eastmoney.com'),
+      expect.stringContaining('push2delay.eastmoney.com'),
+      expect.stringContaining('push2.eastmoney.com'),
+      expect.stringContaining('push2delay.eastmoney.com'),
+    ]);
   });
 
   it('reports an empty payload against the requested symbol', async () => {

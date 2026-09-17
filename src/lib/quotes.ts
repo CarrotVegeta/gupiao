@@ -116,6 +116,10 @@ export const mergeQuotes = (
 export const formatCurrency = (value: number | null): string =>
   value === null ? '—' : `¥${CURRENCY_FORMATTER.format(value)}`;
 
+/** 表格里的价格不显示货币符号（对齐 F 的 7.11 / +0.35） */
+export const formatPrice = (value: number | null): string =>
+  value === null ? '—' : CURRENCY_FORMATTER.format(value);
+
 export const formatPercent = (value: number | null): string =>
   value === null ? '—' : `${PERCENT_FORMATTER.format(value)}%`;
 

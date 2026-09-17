@@ -4,10 +4,10 @@ import { fetchEastmoneyMarket, mapEastmoneyMarket } from './eastmoney.js';
 const fetchedAt = '2026-08-19T01:30:00.000Z';
 
 const marketDiffFixture = [
-  { f2: 345678, f3: 123, f4: 4198, f12: '000688', f14: '科创50' },
-  { f2: 321012, f3: -56, f4: -1811, f12: '000001', f14: '上证指数' },
-  { f2: 1109876, f3: 89, f4: 9765, f12: '399001', f14: '深证成指' },
-  { f2: 223456, f3: 234, f4: 5111, f12: '399006', f14: '创业板指' },
+  { f2: 345678, f3: 123, f4: 4198, f6: 100_000_000, f12: '000688', f14: '科创50' },
+  { f2: 321012, f3: -56, f4: -1811, f6: 100_000_000, f12: '000001', f14: '上证指数' },
+  { f2: 1109876, f3: 89, f4: 9765, f6: 100_000_000, f12: '399001', f14: '深证成指' },
+  { f2: 223456, f3: 234, f4: 5111, f6: 100_000_000, f12: '399006', f14: '创业板指' },
 ];
 
 describe('eastmoney market adapter', () => {
@@ -33,6 +33,7 @@ describe('eastmoney market adapter', () => {
           price: 3210.12,
           pct: -0.56,
           change: -18.11,
+          amount: 100_000_000,
           updatedAt: fetchedAt,
           status: 'fresh',
         },
@@ -42,6 +43,7 @@ describe('eastmoney market adapter', () => {
           price: 11098.76,
           pct: 0.89,
           change: 97.65,
+          amount: 100_000_000,
           updatedAt: fetchedAt,
           status: 'fresh',
         },
@@ -51,15 +53,7 @@ describe('eastmoney market adapter', () => {
           price: 2234.56,
           pct: 2.34,
           change: 51.11,
-          updatedAt: fetchedAt,
-          status: 'fresh',
-        },
-        {
-          symbol: '000688',
-          name: '科创 50',
-          price: 3456.78,
-          pct: 1.23,
-          change: 41.98,
+          amount: 100_000_000,
           updatedAt: fetchedAt,
           status: 'fresh',
         },
@@ -70,7 +64,7 @@ describe('eastmoney market adapter', () => {
     });
   });
 
-  it('requests all four fixed market secids from the upstream endpoint', async () => {
+  it('requests all three fixed market secids from the upstream endpoint', async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -84,8 +78,8 @@ describe('eastmoney market adapter', () => {
     const result = await fetchEastmoneyMarket(fetchImpl);
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(fetchImpl.mock.calls[0]?.[0]).toContain('secids=1.000001%2C0.399001%2C0.399006%2C1.000688');
-    expect(fetchImpl.mock.calls[0]?.[0]).toContain('fields=f2%2Cf3%2Cf4%2Cf12%2Cf14');
+    expect(fetchImpl.mock.calls[0]?.[0]).toContain('secids=1.000001%2C0.399001%2C0.399006');
+    expect(fetchImpl.mock.calls[0]?.[0]).toContain('fields=f2%2Cf3%2Cf4%2Cf6%2Cf12%2Cf14');
     expect(result.errors).toEqual([]);
   });
 
@@ -109,10 +103,10 @@ describe('eastmoney market adapter', () => {
         price: null,
         change: null,
         pct: null,
+        amount: null,
         status: 'unavailable',
       },
       { symbol: '399006', status: 'fresh' },
-      { symbol: '000688', status: 'fresh' },
     ]);
     expect(result.errors).toEqual([{ symbol: '399001', message: '上游指数数据不完整' }]);
   });
@@ -135,6 +129,7 @@ describe('eastmoney market adapter', () => {
       price: null,
       change: null,
       pct: null,
+      amount: null,
       updatedAt: null,
       status: 'unavailable',
     });
@@ -164,12 +159,14 @@ describe('eastmoney market adapter', () => {
     });
 
     const resultPromise = fetchEastmoneyMarket(fetchImpl);
-    await vi.advanceTimersByTimeAsync(5_000);
+    // 主站 + 镜像各 5 秒，两次都要能被超时打断
+    await vi.advanceTimersByTimeAsync(10_000);
     const result = await resultPromise;
 
-    expect(result.indices).toHaveLength(4);
+    expect(result.indices).toHaveLength(3);
     expect(result.indices.every((index) => index.status === 'unavailable')).toBe(true);
     expect(result.errors.every((error) => error.message === '大盘指数上游请求超时')).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it('maps bad JSON and ordinary request failures to stable Chinese errors', async () => {

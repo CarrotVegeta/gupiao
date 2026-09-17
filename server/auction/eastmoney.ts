@@ -1,0 +1,897 @@
+import type { AuctionItem, AuctionResponse } from '../../src/types.js';
+import { toEastmoneySecId } from '../quotes/eastmoney.js';
+import { TENCENT_FIELD, fetchTencentQuoteFields, toTencentSymbol } from '../tencent/client.js';
+import {
+  classifyAuctionPremium,
+  isSealedAtAuction,
+  predictLimitUpProbability,
+  toProbabilityTier,
+} from './model.js';
+
+type AuctionPoolItem = Pick<
+  AuctionItem,
+  | 'symbol'
+  | 'name'
+  | 'boardCount'
+  | 'firstSealTime'
+  | 'lastSealTime'
+  | 'breakCount'
+  | 'previousAmount'
+  | 'sealAmount'
+  | 'floatMarketCap'
+  | 'turnoverRate'
+>;
+
+type AuctionDetail = {
+  auctionPrice: number;
+  auctionPct: number;
+  auctionAmount: number | null;
+};
+
+type SortableAuctionItem = Pick<AuctionItem, 'symbol' | 'boardCount' | 'limitUpProbability'>;
+
+/** 09:25 时刻可知的市场环境，用于概率模型 */
+export type AuctionMarketContext = {
+  /** 昨日涨停家数（= 候选池规模） */
+  previousLimitUpCount: number;
+  /** 昨日炸板家数 */
+  previousBrokenCount: number | null;
+  /** 上证竞价缺口（%） */
+  indexGapPct: number | null;
+};
+
+export const createAuctionMarketContext = (
+  previousLimitUpCount: number,
+): AuctionMarketContext => ({
+  previousLimitUpCount,
+  previousBrokenCount: null,
+  indexGapPct: null,
+});
+
+const CALENDAR_ENDPOINT = 'https://push2his.eastmoney.com/api/qt/stock/kline/get';
+const LIMIT_UP_ENDPOINT = 'https://push2ex.eastmoney.com/getTopicZTPool';
+/** 逐笔明细：push2 在部分网络会被上游直接断连，push2delay 是同一份数据的镜像 */
+const DETAIL_ENDPOINTS = [
+  'https://push2.eastmoney.com/api/qt/stock/details/get',
+  'https://push2delay.eastmoney.com/api/qt/stock/details/get',
+] as const;
+/** 腾讯分笔：只提供最近一个交易日，p=0 即当日最早那一段（09:25 竞价成交在第一条） */
+const TENCENT_DETAIL_ENDPOINT = 'https://stock.gtimg.cn/data/index.php';
+const QUOTE_LIST_ENDPOINT = 'https://push2.eastmoney.com/api/qt/ulist.np/get';
+const TENCENT_QUOTE_ENDPOINT = 'https://qt.gtimg.cn/q=';
+const TENCENT_KLINE_ENDPOINT = 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get';
+const REQUEST_TIMEOUT_MS = 8_000;
+const PAGE_SIZE = 100;
+const MAX_PAGES = 20;
+const DETAIL_CONCURRENCY = 4;
+const DETAIL_ATTEMPTS = 3;
+const DETAIL_RETRY_BASE_MS = 200;
+/** 连续失败到该阈值就认为明细源整体不可用，本次请求不再逐只尝试 */
+const DETAIL_FAILURE_THRESHOLD = 8;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const asNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '' || value === '-') {
+    return null;
+  }
+
+  const result = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(result) ? result : null;
+};
+
+const asInteger = (value: unknown): number | null => {
+  const result = asNumber(value);
+  return result !== null && Number.isInteger(result) ? result : null;
+};
+
+const asString = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
+const normalizeSymbol = (value: unknown): string => {
+  const raw = String(value ?? '').trim().toUpperCase();
+  if (/^\d{1,6}$/.test(raw)) {
+    return raw.padStart(6, '0');
+  }
+
+  return raw.match(/^(?:SH|SZ|BJ)?(\d{6})$/)?.[1] ?? '';
+};
+
+const formatTradeTime = (value: unknown): string | null => {
+  const raw = String(value ?? '').trim();
+  if (!/^\d{1,6}$/.test(raw)) {
+    return null;
+  }
+
+  const normalized = raw.padStart(6, '0');
+  const hour = Number(normalized.slice(0, 2));
+  const minute = Number(normalized.slice(2, 4));
+  const second = Number(normalized.slice(4, 6));
+  if (hour > 23 || minute > 59 || second > 59) {
+    return null;
+  }
+
+  return `${normalized.slice(0, 2)}:${normalized.slice(2, 4)}:${normalized.slice(4, 6)}`;
+};
+
+const fetchJson = async (url: string, fetchImpl: typeof fetch): Promise<unknown> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetchImpl(url, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const fetchText = async (url: string, fetchImpl: typeof fetch): Promise<string> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetchImpl(url, {
+      signal: controller.signal,
+      headers: { Accept: 'text/plain' },
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return await response.text();
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const dateDaysBefore = (tradeDate: string, days: number): string => {
+  const date = new Date(
+    Date.UTC(
+      Number(tradeDate.slice(0, 4)),
+      Number(tradeDate.slice(4, 6)) - 1,
+      Number(tradeDate.slice(6, 8)),
+    ),
+  );
+  date.setUTCDate(date.getUTCDate() - days);
+  return date.toISOString().slice(0, 10).replaceAll('-', '');
+};
+
+const unavailableResponse = (message: string, fetchedAt: string): AuctionResponse => ({
+  tradeDate: null,
+  previousTradeDate: null,
+  snapshotTime: '09:25:00',
+  items: [],
+  fetchedAt,
+  source: 'eastmoney',
+  status: 'unavailable',
+  error: message,
+});
+
+export const findPreviousTradeDate = (
+  dates: string[],
+  tradeDate: string,
+): string | null => {
+  const normalizedDates = dates
+    .map((date) => date.replaceAll('-', ''))
+    .filter((date) => /^\d{8}$/.test(date) && date < tradeDate)
+    .sort();
+  return normalizedDates.at(-1) ?? null;
+};
+
+export const mapEastmoneyAuctionPoolItem = (raw: unknown): AuctionPoolItem | null => {
+  if (!isRecord(raw)) {
+    return null;
+  }
+
+  const symbol = normalizeSymbol(raw.c);
+  const name = asString(raw.n);
+  if (!symbol || !name) {
+    return null;
+  }
+
+  return {
+    symbol,
+    name,
+    boardCount: asInteger(raw.lbc),
+    firstSealTime: formatTradeTime(raw.fbt),
+    lastSealTime: formatTradeTime(raw.lbt),
+    breakCount: asInteger(raw.zbc),
+    previousAmount: asNumber(raw.amount),
+    sealAmount: asNumber(raw.fund ?? raw.fd),
+    floatMarketCap: asNumber(raw.ltsz),
+    turnoverRate: asNumber(raw.hs),
+  };
+};
+
+export const mapEastmoneyAuctionDetail = (raw: unknown): AuctionDetail | null => {
+  if (!isRecord(raw) || !Array.isArray(raw.details)) {
+    return null;
+  }
+
+  const prePrice = asNumber(raw.prePrice);
+  // 集合竞价的成交回报不总是正好戳在 09:25:00：实测约三分之一会落到 09:25:01~09:25:59。
+  // 09:25:00 ~ 09:29:59 之间不存在连续竞价成交，取这个窗口内的第一条即为竞价成交。
+  const match = raw.details.find(
+    (detail): detail is string =>
+      typeof detail === 'string' &&
+      detail.length >= 8 &&
+      detail.slice(0, 8) >= '09:25:00' &&
+      detail.slice(0, 8) < '09:30:00',
+  );
+  if (prePrice === null || prePrice <= 0 || !match) {
+    return null;
+  }
+
+  const fields = match.split(',');
+  const auctionPrice = asNumber(fields[1]);
+  const auctionLots = asNumber(fields[2]);
+  if (auctionPrice === null || auctionPrice <= 0 || auctionLots === null || auctionLots < 0) {
+    return null;
+  }
+
+  return {
+    auctionPrice,
+    auctionPct: Number((((auctionPrice - prePrice) / prePrice) * 100).toFixed(2)),
+    auctionAmount: Number((auctionPrice * auctionLots * 100).toFixed(2)),
+  };
+};
+
+export type TencentAuctionTick = {
+  auctionPrice: number;
+  auctionAmount: number | null;
+};
+
+/**
+ * 腾讯分笔：`v_detail_data_sh600519=[页码,"序号/时间/价格/涨跌/成交量(手)/成交额(元)/方向|..."]`
+ *
+ * 与东财的两点差别：
+ * - 成交额是**真实金额**（东财要用「价 × 手数 × 100」估算，实测相对误差 ~0.01%）
+ * - 不返回昨收，溢价率要用行情里的昨收自己算
+ * 取 09:25:00~09:29:59 的第一条：这段时间不存在连续竞价成交，第一条即集合竞价成交。
+ */
+export const mapTencentAuctionTick = (text: string): TencentAuctionTick | null => {
+  const start = text.indexOf('=[');
+  if (start === -1) {
+    return null;
+  }
+
+  const payload = text.slice(start + 2).replace(/];?\s*$/, '');
+  const tick = payload
+    .split('|')
+    .map((chunk) => chunk.split('/'))
+    .find(
+      (fields) =>
+        fields.length >= 6 &&
+        typeof fields[1] === 'string' &&
+        fields[1] >= '09:25:00' &&
+        fields[1] < '09:30:00',
+    );
+  if (!tick) {
+    return null;
+  }
+
+  const auctionPrice = asNumber(tick[2]);
+  if (auctionPrice === null || auctionPrice <= 0) {
+    return null;
+  }
+
+  const amount = asNumber(tick[5]);
+  return {
+    auctionPrice,
+    auctionAmount: amount !== null && amount >= 0 ? Number(amount.toFixed(2)) : null,
+  };
+};
+
+const fetchTencentAuctionTick = async (
+  symbol: string,
+  fetchImpl: typeof fetch,
+): Promise<TencentAuctionTick | null> => {
+  const params = new URLSearchParams({
+    appn: 'detail',
+    action: 'data',
+    c: toTencentSymbol(symbol),
+    p: '0',
+  });
+
+  const body = await fetchText(`${TENCENT_DETAIL_ENDPOINT}?${params.toString()}`, fetchImpl);
+  return mapTencentAuctionTick(body);
+};
+
+/**
+ * 腾讯优先的 09:25 竞价明细。
+ *
+ * 为什么先取批量行情、而不是直接逐只取分笔：
+ * - 行情里的**今开就等于 09:25 竞价成交价**（开盘价由集合竞价撮合产生），两个批量请求就能覆盖全部候选
+ * - 「今开 > 0」同时是护栏：09:25 之前今开为 0，而分笔这时还在吐**上一交易日**的数据。
+ *   用数据自身判断「今日是否已开盘」，比读本机时钟可靠（不依赖机器时区与时间是否准确）
+ * - 昨收来自同一批行情，用来算竞价溢价
+ *
+ * 分笔只用来补「竞价成交额」——量能比需要它，行情接口里只有全天累计成交额。
+ * 分笔拿不到时仍返回价格（量能缺失），与东财 ulist 兜底的行为一致。
+ */
+const fetchTencentAuctionDetails = async (
+  symbols: string[],
+  fetchImpl: typeof fetch,
+): Promise<Map<string, AuctionDetail>> => {
+  const details = new Map<string, AuctionDetail>();
+  if (symbols.length === 0) {
+    return details;
+  }
+
+  const quotes = await fetchTencentQuoteFields(symbols.map(toTencentSymbol), fetchImpl);
+  const targets: Array<{ symbol: string; open: number; preClose: number }> = [];
+
+  for (const symbol of symbols) {
+    const fields = quotes.get(toTencentSymbol(symbol));
+    if (!fields) {
+      continue;
+    }
+
+    const open = asNumber(fields[TENCENT_FIELD.open]);
+    const preClose = asNumber(fields[TENCENT_FIELD.preClose]);
+    if (open === null || open <= 0 || preClose === null || preClose <= 0) {
+      continue;
+    }
+
+    targets.push({ symbol, open, preClose });
+  }
+
+  const ticks = await mapWithConcurrency(targets, DETAIL_CONCURRENCY, (target) =>
+    fetchTencentAuctionTick(target.symbol, fetchImpl).catch(() => null),
+  );
+
+  targets.forEach((target, index) => {
+    details.set(target.symbol, {
+      auctionPrice: target.open,
+      auctionPct: Number((((target.open - target.preClose) / target.preClose) * 100).toFixed(2)),
+      auctionAmount: ticks[index]?.auctionAmount ?? null,
+    });
+  });
+
+  return details;
+};
+
+/** 昨日一字板：09:25 就封板且全天没炸过 */
+export const isPreviousOneWord = (
+  firstSealTime: string | null,
+  breakCount: number | null,
+): boolean | null => {
+  if (firstSealTime === null || breakCount === null) {
+    return null;
+  }
+  return firstSealTime <= '09:25:00' && breakCount === 0;
+};
+
+/**
+ * 判定一只候选票：数值全部来自 09:25 时点信息，
+ * 输出「今日收盘继续涨停」的概率档位 + 买入溢价档位。
+ */
+export const evaluateAuctionCandidate = (
+  poolItem: AuctionPoolItem,
+  detail: AuctionDetail | null,
+  context: AuctionMarketContext,
+): AuctionItem => {
+  if (detail === null) {
+    return {
+      ...poolItem,
+      auctionPrice: null,
+      auctionPct: null,
+      auctionAmount: null,
+      auctionRatio: null,
+      auctionPremium: null,
+      limitUpProbability: null,
+      sealedAtAuction: null,
+      probabilityMissing: 0,
+      result: 'insufficient',
+      reasons: ['缺少 09:25 竞价成交数据'],
+    };
+  }
+
+  const auctionRatio =
+    detail.auctionAmount !== null &&
+    poolItem.previousAmount !== null &&
+    poolItem.previousAmount > 0
+      ? Number(((detail.auctionAmount / poolItem.previousAmount) * 100).toFixed(2))
+      : null;
+  const prediction = predictLimitUpProbability({
+    gapPct: detail.auctionPct,
+    board: poolItem.boardCount,
+    previousOneWord: isPreviousOneWord(poolItem.firstSealTime, poolItem.breakCount),
+    previousTurnover: poolItem.turnoverRate,
+    floatMarketCapYi:
+      poolItem.floatMarketCap !== null ? poolItem.floatMarketCap / 100_000_000 : null,
+    previousLimitUpCount: context.previousLimitUpCount,
+    previousBrokenCount: context.previousBrokenCount,
+    indexGapPct: context.indexGapPct,
+  });
+  const premium = classifyAuctionPremium(detail.auctionPct);
+
+  return {
+    ...poolItem,
+    ...detail,
+    auctionRatio,
+    auctionPremium: premium.level,
+    limitUpProbability: Number(prediction.probability.toFixed(4)),
+    sealedAtAuction: isSealedAtAuction(poolItem.symbol, poolItem.name, detail.auctionPct),
+    probabilityMissing: prediction.missingCount,
+    result: toProbabilityTier(prediction.probability),
+    reasons: [...prediction.reasons, premium.reason],
+  };
+};
+export const sortAuctionItems = <T extends SortableAuctionItem>(items: T[]): T[] =>
+  [...items].sort((left, right) => {
+    const boardDiff = (right.boardCount ?? -1) - (left.boardCount ?? -1);
+    if (boardDiff !== 0) {
+      return boardDiff;
+    }
+
+    const probabilityDiff = (right.limitUpProbability ?? -1) - (left.limitUpProbability ?? -1);
+    return probabilityDiff !== 0 ? probabilityDiff : left.symbol.localeCompare(right.symbol);
+  });
+
+const BROKEN_POOL_ENDPOINT = 'https://push2ex.eastmoney.com/getTopicZBPool';
+const INDEX_QUOTE_ENDPOINT = 'https://push2.eastmoney.com/api/qt/stock/get';
+
+/** 昨日炸板家数：情绪维度里少数在 09:25 就能拿到的当日环境指标 */
+const fetchBrokenCount = async (
+  tradeDate: string,
+  fetchImpl: typeof fetch,
+): Promise<number | null> => {
+  try {
+    const params = new URLSearchParams({
+      ut: '7eea3edcaed734bea9cbfc24409ed989',
+      dpt: 'wz.ztzt',
+      sort: 'fbt:asc',
+      date: tradeDate,
+      pagesize: '1',
+      Pageindex: '0',
+    });
+    const payload = await fetchJson(`${BROKEN_POOL_ENDPOINT}?${params.toString()}`, fetchImpl);
+    const data = isRecord(payload) && isRecord(payload.data) ? payload.data : null;
+    const total = data ? asInteger(data.tc) : null;
+    return total !== null && total >= 0 ? total : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * 上证竞价缺口：开盘相对昨收。
+ * 先走腾讯（稳定），东财 push2 只作为备用——它在这台机器上会被上游断连，
+ * 一旦失败就会让每只票都少一个模型特征（probabilityMissing +1）。
+ */
+const fetchIndexGapPct = async (fetchImpl: typeof fetch): Promise<number | null> => {
+  try {
+    const text = await fetchText(`${TENCENT_QUOTE_ENDPOINT}sh000001`, fetchImpl);
+    const fields = text.match(/v_sh000001="([^"]*)"/i)?.[1]?.split('~') ?? [];
+    const open = asNumber(fields[5]);
+    const preClose = asNumber(fields[4]);
+    if (open !== null && preClose !== null && open > 0 && preClose > 0) {
+      return Number((((open - preClose) / preClose) * 100).toFixed(2));
+    }
+  } catch {
+    // 落到东财源
+  }
+
+  try {
+    // 开盘点位与昨收的缩放系数相同，比值与精度无关，无需按 f59 还原
+    const params = new URLSearchParams({ secid: '1.000001', fields: 'f46,f60' });
+    const payload = await fetchJson(`${INDEX_QUOTE_ENDPOINT}?${params.toString()}`, fetchImpl);
+    const data = isRecord(payload) && isRecord(payload.data) ? payload.data : null;
+    const open = asNumber(data?.f46);
+    const preClose = asNumber(data?.f60);
+    if (open === null || preClose === null || open <= 0 || preClose <= 0) {
+      return null;
+    }
+    return Number((((open - preClose) / preClose) * 100).toFixed(2));
+  } catch {
+    return null;
+  }
+};
+
+const toIsoDate = (date: string): string =>
+  `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`;
+
+/**
+ * 上一交易日：优先用腾讯指数日K（稳定、一个请求），
+ * 东财 push2his 作为备用——它在部分网络会被上游断连。
+ * 两个源都失败时，上层会退化为按日期回扫涨停池。
+ */
+const fetchPreviousTradeDate = async (
+  tradeDate: string,
+  fetchImpl: typeof fetch,
+): Promise<string | null> => {
+  try {
+    const params = new URLSearchParams({
+      param: `sh000001,day,${toIsoDate(dateDaysBefore(tradeDate, 30))},${toIsoDate(tradeDate)},320,qfq`,
+    });
+    const payload = await fetchJson(`${TENCENT_KLINE_ENDPOINT}?${params.toString()}`, fetchImpl);
+    const root = isRecord(payload) && isRecord(payload.data) ? payload.data : null;
+    const raw = root ? root.sh000001 : null;
+    const entry: Record<string, unknown> | null = isRecord(raw) ? raw : null;
+    const rows = entry ? (entry.qfqday ?? entry.day) : null;
+    const dates = (Array.isArray(rows) ? rows : [])
+      .filter((row): row is unknown[] => Array.isArray(row) && row.length > 0)
+      .map((row) => String(row[0]).replaceAll('-', ''));
+
+    return findPreviousTradeDate(dates, tradeDate);
+  } catch {
+    // 落到东财源
+  }
+
+  const params = new URLSearchParams({
+    secid: '1.000001',
+    klt: '101',
+    fqt: '0',
+    beg: dateDaysBefore(tradeDate, 30),
+    end: tradeDate,
+    fields1: 'f1',
+    fields2: 'f51',
+  });
+  const payload = await fetchJson(`${CALENDAR_ENDPOINT}?${params.toString()}`, fetchImpl);
+  const data = isRecord(payload) && isRecord(payload.data) ? payload.data : null;
+  return findPreviousTradeDate(
+    data && Array.isArray(data.klines)
+      ? data.klines.filter((item): item is string => typeof item === 'string')
+      : [],
+    tradeDate,
+  );
+};
+
+const fetchAuctionPool = async (
+  tradeDate: string,
+  fetchImpl: typeof fetch,
+): Promise<AuctionPoolItem[]> => {
+  const items: AuctionPoolItem[] = [];
+  const seen = new Set<string>();
+  let received = 0;
+  let total: number | null = null;
+
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const params = new URLSearchParams({
+      ut: '7eea3edcaed734bea9cbfc24409ed989',
+      dpt: 'wz.ztzt',
+      sort: 'fbt:asc',
+      date: tradeDate,
+      pagesize: String(PAGE_SIZE),
+      Pageindex: String(page),
+    });
+    const payload = await fetchJson(`${LIMIT_UP_ENDPOINT}?${params.toString()}`, fetchImpl);
+    const data = isRecord(payload) && isRecord(payload.data) ? payload.data : null;
+    if (!data || !Array.isArray(data.pool)) {
+      throw new Error('invalid pool');
+    }
+
+    const reportedTotal = asInteger(data.tc);
+    if (reportedTotal !== null && reportedTotal >= 0) {
+      total = reportedTotal;
+    }
+    received += data.pool.length;
+
+    for (const raw of data.pool) {
+      const item = mapEastmoneyAuctionPoolItem(raw);
+      if (item && !seen.has(item.symbol)) {
+        seen.add(item.symbol);
+        items.push(item);
+      }
+    }
+
+    if (data.pool.length === 0 || (total !== null && received >= total)) {
+      return items;
+    }
+  }
+
+  throw new Error('incomplete pool');
+};
+
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+/**
+ * 逐笔明细是「竞价量能」评分项的唯一来源，而该接口在并发偏高时会偶发断连。
+ * 只在传输层失败时重试：一旦上游给出合法响应（哪怕是空结果），立即返回，
+ * 避免个别请求失败导致量能项被静默清零、评分与档位随刷新跳变。
+ */
+/**
+ * 按源熔断：某个明细源连续失败到阈值就本次请求不再碰它，但继续尝试其它镜像源。
+ * 全部源都熔断后，剩下的股票直接跳过，避免对 80~90 只票逐个空转重试。
+ */
+export type DetailEndpointHealth = { consecutiveFailures: number; disabled: boolean };
+
+export type DetailSourceHealth = {
+  endpoints: DetailEndpointHealth[];
+  disabled: boolean;
+  skipped: number;
+};
+
+export const createDetailSourceHealth = (): DetailSourceHealth => ({
+  endpoints: DETAIL_ENDPOINTS.map(() => ({ consecutiveFailures: 0, disabled: false })),
+  disabled: false,
+  skipped: 0,
+});
+
+const fetchAuctionDetail = async (
+  symbol: string,
+  fetchImpl: typeof fetch,
+  health: DetailSourceHealth,
+): Promise<AuctionDetail | null> => {
+  if (health.disabled) {
+    health.skipped += 1;
+    return null;
+  }
+
+  const params = new URLSearchParams({
+    secid: toEastmoneySecId(symbol),
+    fields1: 'f1,f2,f3,f4,f5',
+    fields2: 'f51,f52,f53,f54,f55',
+    pos: '-100000',
+    iscca: '1',
+  });
+
+  for (let index = 0; index < DETAIL_ENDPOINTS.length; index += 1) {
+    const endpointHealth = health.endpoints[index];
+    if (endpointHealth.disabled) {
+      continue;
+    }
+
+    for (let attempt = 1; attempt <= DETAIL_ATTEMPTS; attempt += 1) {
+      try {
+        const payload = await fetchJson(`${DETAIL_ENDPOINTS[index]}?${params.toString()}`, fetchImpl);
+        endpointHealth.consecutiveFailures = 0;
+        // 拿到合法响应就返回（即便没有 09:25 成交，也不必再试镜像）
+        return mapEastmoneyAuctionDetail(isRecord(payload) ? payload.data : null);
+      } catch {
+        endpointHealth.consecutiveFailures += 1;
+        if (endpointHealth.consecutiveFailures >= DETAIL_FAILURE_THRESHOLD) {
+          endpointHealth.disabled = true;
+          break;
+        }
+        if (attempt < DETAIL_ATTEMPTS) {
+          await delay(DETAIL_RETRY_BASE_MS * attempt);
+        }
+      }
+    }
+  }
+
+  if (health.endpoints.every((endpoint) => endpoint.disabled)) {
+    health.disabled = true;
+    health.skipped += 1;
+  }
+
+  return null;
+};
+
+const fetchAuctionOpenQuotes = async (
+  symbols: string[],
+  fetchImpl: typeof fetch,
+): Promise<Record<string, AuctionDetail>> => {
+  const result: Record<string, AuctionDetail> = {};
+
+  for (let offset = 0; offset < symbols.length; offset += 50) {
+    const batch = symbols.slice(offset, offset + 50);
+    const params = new URLSearchParams({
+      fltt: '2',
+      invt: '2',
+      fields: 'f12,f17,f18',
+      secids: batch.map(toEastmoneySecId).join(','),
+    });
+    const payload = await fetchJson(`${QUOTE_LIST_ENDPOINT}?${params.toString()}`, fetchImpl);
+    const data = isRecord(payload) && isRecord(payload.data) ? payload.data : null;
+    const rows = data && Array.isArray(data.diff) ? data.diff : [];
+
+    for (const raw of rows) {
+      if (!isRecord(raw)) {
+        continue;
+      }
+      const symbol = normalizeSymbol(raw.f12);
+      const auctionPrice = asNumber(raw.f17);
+      const prePrice = asNumber(raw.f18);
+      if (!symbol || auctionPrice === null || auctionPrice <= 0 || prePrice === null || prePrice <= 0) {
+        continue;
+      }
+      result[symbol] = {
+        auctionPrice,
+        auctionPct: Number((((auctionPrice - prePrice) / prePrice) * 100).toFixed(2)),
+        auctionAmount: null,
+      };
+    }
+  }
+
+  return result;
+};
+
+const fetchTencentOpenQuotes = async (
+  symbols: string[],
+  fetchImpl: typeof fetch,
+): Promise<Record<string, AuctionDetail>> => {
+  const result: Record<string, AuctionDetail> = {};
+
+  for (let offset = 0; offset < symbols.length; offset += 50) {
+    const batch = symbols.slice(offset, offset + 50).map(toTencentSymbol).join(',');
+    const payload = await fetchText(`${TENCENT_QUOTE_ENDPOINT}${batch}`, fetchImpl);
+
+    for (const match of payload.matchAll(/v_[a-z]{2}\d{6}="([^"]*)";/gi)) {
+      const fields = match[1]?.split('~') ?? [];
+      const symbol = normalizeSymbol(fields[2]);
+      const prePrice = asNumber(fields[4]);
+      const auctionPrice = asNumber(fields[5]);
+      if (!symbol || prePrice === null || prePrice <= 0 || auctionPrice === null || auctionPrice <= 0) {
+        continue;
+      }
+      result[symbol] = {
+        auctionPrice,
+        auctionPct: Number((((auctionPrice - prePrice) / prePrice) * 100).toFixed(2)),
+        auctionAmount: null,
+      };
+    }
+  }
+
+  return result;
+};
+
+const mapWithConcurrency = async <T, R>(
+  values: T[],
+  limit: number,
+  mapper: (value: T) => Promise<R>,
+): Promise<R[]> => {
+  const results = new Array<R>(values.length);
+  let nextIndex = 0;
+  const worker = async (): Promise<void> => {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(values[index]);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(limit, values.length) }, () => worker()),
+  );
+  return results;
+};
+
+const isWeekend = (tradeDate: string): boolean => {
+  const date = new Date(
+    Date.UTC(
+      Number(tradeDate.slice(0, 4)),
+      Number(tradeDate.slice(4, 6)) - 1,
+      Number(tradeDate.slice(6, 8)),
+    ),
+  );
+  return date.getUTCDay() === 0 || date.getUTCDay() === 6;
+};
+
+const fetchFallbackPreviousPool = async (
+  tradeDate: string,
+  fetchImpl: typeof fetch,
+): Promise<{ previousTradeDate: string; pool: AuctionPoolItem[] } | null> => {
+  for (let daysBefore = 1; daysBefore <= 20; daysBefore += 1) {
+    const candidateDate = dateDaysBefore(tradeDate, daysBefore);
+    if (isWeekend(candidateDate)) {
+      continue;
+    }
+
+    try {
+      const pool = await fetchAuctionPool(candidateDate, fetchImpl);
+      if (pool.length > 0) {
+        return { previousTradeDate: candidateDate, pool };
+      }
+    } catch {
+      // 继续尝试更早的日期，避免单日接口异常阻断整个候选池。
+    }
+  }
+
+  return null;
+};
+
+export const fetchEastmoneyAuction = async (
+  tradeDate: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<AuctionResponse> => {
+  const fetchedAt = new Date().toISOString();
+
+  try {
+    let previousTradeDate: string | null = null;
+    try {
+      previousTradeDate = await fetchPreviousTradeDate(tradeDate, fetchImpl);
+    } catch {
+      previousTradeDate = null;
+    }
+
+    let pool: AuctionPoolItem[];
+    if (previousTradeDate !== null) {
+      pool = await fetchAuctionPool(previousTradeDate, fetchImpl);
+    } else {
+      const fallback = await fetchFallbackPreviousPool(tradeDate, fetchImpl);
+      if (fallback === null) {
+        return unavailableResponse('未找到上一交易日涨停池', fetchedAt);
+      }
+      previousTradeDate = fallback.previousTradeDate;
+      pool = fallback.pool;
+    }
+
+    const [previousBrokenCount, indexGapPct] = await Promise.all([
+      fetchBrokenCount(previousTradeDate, fetchImpl),
+      fetchIndexGapPct(fetchImpl),
+    ]);
+    const context: AuctionMarketContext = {
+      previousLimitUpCount: pool.length,
+      previousBrokenCount,
+      indexGapPct,
+    };
+
+    // 腾讯优先：两个批量请求就能拿到全部候选的 09:25 竞价价，再逐只取分笔补竞价成交额
+    const tencentDetails = await fetchTencentAuctionDetails(
+      pool.map((item) => item.symbol),
+      fetchImpl,
+    );
+    const details: Array<AuctionDetail | null> = pool.map(
+      (item) => tencentDetails.get(item.symbol) ?? null,
+    );
+    let usedTencent = details.some((detail) => detail !== null);
+
+    // 腾讯没覆盖到的（09:25 之前、停牌、腾讯缺分笔）再走东财明细链
+    const pending = pool
+      .map((item, index) => ({ item, index }))
+      .filter(({ index }) => details[index] === null);
+    if (pending.length > 0) {
+      const health = createDetailSourceHealth();
+      const fetched = await mapWithConcurrency(pending, DETAIL_CONCURRENCY, ({ item }) =>
+        fetchAuctionDetail(item.symbol, fetchImpl, health),
+      );
+      pending.forEach(({ index }, position) => {
+        details[index] = fetched[position];
+      });
+    }
+
+    const missingSymbols = pool
+      .filter((_item, index) => details[index] === null)
+      .map((item) => item.symbol);
+    let openQuotes: Record<string, AuctionDetail> = {};
+    if (missingSymbols.length > 0) {
+      try {
+        openQuotes = await fetchAuctionOpenQuotes(missingSymbols, fetchImpl);
+      } catch {
+        openQuotes = {};
+      }
+
+      const unresolvedSymbols = missingSymbols.filter((symbol) => openQuotes[symbol] === undefined);
+      if (unresolvedSymbols.length > 0) {
+        try {
+          const tencentQuotes = await fetchTencentOpenQuotes(unresolvedSymbols, fetchImpl);
+          if (Object.keys(tencentQuotes).length > 0) {
+            usedTencent = true;
+            openQuotes = { ...openQuotes, ...tencentQuotes };
+          }
+        } catch {
+          // 两个报价源都不可用时，保留“数据不足”状态，不猜测竞价结果。
+        }
+      }
+    }
+    const items = sortAuctionItems(
+      pool.map((item, index) =>
+        evaluateAuctionCandidate(item, details[index] ?? openQuotes[item.symbol] ?? null, context),
+      ),
+    );
+
+    return {
+      tradeDate,
+      previousTradeDate,
+      snapshotTime: '09:25:00',
+      items,
+      fetchedAt,
+      source: usedTencent ? 'eastmoney+tencent' : 'eastmoney',
+      status: 'fresh',
+      error: null,
+    };
+  } catch {
+    return unavailableResponse('竞价上游数据获取失败', fetchedAt);
+  }
+};

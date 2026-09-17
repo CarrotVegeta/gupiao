@@ -18,6 +18,8 @@ type EastmoneyQuoteData = {
   f3?: unknown;
   f4?: unknown;
   f8?: unknown;
+  f10?: unknown;
+  f6?: unknown;
   f12?: unknown;
   f14?: unknown;
   f18?: unknown;
@@ -32,17 +34,29 @@ type EastmoneyQuoteData = {
   f86?: unknown;
 } | null;
 
-export type EastmoneyQuotePayload = {
-  data: EastmoneyQuoteData | {
-    diff?: EastmoneyQuoteData[];
-  } | null;
+type EastmoneyQuoteEnvelope = {
+  diff?: EastmoneyQuoteData[];
 };
 
-const QUOTE_ENDPOINT = 'https://push2.eastmoney.com/api/qt/stock/get';
-const QUOTE_LIST_ENDPOINT = 'https://push2.eastmoney.com/api/qt/ulist.np/get';
+export type EastmoneyQuotePayload = {
+  data: EastmoneyQuoteData | EastmoneyQuoteEnvelope;
+};
+
+const QUOTE_PATH = '/api/qt/stock/get';
+const QUOTE_LIST_PATH = '/api/qt/ulist.np/get';
 const SEARCH_ENDPOINT = 'https://searchapi.eastmoney.com/api/suggest/get';
 const SEARCH_TOKEN = 'D43BF722C8E33BDC906FB84D85E326E8';
 const REQUEST_TIMEOUT_MS = 8_000;
+
+/**
+ * push2 在部分网络会被上游直接断连（实测 15/15 次 RemoteDisconnected），
+ * push2delay 是同一份数据的实时镜像（时间戳与主站同秒），因此按顺序做传输层重试。
+ * 上游一旦给出 HTTP 响应就当场判定，不再打第二个域名，避免把「没有这只票」变成两倍请求。
+ */
+const QUOTE_HOSTS = [
+  'https://push2.eastmoney.com',
+  'https://push2delay.eastmoney.com',
+] as const;
 
 const asNumber = (value: unknown): number | null => {
   if (value === null || value === undefined || value === '-') {
@@ -124,7 +138,7 @@ export const mapEastmoneySearch = (payload: EastmoneySearchPayload): StockSearch
 
   for (const item of items) {
     const symbol = getSearchCode(item);
-    const name = typeof item.Name === 'string' ? item.Name.trim() : '';
+    const name = typeof item.Name === 'string' ? item.Name.replace(/\s+/g, '') : '';
 
     if (!symbol || !name || seen.has(symbol)) {
       continue;
@@ -183,12 +197,21 @@ export const toEastmoneySecId = (symbol: string): string =>
 const getQuoteData = (payload: EastmoneyQuotePayload): EastmoneyQuoteData => {
   const data = payload.data;
 
-  if (data && typeof data === 'object' && 'diff' in data) {
-    return Array.isArray(data.diff) ? data.diff[0] ?? null : null;
+  if (data === null) {
+    return null;
   }
 
-  return data ?? null;
+  if (isEastmoneyQuoteEnvelope(data)) {
+    const envelope = data;
+    return Array.isArray(envelope.diff) ? envelope.diff[0] ?? null : null;
+  }
+
+  return data;
 };
+
+const isEastmoneyQuoteEnvelope = (
+  data: Exclude<EastmoneyQuotePayload['data'], null>,
+): data is EastmoneyQuoteEnvelope => Object.prototype.hasOwnProperty.call(data, 'diff');
 
 export const mapEastmoneyQuote = (
   payload: EastmoneyQuotePayload,
@@ -213,8 +236,10 @@ export const mapEastmoneyQuote = (
   const preClose = hasScaledFields
     ? normalizeRawValue(data?.f60, divisor)
     : asNumber(data?.f18);
+  const volumeRatio = asNumber(data?.f10);
+  const amount = normalizeRawValue(data?.f6, 1);
   const vendorUpdatedAt = parseVendorUpdatedAt(data?.f86);
-  const name = asString(data?.f58 || data?.f14);
+  const name = asString(data?.f58 || data?.f14).replace(/\s+/g, '');
   const isComplete =
     data !== null &&
     symbol.length > 0 &&
@@ -231,6 +256,8 @@ export const mapEastmoneyQuote = (
     change,
     pct,
     turnover,
+    volumeRatio,
+    amount,
     preClose,
     updatedAt: vendorUpdatedAt ?? fetchedAt,
     source: 'eastmoney',
@@ -238,21 +265,59 @@ export const mapEastmoneyQuote = (
   };
 };
 
-const toRequestUrl = (symbol: string): string => {
+const toRequestPath = (symbol: string): string => {
   const secid = encodeURIComponent(toEastmoneySecId(symbol));
-  return `${QUOTE_ENDPOINT}?secid=${secid}&fields=f43,f57,f58,f59,f60,f168,f169,f170,f86`;
+  return `${QUOTE_PATH}?secid=${secid}&fields=f43,f57,f58,f59,f60,f168,f169,f170,f86,f10,f6`;
 };
 
-const toBatchRequestUrl = (symbols: string[]): string => {
+const toBatchRequestPath = (symbols: string[]): string => {
   const secids = symbols.map(toEastmoneySecId).join(',');
   const params = new URLSearchParams({
     fltt: '2',
     invt: '2',
-    fields: 'f12,f14,f2,f3,f4,f8,f18',
+    fields: 'f12,f14,f2,f3,f4,f8,f18,f10,f6',
     secids,
   });
 
-  return `${QUOTE_LIST_ENDPOINT}?${params.toString()}`;
+  return `${QUOTE_LIST_PATH}?${params.toString()}`;
+};
+
+type MirroredJson = { payload: EastmoneyQuotePayload } | { error: string };
+
+/**
+ * 依次尝试主站与镜像：只对传输失败/非 2xx 换域名，每次尝试各自计时，
+ * 避免主站的超时把镜像也一起拖死。
+ */
+const fetchJsonFromMirrors = async (
+  path: string,
+  fetchImpl: typeof fetch,
+): Promise<MirroredJson> => {
+  let lastError = '上游请求失败';
+
+  for (const host of QUOTE_HOSTS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    try {
+      const response = await fetchImpl(`${host}${path}`, {
+        signal: controller.signal,
+        headers: { Accept: 'application/json' },
+      });
+
+      if (!response.ok) {
+        lastError = `HTTP ${response.status}`;
+        continue;
+      }
+
+      return { payload: (await response.json()) as EastmoneyQuotePayload };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : '未知错误';
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  return { error: lastError };
 };
 
 const fetchSingleQuote = async (
@@ -271,47 +336,27 @@ const fetchSingleQuote = async (
     };
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const fetchedAt = new Date().toISOString();
 
-  try {
-    const response = await fetchImpl(toRequestUrl(symbol), {
-      signal: controller.signal,
-    });
+  const result = await fetchJsonFromMirrors(toRequestPath(symbol), fetchImpl);
 
-    if (!response.ok) {
-      return {
-        error: {
-          symbol,
-          message: `HTTP ${response.status}`,
-        },
-      };
-    }
-
-    const payload = (await response.json()) as EastmoneyQuotePayload;
-
-    if (payload.data === null || payload.data === undefined) {
-      return { error: { symbol, message: '上游未返回行情数据' } };
-    }
-
-    const quote = mapEastmoneyQuote(payload, fetchedAt);
-
-    if (quote.status !== 'fresh' || quote.symbol !== symbol) {
-      return { error: { symbol, message: '上游行情数据不完整' } };
-    }
-
-    return { quote };
-  } catch (error) {
-    return {
-      error: {
-        symbol,
-        message: error instanceof Error ? error.message : '未知错误',
-      },
-    };
-  } finally {
-    clearTimeout(timer);
+  if ('error' in result) {
+    return { error: { symbol, message: result.error } };
   }
+
+  const { payload } = result;
+
+  if (payload.data === null || payload.data === undefined) {
+    return { error: { symbol, message: '上游未返回行情数据' } };
+  }
+
+  const quote = mapEastmoneyQuote(payload, fetchedAt);
+
+  if (quote.status !== 'fresh' || quote.symbol !== symbol) {
+    return { error: { symbol, message: '上游行情数据不完整' } };
+  }
+
+  return { quote };
 };
 
 const fetchBatchQuotes = async (
@@ -322,48 +367,37 @@ const fetchBatchQuotes = async (
     return { quotes: [], errors: [] };
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const fetchedAt = new Date().toISOString();
 
-  try {
-    const response = await fetchImpl(toBatchRequestUrl(symbols), {
-      signal: controller.signal,
-      headers: { Accept: 'application/json' },
-    });
+  const result = await fetchJsonFromMirrors(toBatchRequestPath(symbols), fetchImpl);
 
-    if (!response.ok) {
-      return null;
-    }
-
-    const payload = (await response.json()) as EastmoneyQuotePayload;
-    const rows =
-      payload.data && typeof payload.data === 'object' && 'diff' in payload.data
-        ? payload.data.diff ?? []
-        : [];
-    const quotes: Quote[] = [];
-    const found = new Set<string>();
-
-    for (const row of rows) {
-      const quote = mapEastmoneyQuote({ data: row }, fetchedAt);
-
-      if (quote.status === 'fresh' && symbols.includes(quote.symbol)) {
-        quotes.push(quote);
-        found.add(quote.symbol);
-      }
-    }
-
-    return {
-      quotes,
-      errors: symbols
-        .filter((symbol) => !found.has(symbol))
-        .map((symbol) => ({ symbol, message: '上游未返回行情数据' })),
-    };
-  } catch {
+  if ('error' in result) {
     return null;
-  } finally {
-    clearTimeout(timer);
   }
+
+  const payload = result.payload;
+  const rows =
+    payload.data && typeof payload.data === 'object' && 'diff' in payload.data
+      ? payload.data.diff ?? []
+      : [];
+  const quotes: Quote[] = [];
+  const found = new Set<string>();
+
+  for (const row of rows) {
+    const quote = mapEastmoneyQuote({ data: row }, fetchedAt);
+
+    if (quote.status === 'fresh' && symbols.includes(quote.symbol)) {
+      quotes.push(quote);
+      found.add(quote.symbol);
+    }
+  }
+
+  return {
+    quotes,
+    errors: symbols
+      .filter((symbol) => !found.has(symbol))
+      .map((symbol) => ({ symbol, message: '上游未返回行情数据' })),
+  };
 };
 
 export const fetchEastmoneyQuotes = async (

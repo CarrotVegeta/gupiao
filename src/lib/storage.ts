@@ -99,20 +99,27 @@ const normalizeStorageState = (value: unknown): StorageState | null => {
     return null;
   }
 
-  const normalizedGroups = groups as StockGroup[];
-  const normalizedHoldings = holdings as Holding[];
-  const groupIds = new Set(normalizedGroups.map((group) => group.id));
-  const hasSystemUngrouped = normalizedGroups.some(
-    (group) => group.id === 'ungrouped' && group.isSystem,
-  );
+  const parsedGroups = groups as StockGroup[];
+  let normalizedHoldings = holdings as Holding[];
 
-  if (
-    !hasSystemUngrouped ||
-    groupIds.size !== normalizedGroups.length ||
-    normalizedHoldings.some((holding) => !groupIds.has(holding.groupId))
-  ) {
+  if (new Set(parsedGroups.map((group) => group.id)).size !== parsedGroups.length) {
     return null;
   }
+
+  // 「未分组」以前是一个系统分组，现在整个概念被取消：
+  // 不分配分组的股票用空 groupId 表示，只在「全部」里出现，侧边栏不再有这一栏。
+  const normalizedGroups = parsedGroups
+    .filter((group) => group.id !== 'ungrouped')
+    .map((group) => (group.isSystem ? { ...group, isSystem: false } : group));
+
+  const groupIds = new Set(normalizedGroups.map((group) => group.id));
+
+  // 未分配（空 groupId）是合法状态；指向已删除分组的股票降级为未分配，而不是判整份数据无效
+  normalizedHoldings = normalizedHoldings.map((holding) =>
+    holding.groupId === '' || groupIds.has(holding.groupId)
+      ? holding
+      : { ...holding, groupId: '' },
+  );
 
   return {
     groups: normalizedGroups,
@@ -120,15 +127,9 @@ const normalizeStorageState = (value: unknown): StorageState | null => {
   };
 };
 
+/** 新浏览器不再预置「未分组」，分组完全由用户自己建 */
 export const createDefaultState = (): StorageState => ({
-  groups: [
-    {
-      id: 'ungrouped',
-      name: '未分组',
-      isSystem: true,
-      createdAt: new Date().toISOString(),
-    },
-  ],
+  groups: [],
   holdings: [],
 });
 
@@ -154,14 +155,25 @@ export const loadState = (storage: Storage): { state: StorageState; recovered: b
   }
 };
 
-export const saveState = (storage: Storage, state: StorageState): void => {
+/**
+ * 写回本地存储。返回是否真的写成功：
+ * 状态没通过校验（例如 holding 指向了不存在的分组）时不会写入，
+ * 以前这里是静默 return，用户加完股票看不到任何反馈，所以改成显式返回。
+ */
+export const saveState = (storage: Storage, state: StorageState): boolean => {
   const normalizedState = normalizeStorageState(state);
 
   if (normalizedState === null) {
-    return;
+    return false;
   }
 
-  storage.setItem(STORAGE_KEY, JSON.stringify(normalizedState));
+  try {
+    storage.setItem(STORAGE_KEY, JSON.stringify(normalizedState));
+    return true;
+  } catch {
+    // 隐私模式、配额写满等
+    return false;
+  }
 };
 
 export const moveHoldingsToGroup = (

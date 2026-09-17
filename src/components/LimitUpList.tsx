@@ -1,5 +1,6 @@
-import { formatCurrency } from '../lib/quotes';
-import type { LimitUpResponse } from '../types';
+import { formatPrice } from '../lib/quotes';
+import { StockIdentity } from './StockIdentity';
+import type { LimitUpItem, LimitUpResponse } from '../types';
 
 type LimitUpListProps = {
   data: LimitUpResponse;
@@ -44,92 +45,146 @@ const formatBoardCount = (value: number | null): string =>
 
 const formatInteger = (value: number | null): string => (value === null ? '—' : String(value));
 
-export const LimitUpList = ({ data, isRefreshing, onRefresh }: LimitUpListProps) => (
-  <section className="card" aria-labelledby="limit-up-list-title">
-    <div className="overview__header">
-      <div>
-        <p className="eyebrow">涨停池</p>
-        <h2 id="limit-up-list-title">涨停列表</h2>
+const compareNullableNumberDesc = (left: number | null, right: number | null): number => {
+  if (left === null && right === null) {
+    return 0;
+  }
+
+  if (left === null) {
+    return 1;
+  }
+
+  if (right === null) {
+    return -1;
+  }
+
+  return right - left;
+};
+
+const compareIndustry = (left: string | null, right: string | null): number => {
+  if (left === null && right === null) {
+    return 0;
+  }
+
+  if (left === null) {
+    return 1;
+  }
+
+  if (right === null) {
+    return -1;
+  }
+
+  return left.localeCompare(right, 'zh-CN');
+};
+
+const compareLimitUpItems = (left: LimitUpItem, right: LimitUpItem): number => {
+  const boardDiff = compareNullableNumberDesc(left.boardCount, right.boardCount);
+
+  if (boardDiff !== 0) {
+    return boardDiff;
+  }
+
+  const industryDiff = compareIndustry(left.industry, right.industry);
+
+  if (industryDiff !== 0) {
+    return industryDiff;
+  }
+
+  return left.symbol.localeCompare(right.symbol, 'zh-CN');
+};
+
+export const LimitUpList = ({ data, isRefreshing, onRefresh }: LimitUpListProps) => {
+  const items = [...data.items].sort(compareLimitUpItems);
+
+  return (
+    <section className="card" aria-labelledby="limit-up-list-title">
+      <div className="overview__header">
+        <div>
+          <p className="eyebrow">涨停池</p>
+          <h2 id="limit-up-list-title">涨停池</h2>
+        </div>
+        <div className="overview__actions limit-up-list__actions">
+          <p className="overview__meta">
+            {data.tradeDate === null ? (
+              '交易日：暂无数据'
+            ) : (
+              <>
+                交易日：<time dateTime={data.tradeDate}>{formatTradeDate(data.tradeDate)}</time>
+              </>
+            )}
+          </p>
+          <p className="overview__meta">
+            数量：<span>{data.items.length} 只</span>
+          </p>
+          <button
+            className="button button--secondary"
+            type="button"
+            onClick={onRefresh}
+            disabled={isRefreshing}
+          >
+            {isRefreshing ? '刷新中…' : '刷新涨停池'}
+          </button>
+        </div>
       </div>
-      <div className="overview__actions">
-        <p className="overview__meta">
-          {data.tradeDate === null ? (
-            '交易日：暂无数据'
-          ) : (
-            <>
-              交易日：<time dateTime={data.tradeDate}>{formatTradeDate(data.tradeDate)}</time>
-            </>
-          )}
-        </p>
-        <p className="overview__meta">
-          数量：<span>{data.items.length} 只</span>
-        </p>
-        <button
-          className="button button--secondary"
-          type="button"
-          onClick={onRefresh}
-          disabled={isRefreshing}
-        >
-          {isRefreshing ? '刷新中…' : '刷新涨停池'}
-        </button>
-      </div>
-    </div>
 
-    <div className="overview__status-group">
-      <span className="status-pill">包含 ST / 风险标的</span>
-    </div>
-
-    {data.status === 'stale' ? (
-      <p className="banner banner--warning" role="status">
-        数据已过期
-      </p>
-    ) : null}
-
-    {data.status === 'unavailable' ? (
-      <>
+      {data.status === 'stale' ? (
         <p className="banner banner--warning" role="status">
-          涨停数据暂不可用
+          数据已过期
         </p>
-        {data.error ? <p className="status-note">{data.error}</p> : null}
-      </>
-    ) : null}
+      ) : null}
 
-    {data.items.length === 0 ? (
-      <div className="empty-state empty-state--subtle">
-        <p>{data.status === 'unavailable' ? '暂无可用涨停数据' : '暂无涨停数据'}</p>
-      </div>
-    ) : (
-      <table aria-label="涨停列表">
-        <thead>
-          <tr>
-            <th scope="col">股票</th>
-            <th scope="col">连板</th>
-            <th scope="col">板块</th>
-            <th scope="col">最新价</th>
-            <th scope="col">涨跌幅</th>
-            <th scope="col">首次封板</th>
-            <th scope="col">最后封板</th>
-            <th scope="col">炸板次数</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.items.map((item) => (
-            <tr key={item.symbol}>
-              <th scope="row">
-                {item.name}
-                <div>{item.symbol}</div>
-              </th>
-              <td>{formatBoardCount(item.boardCount)}</td>
-              <td>{formatValue(item.industry)}</td>
-              <td>{formatCurrency(item.price)}</td>
-              <td>{formatSignedPercent(item.pct)}</td>
-              <td>{formatValue(item.firstSealTime)}</td>
-              <td>{formatValue(item.lastSealTime)}</td>
-              <td>{formatInteger(item.breakCount)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    )}
-  </section>
-);
+      {data.status === 'unavailable' ? (
+        <>
+          <p className="banner banner--warning" role="status">
+            涨停数据暂不可用
+          </p>
+          {data.error ? <p className="status-note">{data.error}</p> : null}
+        </>
+      ) : null}
+
+      {items.length === 0 ? (
+        <div className="empty-state empty-state--subtle">
+          <p>{data.status === 'unavailable' ? '暂无可用涨停数据' : '暂无涨停数据'}</p>
+        </div>
+      ) : (
+        <div className="limit-up-list__table-wrap">
+          {/* 独立滚动容器：数据超出时只滚这个方块，不带动整页 */}
+          <table aria-label="涨停池列表">
+            <thead>
+              <tr>
+                <th scope="col">股票</th>
+                <th scope="col">连板</th>
+                <th scope="col">板块</th>
+                <th scope="col">最新价</th>
+                <th scope="col">涨跌幅</th>
+                <th scope="col">首次封板</th>
+                <th scope="col">最后封板</th>
+                <th scope="col">炸板次数</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item) => (
+                <tr key={item.symbol}>
+                  <th scope="row">
+                    <StockIdentity
+                      name={item.name}
+                      code={item.symbol}
+                      tag={formatBoardCount(item.boardCount)}
+                    />
+                  </th>
+                  <td>{formatBoardCount(item.boardCount)}</td>
+                  <td>{formatValue(item.industry)}</td>
+                  <td>{formatPrice(item.price)}</td>
+                  <td>{formatSignedPercent(item.pct)}</td>
+                  <td>{formatValue(item.firstSealTime)}</td>
+                  <td>{formatValue(item.lastSealTime)}</td>
+                  <td>{formatInteger(item.breakCount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+};

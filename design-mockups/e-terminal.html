@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>方案E 数据终端</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{--bg:#0A0B0E;--panel:#101216;--line:#1D2027;--line2:#262A33;--text:#D7DCE5;--muted:#7C8698;--dim:#4A5364;
+    --rise:#FF5A5F;--fall:#22C55E;--amber:#E5A50A;--cyan:#22D3EE;
+    --mono:'JetBrains Mono','WenQuanYi Zen Hei Mono',ui-monospace,monospace}
+  body{width:1440px;height:900px;overflow:hidden;background:var(--bg);color:var(--text);
+    font:400 12.5px/1.4 var(--mono),-apple-system,'WenQuanYi Zen Hei',sans-serif;-webkit-font-smoothing:antialiased}
+  .rise{color:var(--rise)}.fall{color:var(--fall)}.muted{color:var(--muted)}.dim{color:var(--dim)}.amber{color:var(--amber)}.cyan{color:var(--cyan)}
+  .num{font-variant-numeric:tabular-nums}
+
+  /* command bar */
+  .cmd{height:34px;display:flex;align-items:center;gap:14px;padding:0 14px;background:var(--panel);border-bottom:1px solid var(--line)}
+  .cmd .prompt{color:var(--fall);font-weight:700}
+  .cmd input{flex:1;background:none;border:0;color:var(--text);font:inherit;outline:none}
+  .cmd input::placeholder{color:var(--dim)}
+  .cmd kbd{border:1px solid var(--line2);border-radius:3px;padding:1px 5px;font-size:10.5px;color:var(--muted)}
+  .cmd .rt{display:flex;gap:12px;align-items:center;font-size:11.5px;color:var(--muted)}
+
+  /* ticker strip */
+  .ticker{height:30px;display:flex;align-items:center;gap:0;background:#0D0F13;border-bottom:1px solid var(--line);overflow:hidden}
+  .ticker .it{display:flex;align-items:center;gap:7px;padding:0 16px;border-right:1px solid var(--line);height:100%;white-space:nowrap;font-size:12px}
+  .ticker .it b{font-weight:600}
+  .ticker .k{color:var(--dim);font-size:11px}
+
+  /* tabs */
+  .tabs{height:36px;display:flex;align-items:stretch;gap:0;background:var(--panel);border-bottom:1px solid var(--line);padding:0 6px}
+  .tabs a{display:flex;align-items:center;padding:0 15px;color:var(--muted);text-decoration:none;font-size:12.5px;border-bottom:2px solid transparent}
+  .tabs a.on{color:var(--text);border-bottom-color:var(--amber);background:#15181E}
+  .tabs .rt{margin-left:auto;display:flex;align-items:center;gap:8px;padding-right:8px;font-size:11.5px;color:var(--dim)}
+
+  .frame{display:grid;grid-template-columns:1fr 320px;height:calc(900px - 34px - 30px - 36px - 26px);border-bottom:1px solid var(--line)}
+  .panel{overflow:hidden;display:flex;flex-direction:column;background:#0E1015}
+  .panel + .panel{border-left:1px solid var(--line)}
+  .ph{height:26px;display:flex;align-items:center;gap:10px;padding:0 12px;background:#0D0F13;border-bottom:1px solid var(--line);
+    font-size:11px;color:var(--muted);letter-spacing:.3px}
+  .ph .rt{margin-left:auto;display:flex;gap:10px;font-size:10.5px;color:var(--dim)}
+
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  thead th{height:24px;font-size:10.5px;font-weight:500;color:var(--dim);text-align:right;padding:0 10px;
+    border-bottom:1px solid var(--line);background:#0D0F13;letter-spacing:.3px}
+  thead th:first-child{text-align:left}
+  tbody td{height:27px;padding:0 10px;text-align:right;border-bottom:1px solid #14171C;font-size:12.5px}
+  tbody td:first-child{text-align:left}
+  tbody tr:hover{background:#15181E}
+  tbody tr.sel{background:#1A1E26;box-shadow:inset 2px 0 0 var(--amber)}
+  .code{color:var(--dim);font-size:11.5px}
+  .nm{color:var(--text)}
+
+  /* depth ladder */
+  .depth{padding:2px 0}
+  .drow{display:grid;grid-template-columns:34px 150px 1fr;align-items:center;height:19px;padding:0 12px;font-size:11.5px}
+  .drow{grid-template-columns:34px 150px 1fr}
+  .drow .b{height:8px;border-radius:1px}
+  .drow .b.s{background:rgba(34,197,94,.28)}
+  .drow .b.b{background:rgba(255,90,95,.28)}
+  .drow .p{text-align:right}
+
+  .kv{display:flex;justify-content:space-between;padding:5px 12px;font-size:12px;border-bottom:1px solid #14171C}
+  .kv .k{color:var(--muted)}
+  .kv .v{font-weight:600}
+
+  /* bottom status */
+  .status{height:26px;display:flex;align-items:center;gap:16px;padding:0 14px;background:var(--panel);
+    font-size:11px;color:var(--muted);border-top:1px solid var(--line)}
+  .status .sep{width:1px;height:11px;background:var(--line2)}
+  .status .rt{margin-left:auto;display:flex;gap:14px}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--fall);display:inline-block;margin-right:5px}
+</style></head><body>
+
+<div class="cmd">
+  <span class="prompt">&gt;</span>
+  <input value="" placeholder="输入代码 / 名称 快速定位，或 / 唤起命令（add 添加，refresh 刷新，def 分组）">
+  <span class="rt"><span><kbd>/</kbd> 命令</span><span><kbd>g</kbd> 跳转</span><span><kbd>?</kbd> 帮助</span>
+    <span class="muted">15:00:03</span><span class="fall">●</span></span>
+</div>
+
+<div class="ticker">
+  <div class="it"><span class="k">上证</span><b class="fall num">3873.07</b><span class="fall num">-0.48%</span></div>
+  <div class="it"><span class="k">深成</span><b class="rise num">12864.31</b><span class="rise num">+0.33%</span></div>
+  <div class="it"><span class="k">创业板</span><b class="rise num">2712.88</b><span class="rise num">+0.34%</span></div>
+  <div class="it"><span class="k">成交</span><b class="num">2.36万亿</b></div>
+  <div class="it"><span class="k">涨停</span><b class="rise num">94</b><span class="k">炸板</span><b class="num">25</b><span class="k">晋级率</span><b class="num">4.5%</b></div>
+  <div class="it"><span class="k">北向</span><b class="rise num">+18.4亿</b></div>
+</div>
+
+<div class="tabs">
+  <a href="#" class="on">自选 SELF</a><a href="#">持仓 POS</a><a href="#">涨停 ZT</a><a href="#">竞价 AUC</a><a href="#">龙虎榜 LHB</a>
+  <div class="rt">13 只 · 按 涨跌幅 排序 · 显示 全部</div>
+</div>
+
+<div class="frame">
+  <div class="panel">
+    <div class="ph"><span>SELF / 我的票</span><span class="dim">13 rows</span>
+      <div class="rt"><span>列: 现价 涨跌幅 涨跌额 换手 量比 振幅 成交额 封单</span></div></div>
+    <table>
+      <thead><tr><th>代码</th><th>名称</th><th>最新</th><th>涨跌幅</th><th>涨跌额</th><th>换手</th><th>量比</th><th>振幅</th><th>成交额</th><th>标签</th></tr></thead>
+      <tbody id="tb"></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <div class="ph"><span>AUC / 竞价候选</span><span class="dim">89</span></div>
+    <table>
+      <thead><tr><th>代码</th><th>名称</th><th>概率</th><th>竞价</th></tr></thead>
+      <tbody id="auc"></tbody>
+    </table>
+    <div class="ph" style="border-top:1px solid var(--line)"><span>DEPTH / 五档</span><span class="dim">600313</span></div>
+    <div class="depth" id="depth"></div>
+    <div class="ph" style="border-top:1px solid var(--line)"><span>QUOTE / 关键数据</span></div>
+    <div class="kv"><span class="k">今开</span><span class="v num">6.78</span></div>
+    <div class="kv"><span class="k">最高 / 最低</span><span class="v num">7.19 / 6.74</span></div>
+    <div class="kv"><span class="k">距 60 日高</span><span class="v num">-17.6%</span></div>
+  </div>
+</div>
+
+<div class="status">
+  <span><i class="dot"></i>已收盘 09-17</span><span class="sep"></span>
+  <span>行情 腾讯 + 东财</span><span class="sep"></span>
+  <span>竞价快照 09:25:00</span>
+  <div class="rt"><span>昨涨停 89</span><span>今封板 4</span><span>晋级 4.5%</span><span class="dim">v0.1</span></div>
+</div>
+
+<script>
+const rows=[['600313','农发种业','7.11','+5.18%','+0.35','9.84%','1.09','7.2%','6.4亿',''],
+['600127','金健米业','13.02','+9.97%','+1.18','29.82%','1.02','11.4%','21.7亿','涨停'],
+['605058','澳弘电子','48.76','+9.99%','+4.43','11.47%','2.10','6.2%','8.6亿','4连板'],
+['001216','华瓷股份','19.88','+10.02%','+1.81','8.88%','1.34','4.9%','5.1亿','2连板'],
+['003026','中晶科技','26.41','+9.99%','+2.40','12.05%','1.88','5.4%','4.2亿','3连板'],
+['002041','登海种业','10.36','+5.50%','+0.54','7.63%','1.56','8.1%','9.8亿',''],
+['600519','贵州茅台','1266.66','+0.69%','+8.66','0.14%','0.94','1.2%','38.2亿',''],
+['002081','金螳螂','4.79','-1.44%','-0.07','4.55%','0.79','2.8%','2.2亿',''],
+['000032','深桑达Ａ','14.39','-1.71%','-0.25','2.21%','0.86','3.1%','3.9亿',''],
+['000001','平安银行','11.62','-0.68%','-0.08','0.35%','0.88','1.1%','12.4亿',''],
+['000506','招金黄金','18.57','-5.21%','-1.02','6.52%','1.52','8.9%','11.3亿',''],
+['603230','内蒙新华','15.28','+9.96%','+1.38','14.62%','2.31','6.8%','3.2亿','涨停'],
+['002584','西陇科学','9.94','+2.41%','+0.23','18.30%','3.05','9.7%','8.4亿',''],
+['002285','世联行','3.29','+10.04%','+0.30','6.12%','1.42','5.1%','2.8亿','2连板'],
+['001209','洪兴股份','12.64','-2.24%','-0.29','9.35%','1.71','7.4%','3.1亿',''],
+['600371','万向德农','9.15','-2.04%','-0.19','5.42%','0.92','3.9%','1.9亿',''],
+['002068','黑猫股份','8.63','+3.75%','+0.31','11.20%','2.04','8.6%','6.2亿',''],
+['003001','中岩大地','16.42','+6.39%','+0.99','7.85%','1.63','6.7%','4.4亿',''],
+['000055','方大集团','4.31','-3.14%','-0.14','3.62%','0.81','2.4%','1.2亿',''],
+['600105','永鼎股份','6.28','+0.49%','+0.03','4.18%','1.05','2.9%','2.6亿','']];
+document.getElementById('tb').innerHTML=rows.map((r,i)=>{const up=r[5][0]==='+'||r[3][0]==='+';
+ const col=r[3][0]==='+'?'rise':'fall';
+ return `<tr class="${i===0?'sel':''}"><td class="code num">${r[0]}</td><td class="nm">${r[1]}</td>
+ <td class="num ${col}">${r[2]}</td><td class="num ${col}">${r[3]}</td><td class="num ${col}">${r[4]}</td>
+ <td class="num">${r[5]}</td><td class="num">${r[6]}</td><td class="num">${r[7]}</td><td class="num">${r[8]}</td>
+ <td class="${r[9]?'amber':'dim'}">${r[9]||'—'}</td></tr>`}).join('');
+const auc=[['001216','华瓷股份',67,'+7.86%'],['003026','中晶科技',62,'+9.99%'],['603230','内蒙新华',59,'+9.96%'],
+['605058','澳弘电子',51,'+6.02%'],['002584','西陇科学',46,'+7.33%'],['002285','世联行',37,'+6.69%'],
+['001209','洪兴股份',33,'+4.94%'],['688004','博汇科技',33,'+4.35%']];
+document.getElementById('auc').innerHTML=auc.map(r=>`<tr><td class="code num">${r[0]}</td><td class="nm">${r[1]}</td>
+ <td class="num ${r[2]>=55?'rise':'amber'}">${r[2]}%</td><td class="num rise">${r[3]}</td></tr>`).join('');
+const asks=[['卖5','7.16',320],['卖4','7.15',610],['卖3','7.14',880],['卖2','7.13',1240],['卖1','7.12',2030]];
+const bids=[['买1','7.11',2640],['买2','7.10',1880],['买3','7.09',940],['买4','7.08',520],['买5','7.07',260]];
+document.getElementById('depth').innerHTML=
+ asks.map(a=>`<div class="drow"><span class="dim">${a[0]}</span><span class="b s" style="width:${a[2]/2640*100}%"></span><span class="p fall" style="text-align:left;padding-left:10px">${a[1]}</span></div>`).join('')
++bids.map(b=>`<div class="drow"><span class="dim">${b[0]}</span><span class="b b" style="width:${b[2]/2640*100}%"></span><span class="p rise" style="text-align:left;padding-left:10px">${b[1]}</span></div>`).join('');
+</script>
+</body></html>

@@ -22,6 +22,8 @@ const quote = (overrides: Partial<Quote> = {}): Quote => ({
   change: 2,
   pct: 20,
   turnover: 1.23,
+  volumeRatio: 1.2,
+  amount: 640_000_000,
   preClose: 10,
   updatedAt: '2026-08-18T10:30:00.000Z',
   source: 'eastmoney',

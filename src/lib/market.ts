@@ -1,4 +1,10 @@
-import type { MarketIndex, MarketOverviewResponse, QuoteError } from '../types';
+import type {
+  MarketBreadth,
+  MarketIndex,
+  MarketOverviewResponse,
+  QuoteError,
+  QuoteSource,
+} from '../types';
 
 const MARKET_ENDPOINT = '/api/market-overview';
 const RESPONSE_FORMAT_ERROR = '大盘响应数据格式错误';
@@ -7,7 +13,6 @@ const MARKET_INDEX_CONFIG = [
   { symbol: '000001', name: '上证指数' },
   { symbol: '399001', name: '深证成指' },
   { symbol: '399006', name: '创业板指' },
-  { symbol: '000688', name: '科创 50' },
 ] as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -15,6 +20,10 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const isStatus = (value: unknown): value is MarketIndex['status'] =>
   value === 'fresh' || value === 'stale' || value === 'unavailable';
+
+/** 与后端 QuoteSource 同步：腾讯优先，缺口由东财补 */
+const isQuoteSource = (value: unknown): value is QuoteSource =>
+  value === 'eastmoney' || value === 'tencent' || value === 'eastmoney+tencent';
 
 const isParseableDateTime = (value: unknown): value is string =>
   typeof value === 'string' && !Number.isNaN(new Date(value).getTime());
@@ -66,6 +75,7 @@ const unavailableIndex = (symbol: string, name: string): MarketIndex => ({
   price: null,
   change: null,
   pct: null,
+  amount: null,
   updatedAt: null,
   status: 'unavailable',
 });
@@ -84,11 +94,27 @@ export const createUnavailableMarketOverviewResponse = (
   fetchedAt: string,
   message: string,
 ): MarketOverviewResponse => ({
+  turnover: null,
+  breadth: null,
   indices: MARKET_INDEX_CONFIG.map(({ symbol, name }) => unavailableIndex(symbol, name)),
   fetchedAt: isParseableDateTime(fetchedAt) ? fetchedAt : new Date().toISOString(),
   source: 'eastmoney',
   errors: MARKET_INDEX_CONFIG.map(({ symbol }) => ({ symbol, message })),
 });
+
+const isNullableNumber = (value: unknown): value is number | null =>
+  value === null || (typeof value === 'number' && Number.isFinite(value));
+
+const isMarketBreadth = (value: unknown): value is MarketBreadth =>
+  isRecord(value) &&
+  (value.tradeDate === null || typeof value.tradeDate === 'string') &&
+  (value.previousTradeDate === null || typeof value.previousTradeDate === 'string') &&
+  isNullableNumber(value.limitUpCount) &&
+  isNullableNumber(value.brokenCount) &&
+  isNullableNumber(value.promotionRate) &&
+  isNullableNumber(value.riseCount) &&
+  isNullableNumber(value.fallCount) &&
+  isStatus(value.status);
 
 const toMarketOverviewResponse = (
   payload: unknown,
@@ -98,7 +124,7 @@ const toMarketOverviewResponse = (
     !isRecord(payload) ||
     !Array.isArray(payload.indices) ||
     !Array.isArray(payload.errors) ||
-    payload.source !== 'eastmoney' ||
+    !isQuoteSource(payload.source) ||
     !isParseableDateTime(payload.fetchedAt)
   ) {
     return createUnavailableMarketOverviewResponse(fetchedAtFallback, RESPONSE_FORMAT_ERROR);
@@ -130,9 +156,11 @@ const toMarketOverviewResponse = (
   });
 
   return {
+    turnover: typeof payload.turnover === 'number' ? payload.turnover : null,
+    breadth: isMarketBreadth(payload.breadth) ? payload.breadth : null,
     indices,
     fetchedAt: payload.fetchedAt,
-    source: 'eastmoney',
+    source: payload.source,
     errors,
   };
 };

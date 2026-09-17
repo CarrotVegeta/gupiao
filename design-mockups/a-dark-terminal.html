@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>方案A 深色终端</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --canvas:#070A12; --panel:#0D1320; --panel2:#111927; --border:#1B2537;
+    --text:#E8EEF9; --muted:#7A88A3; --dim:#4E5B73;
+    --rise:#FF4D4F; --fall:#14B87A; --accent:#3B82F6;
+    --mono:'JetBrains Mono','WenQuanYi Zen Hei Mono',ui-monospace,monospace;
+  }
+  body{width:1440px;height:900px;overflow:hidden;background:var(--canvas);color:var(--text);
+    font:400 13px/1.45 -apple-system,'Segoe UI','WenQuanYi Zen Hei',sans-serif;-webkit-font-smoothing:antialiased}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+  .rise{color:var(--rise)} .fall{color:var(--fall)} .muted{color:var(--muted)} .dim{color:var(--dim)}
+
+  /* ---------- top bar ---------- */
+  header{height:50px;display:flex;align-items:center;gap:24px;padding:0 20px;
+    background:var(--panel);border-bottom:1px solid var(--border)}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:600;font-size:14px;letter-spacing:.2px}
+  .brand svg{width:18px;height:18px}
+  nav{display:flex;gap:2px;margin-left:4px}
+  nav a{padding:6px 12px;border-radius:6px;color:var(--muted);text-decoration:none;font-size:13px}
+  nav a.on{background:rgba(59,130,246,.14);color:#C7DCFF}
+  .top-right{margin-left:auto;display:flex;align-items:center;gap:16px}
+  .live{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--fall);box-shadow:0 0 8px var(--fall)}
+  .btn{border:1px solid var(--border);background:var(--panel2);color:var(--text);
+    padding:5px 12px;border-radius:6px;font-size:12px;font-family:inherit}
+  .btn.pri{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:500}
+
+  /* ---------- index strip ---------- */
+  .indices{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:14px 20px 0}
+  .idx{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:11px 13px;position:relative;overflow:hidden}
+  .idx .n{font-size:12px;color:var(--muted);margin-bottom:5px}
+  .idx .v{font-size:19px;font-weight:600;line-height:1.1}
+  .idx .c{font-size:12px;margin-top:5px;display:flex;gap:10px}
+  .idx svg{position:absolute;right:0;bottom:0;width:96px;height:38px;opacity:.5}
+
+  /* ---------- layout ---------- */
+  .main{display:grid;grid-template-columns:1fr 400px;gap:12px;padding:12px 20px 0;height:calc(900px - 50px - 96px)}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;display:flex;flex-direction:column;overflow:hidden}
+  .ph{display:flex;align-items:center;gap:10px;padding:10px 13px;border-bottom:1px solid var(--border)}
+  .ph h2{font-size:13px;font-weight:600}
+  .ph .sub{font-size:11px;color:var(--dim);font-family:var(--mono)}
+  .ph .right{margin-left:auto;display:flex;gap:6px}
+  .chip{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--border);color:var(--muted)}
+  .chip.on{background:rgba(59,130,246,.16);border-color:rgba(59,130,246,.45);color:#C7DCFF}
+
+  table{width:100%;border-collapse:collapse}
+  thead th{font-size:11px;font-weight:500;color:var(--dim);text-align:right;padding:7px 13px;
+    border-bottom:1px solid var(--border);background:#0B111D;position:sticky;top:0}
+  thead th:first-child{text-align:left}
+  tbody td{padding:0 13px;height:38px;text-align:right;border-bottom:1px solid rgba(27,37,55,.55);font-size:13px}
+  tbody td:first-child{text-align:left}
+  tbody tr:hover{background:#121A2A}
+  .stock{display:flex;align-items:center;gap:9px}
+  .mkt{width:3px;height:20px;border-radius:2px;background:var(--dim)}
+  .mkt.sh{background:#F0B429} .mkt.sz{background:#3B82F6}
+  .sname{font-weight:500} .scode{font-size:11px;color:var(--dim);font-family:var(--mono)}
+  .tag{font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(255,77,79,.15);color:#FF8B8D;margin-left:2px}
+
+  /* probability bar */
+  .prob{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+  .bar{display:inline-block;width:56px;height:5px;border-radius:3px;background:#1B2537;overflow:hidden;vertical-align:middle}
+  .bar span{display:block;height:100%;border-radius:3px;background:var(--accent)}
+  .bar span.hi{background:linear-gradient(90deg,#FF4D4F,#FF8082)}
+
+  .wl{display:flex;align-items:center;justify-content:space-between;padding:9px 13px;border-bottom:1px solid rgba(27,37,55,.55)}
+  .wl:hover{background:#121A2A}
+  .wl .l{display:flex;flex-direction:column;gap:2px}
+  .wl .t{font-size:12.5px;font-weight:500}
+  .wl .s{font-size:11px;color:var(--dim)}
+
+  footer{position:absolute;bottom:0;left:0;right:0;height:30px;display:flex;align-items:center;gap:18px;
+    padding:0 20px;border-top:1px solid var(--border);background:var(--panel);font-size:11px;color:var(--dim)}
+  footer .sep{width:1px;height:12px;background:var(--border)}
+</style></head><body>
+
+<header>
+  <div class="brand">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.2" stroke-linecap="round"><path d="M3 17l5-5 4 3 8-8"/><path d="M20 7h-4M20 7v4"/></svg>
+    A股看板
+  </div>
+  <nav>
+    <a href="#" class="on">自选</a><a href="#">持仓</a><a href="#">涨停聚焦</a><a href="#">竞价</a><a href="#">龙虎榜</a>
+  </nav>
+  <div class="top-right">
+    <span class="live"><i class="dot"></i>已收盘 · 09-17 15:00</span>
+    <button class="btn">刷新行情</button>
+    <button class="btn pri">添加股票</button>
+  </div>
+</header>
+
+<div class="indices">
+  <div class="idx">
+    <div class="n">上证指数</div><div class="v num">3873.07</div>
+    <div class="c num"><span class="fall">-18.53</span><span class="fall">-0.48%</span><span class="dim">1.02万亿</span></div>
+    <svg viewBox="0 0 96 38" preserveAspectRatio="none"><path d="M0 12 L12 16 L24 9 L36 18 L48 14 L60 22 L72 19 L84 27 L96 24" fill="none" stroke="#14B87A" stroke-width="1.5"/></svg>
+  </div>
+  <div class="idx">
+    <div class="n">深证成指</div><div class="v num">12864.31</div>
+    <div class="c num"><span class="rise">+42.11</span><span class="rise">+0.33%</span><span class="dim">1.34万亿</span></div>
+    <svg viewBox="0 0 96 38" preserveAspectRatio="none"><path d="M0 26 L12 20 L24 23 L36 15 L48 18 L60 11 L72 14 L84 8 L96 10" fill="none" stroke="#FF4D4F" stroke-width="1.5"/></svg>
+  </div>
+  <div class="idx">
+    <div class="n">创业板指</div><div class="v num">2712.88</div>
+    <div class="c num"><span class="rise">+9.06</span><span class="rise">+0.34%</span><span class="dim">5842亿</span></div>
+    <svg viewBox="0 0 96 38" preserveAspectRatio="none"><path d="M0 22 L12 24 L24 18 L36 21 L48 13 L60 16 L72 12 L84 15 L96 9" fill="none" stroke="#FF4D4F" stroke-width="1.5"/></svg>
+  </div>
+  <div class="idx">
+    <div class="n">两市成交</div><div class="v num">2.36万亿</div>
+    <div class="c num"><span class="muted">涨停 94</span><span class="muted">炸板 25</span><span class="fall">跌停 3</span></div>
+    <svg viewBox="0 0 96 38" preserveAspectRatio="none"><path d="M0 30 L12 26 L24 29 L36 22 L48 25 L60 18 L72 21 L84 14 L96 17" fill="none" stroke="#3B82F6" stroke-width="1.5"/></svg>
+  </div>
+</div>
+
+<div class="main">
+  <section class="panel">
+    <div class="ph">
+      <h2>我的票</h2><span class="sub">13 只</span>
+      <div class="right"><span class="chip on">全部 13</span><span class="chip">持仓 2</span><span class="chip">观察 11</span></div>
+    </div>
+    <table>
+      <thead><tr>
+        <th>股票</th><th>最新价</th><th>涨跌幅</th><th>涨跌额</th><th>换手</th><th>量比</th><th>振幅</th><th>成交额</th>
+      </tr></thead>
+      <tbody class="num">
+        <tr><td><div class="stock"><i class="mkt sh"></i><div><div class="sname">农发种业<span class="tag">农业</span></div><div class="scode">SH600313</div></div></div></td>
+          <td>7.11</td><td class="rise">+5.18%</td><td class="rise">+0.35</td><td>9.84%</td><td>1.09</td><td>7.2%</td><td>6.4亿</td></tr>
+        <tr><td><div class="stock"><i class="mkt sh"></i><div><div class="sname">金健米业</div><div class="scode">SH600127</div></div></div></td>
+          <td>13.02</td><td class="rise">+9.97%</td><td class="rise">+1.18</td><td>29.82%</td><td>1.02</td><td>11.4%</td><td>21.7亿</td></tr>
+        <tr><td><div class="stock"><i class="mkt sz"></i><div><div class="sname">深桑达Ａ</div><div class="scode">SZ000032</div></div></div></td>
+          <td>14.39</td><td class="fall">-1.71%</td><td class="fall">-0.25</td><td>2.21%</td><td>0.86</td><td>3.1%</td><td>3.9亿</td></tr>
+        <tr><td><div class="stock"><i class="mkt sz"></i><div><div class="sname">金螳螂</div><div class="scode">SZ002081</div></div></div></td>
+          <td>4.79</td><td class="fall">-1.44%</td><td class="fall">-0.07</td><td>4.55%</td><td>0.79</td><td>2.8%</td><td>2.2亿</td></tr>
+        <tr><td><div class="stock"><i class="mkt sz"></i><div><div class="sname">招金黄金</div><div class="scode">SZ000506</div></div></div></td>
+          <td>18.57</td><td class="fall">-5.21%</td><td class="fall">-1.02</td><td>6.52%</td><td>1.52</td><td>8.9%</td><td>11.3亿</td></tr>
+        <tr><td><div class="stock"><i class="mkt sz"></i><div><div class="sname">登海种业</div><div class="scode">SZ002041</div></div></div></td>
+          <td>10.36</td><td class="rise">+5.50%</td><td class="rise">+0.54</td><td>7.63%</td><td>1.56</td><td>8.1%</td><td>9.8亿</td></tr>
+        <tr><td><div class="stock"><i class="mkt sh"></i><div><div class="sname">贵州茅台</div><div class="scode">SH600519</div></div></div></td>
+          <td>1266.66</td><td class="rise">+0.69%</td><td class="rise">+8.66</td><td>0.14%</td><td>0.94</td><td>1.2%</td><td>38.2亿</td></tr>
+        <tr><td><div class="stock"><i class="mkt sz"></i><div><div class="sname">平安银行</div><div class="scode">SZ000001</div></div></div></td>
+          <td>11.62</td><td class="fall">-0.68%</td><td class="fall">-0.08</td><td>0.35%</td><td>0.88</td><td>1.1%</td><td>12.4亿</td></tr>
+        <tr><td><div class="stock"><i class="mkt sh"></i><div><div class="sname">澳弘电子<span class="tag">4连板</span></div><div class="scode">SH605058</div></div></div></td>
+          <td>48.76</td><td class="rise">+9.99%</td><td class="rise">+4.43</td><td>11.47%</td><td>2.10</td><td>6.2%</td><td>8.6亿</td></tr>
+        <tr><td><div class="stock"><i class="mkt sz"></i><div><div class="sname">华瓷股份<span class="tag">2连板</span></div><div class="scode">SZ001216</div></div></div></td>
+          <td>19.88</td><td class="rise">+10.02%</td><td class="rise">+1.81</td><td>8.88%</td><td>1.34</td><td>4.9%</td><td>5.1亿</td></tr>
+        <tr><td><div class="stock"><i class="mkt sz"></i><div><div class="sname">中晶科技<span class="tag">3连板</span></div><div class="scode">SZ003026</div></div></div></td>
+          <td>26.41</td><td class="rise">+9.99%</td><td class="rise">+2.40</td><td>12.05%</td><td>1.88</td><td>5.4%</td><td>4.2亿</td></tr>
+        <tr><td><div class="stock"><i class="mkt sh"></i><div><div class="sname">内蒙新华</div><div class="scode">SH603230</div></div></div></td>
+          <td>15.28</td><td class="rise">+9.96%</td><td class="rise">+1.38</td><td>14.62%</td><td>2.31</td><td>6.8%</td><td>3.2亿</td></tr>
+        <tr><td><div class="stock"><i class="mkt sz"></i><div><div class="sname">西陇科学</div><div class="scode">SZ002584</div></div></div></td>
+          <td>9.94</td><td class="rise">+2.41%</td><td class="rise">+0.23</td><td>18.30%</td><td>3.05</td><td>9.7%</td><td>8.4亿</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <aside class="panel">
+    <div class="ph"><h2>今日竞价候选</h2><span class="sub">89</span>
+      <div class="right"><span class="chip on">合格 3</span><span class="chip">观察 5</span></div></div>
+    <table>
+      <thead><tr><th>股票</th><th>涨停概率</th><th>竞价</th><th>溢价</th></tr></thead>
+      <tbody class="num">
+        <tr><td><div class="sname">华瓷股份<small class="scode"> 2板</small></div></td>
+          <td><div class="prob"><span class="num">67%</span><span class="bar"><span style="width:67%" class="hi"></span></span></div></td>
+          <td class="rise">+7.86%</td><td class="rise">追高</td></tr>
+        <tr><td><div class="sname">中晶科技<small class="scode"> 2板</small></div></td>
+          <td><div class="prob"><span class="num">62%</span><i class="bar"><i style="width:62%" class="hi"></i></i></div></td>
+          <td class="rise">+9.99%</td><td class="rise">追高</td></tr>
+        <tr><td><div class="sname">内蒙新华<small class="scode"> 1板</small></div></td>
+          <td><div class="prob"><span class="num">59%</span><i class="bar"><i style="width:59%" class="hi"></i></i></div></td>
+          <td class="rise">+9.96%</td><td class="rise">追高</td></tr>
+        <tr><td><div class="sname">澳弘电子<small class="scode"> 4板</small></div></td>
+          <td><div class="prob"><span class="num">51%</span><span class="bar"><span style="width:51%"></span></span></div></td>
+          <td class="rise">+6.02%</td><td class="rise">追高</td></tr>
+        <tr><td><div class="sname">西陇科学<small class="scode"> 2板</small></div></td>
+          <td><div class="prob"><span class="num">46%</span><span class="bar"><span style="width:46%"></span></span></div></td>
+          <td class="rise">+7.33%</td><td class="rise">追高</td></tr>
+        <tr><td><div class="sname">世联行<small class="scode"> 1板</small></div></td>
+          <td><div class="prob"><span class="num">37%</span><span class="bar"><span style="width:37%"></span></span></div></td>
+          <td class="rise">+6.69%</td><td class="rise">追高</td></tr>
+        <tr><td><div class="sname">洪兴股份<small class="scode"> 1板</small></div></td>
+          <td><div class="prob"><span class="num">33%</span><span class="bar"><span style="width:33%"></span></span></div></td>
+          <td class="rise">+4.94%</td><td>溢价偏高</td></tr>
+        <tr><td><div class="sname">博汇科技<small class="scode"> 3板</small></div></td>
+          <td><div class="prob"><span class="num">33%</span><span class="bar"><span style="width:33%"></span></span></div></td>
+          <td class="rise">+4.35%</td><td>溢价偏高</td></tr>
+      </tbody>
+    </table>
+  </aside>
+</div>
+
+<footer>
+  <span>数据源 腾讯 / 东方财富</span><i class="sep"></i>
+  <span>行情更新 15:00:03</span><i class="sep"></i>
+  <span>竞价快照 09:25:00</span><i class="sep"></i>
+  <span>昨涨停 89 · 今封板 4 · 晋级率 4.5%</span>
+</footer>
+</body></html>

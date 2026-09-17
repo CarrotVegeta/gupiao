@@ -4,7 +4,6 @@ type OverviewProps = {
   summary: PortfolioSummary;
   lastUpdated: string | null;
   isRefreshing: boolean;
-  onRefresh: () => void;
 };
 
 const getValueToneClass = (value: number | null | undefined): string => {
@@ -58,7 +57,6 @@ export const Overview = ({
   summary,
   lastUpdated,
   isRefreshing,
-  onRefresh,
 }: OverviewProps) => (
   <section className="overview card" aria-labelledby="overview-title">
     <div className="overview__header">
@@ -68,16 +66,8 @@ export const Overview = ({
       </div>
       <div className="overview__actions">
         <p className="overview__meta" aria-live="polite">
-          最后刷新：{formatDateTime(lastUpdated)}
+          {isRefreshing ? '刷新中…' : `最后刷新：${formatDateTime(lastUpdated)}`}
         </p>
-        <button
-          className="button button--secondary"
-          type="button"
-          onClick={onRefresh}
-          disabled={isRefreshing}
-        >
-          {isRefreshing ? '刷新中…' : '刷新行情'}
-        </button>
       </div>
     </div>
 
@@ -85,10 +75,7 @@ export const Overview = ({
       <p className={`overview__hero-value ${getValueToneClass(summary.returnPct)}`}>
         {formatPercent(summary.returnPct)}
       </p>
-      <div className="overview__status-group">
-        <span className="status-pill">{summary.hasPartialQuotes ? '部分行情' : '行情完整'}</span>
-        <span className="status-note">持仓数量：{summary.holdingCount}</span>
-      </div>
+      {summary.hasPartialQuotes ? <span className="status-pill">部分行情</span> : null}
     </div>
 
     <dl className="overview__metrics">

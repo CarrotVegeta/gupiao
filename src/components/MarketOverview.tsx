@@ -1,11 +1,11 @@
 import { formatPercent } from '../lib/quotes';
-import type { MarketIndex } from '../types';
+import type { MarketBreadth, MarketIndex } from '../types';
 
 type MarketOverviewProps = {
   indices: MarketIndex[];
-  lastUpdated: string | null;
-  isRefreshing: boolean;
-  onRefresh: () => void;
+  /** 两市成交额（元） */
+  turnover?: number | null;
+  breadth?: MarketBreadth | null;
 };
 
 const getValueToneClass = (value: number | null | undefined): string => {
@@ -53,6 +53,7 @@ const formatIndexValue = (value: number | null): string => {
   }
 
   return new Intl.NumberFormat('zh-CN', {
+    useGrouping: false,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
@@ -63,67 +64,43 @@ const formatSignedNumber = (value: number | null): string =>
     ? '—'
     : `${value >= 0 ? '+' : '-'}${formatIndexValue(Math.abs(value))}`;
 
+/** 成交额：万亿 / 亿 / 万 */
+const formatIndexAmount = (value: number | null): string => {
+  if (value === null || !Number.isFinite(value)) {
+    return '—';
+  }
+  if (value >= 1_000_000_000_000) {
+    return `${(value / 1_000_000_000_000).toFixed(2)}万亿`;
+  }
+  if (value >= 100_000_000) {
+    return `${Math.round(value / 100_000_000)}亿`;
+  }
+  if (value >= 10_000) {
+    return `${Math.round(value / 10_000)}万`;
+  }
+  return String(Math.round(value));
+};
+
 const formatSignedPercent = (value: number | null): string =>
   value === null || !Number.isFinite(value)
     ? '—'
     : `${value >= 0 ? '+' : '-'}${formatPercent(Math.abs(value))}`;
 
-const formatDateTime = (value: string | null): string => {
-  if (value === null) {
-    return '未刷新';
-  }
+const formatCount = (value: number | null): string =>
+  value === null || !Number.isFinite(value) ? '—' : String(value);
 
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return '未刷新';
-  }
-
-  return new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).format(date);
-};
+const formatRate = (value: number | null): string =>
+  value === null || !Number.isFinite(value) ? '—' : `${value.toFixed(1)}%`;
 
 export const MarketOverview = ({
   indices,
-  lastUpdated,
-  isRefreshing,
-  onRefresh,
+  turnover = null,
+  breadth = null,
 }: MarketOverviewProps) => (
-  <section className="market-overview card" aria-labelledby="market-overview-title">
-    <div className="market-overview__header">
-      <div className="market-overview__title">
-        <p className="eyebrow">MARKET OVERVIEW</p>
-        <div className="market-overview__heading-row">
-          <h2 id="market-overview-title">大盘概览</h2>
-          <span className="market-overview__live">实时指数</span>
-        </div>
-        <p className="market-overview__description">
-          <span>四大核心指数</span>
-          <span aria-hidden="true"> · </span>
-          <span>及时把握市场节奏</span>
-        </p>
-      </div>
-      <div className="market-overview__toolbar">
-        <p className="market-overview__updated" aria-live="polite">
-          <span>最后刷新：{formatDateTime(lastUpdated)}</span>
-        </p>
-        <button
-          className="button button--secondary"
-          type="button"
-          onClick={onRefresh}
-          disabled={isRefreshing}
-        >
-          {isRefreshing ? '刷新中…' : '刷新大盘'}
-        </button>
-      </div>
-    </div>
-
+  <section className="market-overview" aria-labelledby="market-overview-title">
+    <h2 id="market-overview-title" className="visually-hidden">
+      大盘概览
+    </h2>
     <dl className="market-overview__grid">
       {indices.map((index) => {
         const statusText = getStatusText(index.status);
@@ -135,32 +112,65 @@ export const MarketOverview = ({
               {statusText ? (
                 <span className="market-index-card__status value--neutral">{statusText}</span>
               ) : (
-                <span className="market-index-card__status market-index-card__status--fresh">
-                  正常
-                </span>
+                <span className="market-index-card__status market-index-card__status--fresh" />
               )}
             </div>
             <dd className={`market-index-card__price ${getMarketToneClass(index.status, index.change)}`}>
-              <span>点位</span>
               <strong>{formatIndexValue(index.price)}</strong>
             </dd>
             <div className="market-index-card__changes">
-              <p className={getMarketToneClass(index.status, index.change)}>
-                <span>涨跌额</span>
-                <strong className={getMarketToneClass(index.status, index.change)}>
-                  {formatSignedNumber(index.change)}
-                </strong>
-              </p>
-              <p className={getMarketToneClass(index.status, index.pct)}>
-                <span>涨跌幅</span>
-                <strong className={getMarketToneClass(index.status, index.pct)}>
-                  {formatSignedPercent(index.pct)}
-                </strong>
-              </p>
+              <span className={getMarketToneClass(index.status, index.change)}>
+                <span className="visually-hidden">涨跌额</span>
+                {formatSignedNumber(index.change)}
+              </span>
+              <span className={getMarketToneClass(index.status, index.pct)}>
+                <span className="visually-hidden">涨跌幅</span>
+                {formatSignedPercent(index.pct)}
+              </span>
+              <span className="market-index-card__amount">
+                <span className="visually-hidden">成交额</span>
+                {formatIndexAmount(index.amount)}
+              </span>
             </div>
           </div>
         );
       })}
+
+      {/* 第 4 格对齐 F：两市成交 + 涨停/炸板/晋级率 */}
+      <div className="market-index-card market-breadth-card">
+        <div className="market-index-card__topline">
+          <dt>两市成交</dt>
+          {breadth?.status === 'fresh' ? (
+            <span className="market-index-card__status market-index-card__status--fresh" />
+          ) : (
+            <span className="market-index-card__status value--neutral">暂无数据</span>
+          )}
+        </div>
+        <dd className="market-index-card__price">
+          <strong>{formatIndexAmount(turnover)}</strong>
+        </dd>
+        <div className="market-index-card__changes">
+          <span className="market-breadth__item">
+            <span className="visually-hidden">涨跌家数</span>涨跌数{' '}
+            <b className={getValueToneClass(breadth?.riseCount)}>
+              {formatCount(breadth?.riseCount ?? null)}
+            </b>
+            <span className="market-breadth__slash">/</span>
+            <b className={getValueToneClass(breadth?.fallCount ? -breadth.fallCount : null)}>
+              {formatCount(breadth?.fallCount ?? null)}
+            </b>
+          </span>
+          <span className="market-breadth__item">
+            <span className="visually-hidden">涨停家数</span>涨停 <b>{formatCount(breadth?.limitUpCount ?? null)}</b>
+          </span>
+          <span className="market-breadth__item">
+            <span className="visually-hidden">炸板家数</span>炸板 <b>{formatCount(breadth?.brokenCount ?? null)}</b>
+          </span>
+          <span className="market-breadth__item">
+            <span className="visually-hidden">晋级率</span>晋级 <b>{formatRate(breadth?.promotionRate ?? null)}</b>
+          </span>
+        </div>
+      </div>
     </dl>
   </section>
 );

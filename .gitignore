@@ -4,3 +4,9 @@ dist-server/
 *.tsbuildinfo
 .superpowers/
 *.log
+scripts/output/
+.cdp-profile/
+
+# 本地服务器凭据，禁止提交
+local-secrets.md
+AGENTS.local.md

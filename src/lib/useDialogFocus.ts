@@ -27,11 +27,16 @@ export const useDialogFocus = (onClose: () => void) => {
     }
 
     const focusableElements = getFocusableElements(dialog);
-    (focusableElements[0] ?? dialog).focus();
+    // 弹窗可以指定 [data-autofocus] 作为首选落点（比如表单里的第一个输入框），
+    // 否则仍然是 Tab 顺序里的第一个可聚焦元素
+    const initialFocus =
+      dialog.querySelector<HTMLElement>('[data-autofocus]') ?? focusableElements[0] ?? dialog;
+    initialFocus.focus();
 
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
-        event.preventDefault();
+        // 故意不 preventDefault：分组下拉（appearance: base-select 的页内 picker）
+        // 要靠这次 Esc 的原生默认行为收起；这里只负责问一句「要不要关弹窗」
         onCloseRef.current();
         return;
       }
