@@ -3059,3 +3059,440 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 .quote-table__stock:hover .stock-identity__name {
   color: var(--accent-primary);
 }
+
+/* ------------------------------------------------------------------ */
+/* 选股页（趋势形态扫描 / 题材）                                        */
+/* 放在文件末尾，稳定压过各列表自己的字号规则                           */
+/* ------------------------------------------------------------------ */
+
+.link-button {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+/* ---- 形态扫描的回测结论横幅（页头固定，不折叠） ---- */
+
+.trend-evidence {
+  margin: var(--space-2) 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--warn-border);
+  border-radius: var(--radius-md);
+  background: var(--warn-surface);
+}
+
+.trend-evidence__headline {
+  margin: 0 0 var(--space-1);
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.trend-evidence ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+}
+
+.trend-evidence li {
+  margin-bottom: 2px;
+}
+
+/* ---- 趋势条件区 ---- */
+
+.trend-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  align-items: flex-end;
+  margin-bottom: var(--space-3);
+}
+
+.trend-filters__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 132px;
+}
+
+.trend-filters__field > span {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.trend-filters__field select,
+.trend-filters__field input {
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--glass-strong);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.trend-filters__check {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding-bottom: 6px;
+  color: var(--text-secondary);
+}
+
+/* ---- 题材卡片 ---- */
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.theme-branch-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  gap: 10px;
+  margin-top: var(--space-2);
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.theme-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--glass-strong);
+  box-shadow: var(--shadow-sm);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.theme-card:hover {
+  border-color: var(--accent-primary);
+  transform: translateY(-1px);
+}
+
+.theme-card--main {
+  border-left: 3px solid var(--danger);
+}
+
+.theme-card--branch {
+  border-left: 3px solid var(--border-strong);
+}
+
+.theme-card__head {
+  display: flex;
+  gap: var(--space-1);
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.theme-card__name {
+  font-weight: 600;
+}
+
+.theme-card__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.theme-card__stats b {
+  color: var(--text-primary);
+}
+
+.theme-card__foot {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.theme-card__leader {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-metrics {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.theme-metrics__dot {
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: transparent;
+}
+
+.theme-metrics__dot--hit {
+  border-color: var(--rise);
+  background: var(--rise);
+}
+
+/* ---- 题材详情 ---- */
+
+.theme-detail__metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: var(--space-2) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.theme-detail__metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 148px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+}
+
+.theme-detail__metric--hit {
+  border-color: rgba(220, 47, 53, 0.28);
+  background: var(--danger-soft);
+}
+
+.theme-detail__metric-label {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.theme-detail__metric-value {
+  font-weight: 600;
+}
+
+.theme-verdict {
+  margin: 0;
+  padding: 0;
+  /* 命中/未命中条目多，给个滚动上限，别把整行撑成一面墙 */
+  max-height: 116px;
+  overflow-y: auto;
+  list-style: none;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.theme-verdict__hit {
+  color: var(--danger);
+}
+
+.theme-verdict__miss {
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 720px) {
+  .trend-filters__field {
+    min-width: 108px;
+  }
+
+  .theme-grid,
+  .theme-branch-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 选股页表格                                                          */
+/* 其他列表各有自己的 scoped 表格样式，选股页列更多，单独一套：          */
+/* 数值右对齐 + 等宽数字、表头吸顶，宽度不足时整表横向滚，               */
+/* 而不是把每列压成一条缝。                                             */
+/* ------------------------------------------------------------------ */
+
+.screener-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.screener-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+/* 10 列（趋势）/ 18 列（题材详情）的最小可读宽度 */
+.screener-table--trend {
+  min-width: 1150px;
+}
+
+.screener-table--stocks {
+  min-width: 1180px;
+}
+
+.screener-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 34px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.96);
+  -webkit-backdrop-filter: var(--blur-md);
+  backdrop-filter: var(--blur-md);
+  box-shadow: inset 0 -1px 0 var(--border-color);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.screener-table tbody th,
+.screener-table tbody td {
+  padding: 13px 12px;
+  border-bottom: 1px solid var(--border-color);
+  background: transparent;
+  font-size: 13px;
+  text-align: right;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.screener-table tbody tr:hover th,
+.screener-table tbody tr:hover td {
+  background: var(--bg-muted);
+}
+
+.screener-table tbody tr:last-child th,
+.screener-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.screener-table thead th:first-child,
+.screener-table tbody th {
+  text-align: left;
+}
+
+.screener-table tbody th {
+  min-width: 178px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* 数字对齐：等宽字形，扫列的时候不会跳 */
+.screener-table__num,
+.screener-table__price,
+.screener-table__pct {
+  font-variant-numeric: tabular-nums;
+}
+
+.screener-table__stack {
+  line-height: 1.35;
+}
+
+.screener-table__price {
+  display: block;
+  font-weight: 600;
+}
+
+.screener-table__pct {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.screener-table__pct.is-up {
+  color: var(--rise);
+}
+
+.screener-table__pct.is-down {
+  color: var(--fall);
+}
+
+/* 次要信息（所属板块、均线数值）压到主行下面的小字 */
+.screener-table__sub {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.screener-table__sub--nowrap {
+  white-space: nowrap;
+}
+
+.screener-table__badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.screener-table__badge.is-on {
+  border-color: rgba(220, 47, 53, 0.3);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* 命中 / 未命中：表格里改成横向换行的小胶囊，不再一条条竖着堆。
+   这一列是整表最宽的内容，给它足够的宽度，否则每条胶囊都折成两三行、
+   行高会被撑到 500px 以上。 */
+.screener-table tbody td.screener-table__verdict {
+  min-width: 376px;
+  padding-top: 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.screener-table .theme-verdict {
+  max-height: none;
+  white-space: normal;
+}
+
+.screener-table .theme-verdict li {
+  display: inline-block;
+  margin: 0 4px 4px 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.screener-table .theme-verdict__hit {
+  background: var(--danger-soft);
+}
+
+.screener-table .theme-verdict__miss {
+  background: rgba(17, 24, 39, 0.05);
+}
+
+@media (max-width: 720px) {
+  .screener-table--trend {
+    min-width: 1000px;
+  }
+
+  .screener-table--stocks {
+    min-width: 1040px;
+  }
+}
