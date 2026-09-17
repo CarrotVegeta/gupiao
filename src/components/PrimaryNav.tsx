@@ -1,11 +1,20 @@
+export type PrimaryNavPage =
+  | 'holdings'
+  | 'watchlist'
+  | 'limit-up'
+  | 'auction'
+  | 'dragon-tiger'
+  | 'screener';
+
 type PrimaryNavProps = {
-  activePage: 'holdings' | 'watchlist' | 'limit-up' | 'auction' | 'dragon-tiger';
+  activePage: PrimaryNavPage;
   holdingCount: number;
   watchlistCount: number;
   limitUpCount: number | null;
   auctionCount?: number | null;
   dragonTigerCount?: number | null;
-  onNavigate: (page: 'holdings' | 'watchlist' | 'limit-up' | 'auction' | 'dragon-tiger') => void;
+  screenerCount?: number | null;
+  onNavigate: (page: PrimaryNavPage) => void;
   isRefreshing?: boolean;
   onRefresh?: () => void;
   onAddHolding?: () => void;
@@ -42,6 +51,11 @@ const navItems: Array<{
     label: '龙虎榜',
     getCount: ({ dragonTigerCount }) => (dragonTigerCount == null ? '—' : dragonTigerCount),
   },
+  {
+    page: 'screener',
+    label: '选股',
+    getCount: ({ screenerCount }) => (screenerCount == null ? '—' : screenerCount),
+  },
 ];
 
 export const PrimaryNav = ({
@@ -51,6 +65,7 @@ export const PrimaryNav = ({
   limitUpCount,
   auctionCount = null,
   dragonTigerCount = null,
+  screenerCount = null,
   onNavigate,
   isRefreshing = false,
   onRefresh,
@@ -64,6 +79,7 @@ export const PrimaryNav = ({
     limitUpCount,
     auctionCount,
     dragonTigerCount,
+    screenerCount,
     onNavigate,
   };
 

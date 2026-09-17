@@ -3,7 +3,8 @@ import { calculatePortfolioSummary, hasPositionDetails } from './lib/calculation
 import { DragonTigerList } from './components/DragonTigerList';
 import { AuctionList } from './components/AuctionList';
 import { MarketOverview } from './components/MarketOverview';
-import { PrimaryNav } from './components/PrimaryNav';
+import { PrimaryNav, type PrimaryNavPage } from './components/PrimaryNav';
+import { ScreenerPanel, type ScreenerTab } from './components/ScreenerPanel';
 import { fetchQuotes, mergeQuotes } from './lib/quotes';
 import { searchStocks } from './lib/search';
 import { loadState, moveHoldingsToGroup, saveState } from './lib/storage';
@@ -176,9 +177,8 @@ const buildAuctionUnavailableResponse = (fetchedAt: string): AuctionResponse => 
 export default function App() {
   const [loadedState] = useState(() => loadState(localStorage));
   const [state, setState] = useState<StorageState>(loadedState.state);
-  const [activePage, setActivePage] = useState<
-    'holdings' | 'watchlist' | 'limit-up' | 'auction' | 'dragon-tiger'
-  >('watchlist');
+  const [activePage, setActivePage] = useState<PrimaryNavPage>('watchlist');
+  const [activeScreenerTab, setActiveScreenerTab] = useState<ScreenerTab>('trend');
   const [activeLimitUpTab, setActiveLimitUpTab] = useState<LimitUpFocusTab>('pool');
   const [selectedGroupId, setSelectedGroupId] = useState<string>('all');
   // 自选页表头的筛选：范围（全部 / 持仓）和分组合并成一条分段控件
@@ -950,6 +950,8 @@ export default function App() {
                   void refreshDragonTiger();
                 }}
               />
+            ) : activePage === 'screener' ? (
+              <ScreenerPanel activeTab={activeScreenerTab} onTabChange={setActiveScreenerTab} />
             ) : activePage === 'holdings' ? (
               renderHoldingsPage()
             ) : (

@@ -248,6 +248,181 @@ export type WatchCheckResponse = {
   errors: QuoteError[];
 };
 
+/** 选股页的数据来源：板块骨架来自东财，涨停结构来自同花顺，行情来自腾讯 */
+export type ScreenerSource = 'eastmoney+10jqka' | 'eastmoney+10jqka+tencent' | 'eastmoney';
+
+/** 题材分类：主线 / 支线 */
+export type ThemeKind = 'main' | 'branch';
+
+/** 用户给的 8 个判断指标 */
+export type ThemeMetricKey =
+  | 'duration'
+  | 'limitUpCount'
+  | 'ladder'
+  | 'amount'
+  | 'catalyst'
+  | 'leader'
+  | 'revival'
+  | 'influence';
+
+export type ThemeMetric = {
+  key: ThemeMetricKey;
+  label: string;
+  hit: boolean;
+  /** 展示值，如「5 天」「12 只」 */
+  value: string;
+  /** 判定依据，如「连续 5 个交易日涨停家数 ≥2」 */
+  detail: string;
+};
+
+export type ThemeLeader = {
+  symbol: string;
+  name: string;
+  boardCount: number | null;
+  /** 原样保留上游的「8天5板」 */
+  highLabel: string | null;
+};
+
+export type ThemeItem = {
+  /** 东财板块代码，如 BK0900 */
+  code: string;
+  name: string;
+  kind: ThemeKind;
+  pct: number | null;
+  /** 当日涨停家数（自算：涨停股按 F10 纯正板块归属分组） */
+  limitUpCount: number;
+  /** 连板家数 */
+  continuousCount: number;
+  maxBoard: number | null;
+  maxBoardLabel: string | null;
+  /** 持续天数：连续满足「每日涨停家数 ≥2」的交易日数 */
+  durationDays: number;
+  /** 板块成交额（元） */
+  amount: number | null;
+  /** 板块成交额占两市成交比（%） */
+  amountRatio: number | null;
+  /** 涨停原因标签 */
+  catalysts: string[];
+  leader: ThemeLeader | null;
+  metrics: ThemeMetric[];
+  /** 命中指标数 */
+  score: number;
+};
+
+export type ThemesResponse = {
+  tradeDate: string | null;
+  main: ThemeItem[];
+  branch: ThemeItem[];
+  fetchedAt: string;
+  source: ScreenerSource;
+  status: Quote['status'];
+  error: string | null;
+};
+
+/** 题材详情里的 4 个标签 */
+export type ThemeStockRole = 'leader' | 'turnover' | 'trend' | 'laggard';
+
+export const THEME_STOCK_ROLES: ThemeStockRole[] = ['leader', 'turnover', 'trend', 'laggard'];
+
+export type ThemeStockItem = {
+  symbol: string;
+  name: string;
+  price: number | null;
+  pct: number | null;
+  boardCount: number | null;
+  firstSealTime: string | null;
+  /** 换手板 / 一字板 / T字板 */
+  sealType: string | null;
+  /** 开板次数 */
+  openCount: number | null;
+  /** 封单额（元） */
+  sealAmount: number | null;
+  turnoverRate: number | null;
+  amount: number | null;
+  avgAmount3d: number | null;
+  avgAmount5d: number | null;
+  floatMarketCap: number | null;
+  reason: string | null;
+  /** 题材纯正度（东财 F10 IS_PRECISE） */
+  precise: boolean | null;
+  hits: string[];
+  misses: string[];
+  risks: string[];
+  // ---- 展示列：均线相关只展示，不作为硬条件 ----
+  ma5: number | null;
+  ma10: number | null;
+  ma20: number | null;
+  maBull: boolean | null;
+  distMa5: number | null;
+  distMa10: number | null;
+  /** 最近 10 日收盘站上 MA5 的天数 */
+  stableDays10: number | null;
+  pct10: number | null;
+  pct20: number | null;
+  limitUpIn60d: number | null;
+};
+
+export type ThemeStocksResponse = {
+  tradeDate: string | null;
+  theme: { code: string; name: string } | null;
+  role: ThemeStockRole;
+  items: ThemeStockItem[];
+  scanned: number;
+  fetchedAt: string;
+  source: ScreenerSource;
+  status: Quote['status'];
+  error: string | null;
+};
+
+export type TrendFilters = {
+  themeScope: 'main' | 'all';
+  maxMa5Dist: number;
+  maxPct: number;
+  pctWindow: number;
+  minStableDays: number;
+  minAmountYi: number;
+  /** 5 个形态条件里至少命中几个（扫描器用它放宽门槛，看「差一点」的票） */
+  minScore: number;
+  mainOnly: boolean;
+  excludeSt: boolean;
+};
+
+export type TrendPick = {
+  symbol: string;
+  name: string;
+  themes: Array<{ code: string; name: string }>;
+  price: number | null;
+  pct: number | null;
+  ma5: number | null;
+  ma10: number | null;
+  ma20: number | null;
+  distMa5: number | null;
+  stableDays: number | null;
+  /** 量能比：当日量 / 前 5 日均量，<1 即缩量 */
+  shrink: number | null;
+  pctWindow: number | null;
+  avgAmount5d: number | null;
+  turnoverRate: number | null;
+  /** 命中的条件 */
+  matched: string[];
+  /** 未命中的条件（形态扫描器要把两边都列出来） */
+  unmatched: string[];
+};
+
+export type TrendScanResponse = {
+  tradeDate: string | null;
+  items: TrendPick[];
+  /** 漏斗里实际拉过日K的股票数 */
+  scanned: number;
+  /** 参与预筛的成分股数 */
+  candidates: number;
+  filters: TrendFilters;
+  fetchedAt: string;
+  source: ScreenerSource;
+  status: Quote['status'];
+  error: string | null;
+};
+
 export type StockSearchResult = {
   symbol: string;
   name: string;

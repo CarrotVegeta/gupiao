@@ -10,6 +10,9 @@ import type {
   QuotesResponse,
   SprintLimitUpResponse,
   StockSearchResponse,
+  ThemeStocksResponse,
+  ThemesResponse,
+  TrendScanResponse,
 } from '../src/types.js';
 import { fetchEastmoneyDragonTiger } from './dragon-tiger/eastmoney.js';
 import { fetchEastmoneyAuction } from './auction/eastmoney.js';
@@ -20,6 +23,8 @@ import { fetchMarketBreadth } from './market/breadth.js';
 import { fetchEastmoneyMarket } from './market/eastmoney.js';
 import { fetchTencentMarket } from './market/tencent.js';
 import { fetchEastmoneySprintLimitUp } from './sprint-limit-up/eastmoney.js';
+import { buildThemes, buildThemeStocks } from './themes/service.js';
+import { parseTrendFilters, scanTrend } from './screener/trend.js';
 import {
   fetchEastmoneyQuotes,
   fetchEastmoneySearch,
@@ -155,6 +160,47 @@ export const createApp = () => {
       auctionCache.set(tradeDate, body);
     }
 
+    return res.status(200).json(body);
+  });
+
+  app.get('/api/themes', async (req, res) => {
+    const tradeDate = parseTradeDate(req.query.date);
+    if (tradeDate === null) {
+      return res.status(400).json({ message: 'date 必须是 YYYYMMDD 格式' });
+    }
+
+    const body: ThemesResponse = await buildThemes(tradeDate);
+    return res.status(200).json(body);
+  });
+
+  app.get('/api/themes/:code/stocks', async (req, res) => {
+    const tradeDate = parseTradeDate(req.query.date);
+    if (tradeDate === null) {
+      return res.status(400).json({ message: 'date 必须是 YYYYMMDD 格式' });
+    }
+
+    const code = String(req.params.code ?? '').trim().toUpperCase();
+    if (!/^BK\d{4}$/.test(code)) {
+      return res.status(400).json({ message: 'code 必须是 BK 开头的板块代码' });
+    }
+
+    const role = String(req.query.role ?? 'leader');
+    if (role !== 'leader' && role !== 'turnover' && role !== 'trend' && role !== 'laggard') {
+      return res.status(400).json({ message: 'role 必须是 leader / turnover / trend / laggard' });
+    }
+
+    const body: ThemeStocksResponse = await buildThemeStocks(tradeDate, code, role);
+    return res.status(200).json(body);
+  });
+
+  app.get('/api/screener/trend', async (req, res) => {
+    const tradeDate = parseTradeDate(req.query.date);
+    if (tradeDate === null) {
+      return res.status(400).json({ message: 'date 必须是 YYYYMMDD 格式' });
+    }
+
+    const filters = parseTrendFilters(req.query as Record<string, unknown>);
+    const body: TrendScanResponse = await scanTrend(tradeDate, filters);
     return res.status(200).json(body);
   });
 
