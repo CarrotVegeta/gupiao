@@ -12,6 +12,12 @@
 # 发布结果：
 #   /opt/stock-dashboard/releases/<时间戳>-<commit>[-local]/
 #   systemd 单元 stock-dashboard.service 指向新 release，出问题可用 rollback/ 下的备份回滚。
+#
+# 运行时布局说明（重要）：
+#   node 运行时放在 /opt/stock-dashboard/runtime（release 之外），ExecStart 直接使用该固定路径。
+#   不要把运行时放回 releases/<release>/runtime 再靠软链解析：在本机 ext4 + AliHips 环境下，
+#   凡是指向名为 runtime 目录的软链，其下可执行文件的 execve 会返回 ENOENT（stat/open 正常，
+#   仅 execve 失败），会导致 systemd 报 status=203/EXEC。指向 runtime/bin 的软链则正常。
 
 set -euo pipefail
 
@@ -23,8 +29,15 @@ BASE_DIR="/opt/${APP_NAME}"
 RELEASES_DIR="${BASE_DIR}/releases"
 ROLLBACK_DIR="${BASE_DIR}/rollback"
 UNIT="/etc/systemd/system/${APP_NAME}.service"
-# 共享 runtime / node_modules 的宿主 release（免去每台机器重复安装依赖）
+# node 运行时固定在 BASE_DIR/runtime（不在 releases 内，避免被清理逻辑误删）。
+# 切勿把运行时放回 releases/<release>/runtime：execve 经该层软链会返回 ENOENT（见下方“运行时布局说明”）。
+RUNTIME_DIR="${BASE_DIR}/runtime"
+# 共享 node_modules 的宿主 release（免去每台机器重复安装依赖）。
+# 该目录含全站唯一的 node_modules，**必须**排除在 releases 清理之外。
 SHARED_RELEASE="20260827-1619-788afd6c8ddd"
+SHARED_DIR="${RELEASES_DIR}/${SHARED_RELEASE}"
+# releases 清理时保留的最近发布数
+KEEP_RELEASES=5
 PORT="3001"
 
 SKIP_BUILD=0
@@ -83,21 +96,27 @@ sshpass -p "$DEPLOY_PASS" rsync -az --delete -e "ssh ${SSH_OPTS[*]}" \
 
 # ---------- 权限、软链、清单 ----------
 rsh "set -e
-  ln -sfn '${RELEASES_DIR}/${SHARED_RELEASE}/runtime' '${DEST}/runtime'
-  ln -sfn '${RELEASES_DIR}/${SHARED_RELEASE}/node_modules' '${DEST}/node_modules'
+  ln -sfn '${RUNTIME_DIR}' '${DEST}/runtime'
+  ln -sfn '${SHARED_DIR}/node_modules' '${DEST}/node_modules'
+  chown -h ${APP_NAME}:${APP_NAME} '${DEST}/runtime' '${DEST}/node_modules'
   chown -R ${APP_NAME}:${APP_NAME} '${DEST}'
   find '${DEST}' -type d -exec chmod 755 {} +
   find '${DEST}' -type f -exec chmod 644 {} +
   cd '${DEST}' && find dist dist-server package.json package-lock.json -type f -print0 \
     | sort -z | xargs -0 sha256sum > ARTIFACT.sha256
   chown ${APP_NAME}:${APP_NAME} '${DEST}/ARTIFACT.sha256'
-  '${DEST}/runtime/node' -v"
+  '${RUNTIME_DIR}/bin/node' -v"
+
+# ---------- 前置校验：共享依赖必须可用 ----------
+rsh "set -e
+  test -x '${RUNTIME_DIR}/bin/node' || { echo '缺少 node 运行时：${RUNTIME_DIR}/bin/node' >&2; exit 1; }
+  test -d '${SHARED_DIR}/node_modules/express' || { echo '缺少共享 node_modules：${SHARED_DIR}/node_modules' >&2; exit 1; }"
 
 # ---------- 备份 unit 并切换 ----------
 rsh "set -e
   mkdir -p '${ROLLBACK_DIR}'
   cp -p '${UNIT}' '${ROLLBACK_DIR}/${APP_NAME}-${RELEASE}-before.service'
-  sed -i -E 's#^WorkingDirectory=.*#WorkingDirectory=${DEST}#; s#^ExecStart=.*#ExecStart=${DEST}/runtime/node ${DEST}/dist-server/server/index.js#' '${UNIT}'
+  sed -i -E 's#^WorkingDirectory=.*#WorkingDirectory=${DEST}#; s#^ExecStart=.*#ExecStart=${RUNTIME_DIR}/bin/node ${DEST}/dist-server/server/index.js#' '${UNIT}'
   systemctl daemon-reload
   systemctl restart '${APP_NAME}.service'
   sleep 4
@@ -115,7 +134,26 @@ rsh "set -e
   done
   systemctl is-active '${APP_NAME}.service'"
 
+# ---------- 清理旧发布（务必保留共享 node_modules 宿主） ----------
+# 历史 bug：无差别删除 releases/* 会连带删掉 SHARED_DIR，即全站唯一的 node_modules。
+# 运行中的进程靠已删除的文件句柄还能短暂存活，但服务一旦重启就会因缺少依赖而失败。
+if [[ "${SKIP_CLEAN:-0}" != "1" ]]; then
+  echo "==> 清理旧发布（保留最近 ${KEEP_RELEASES} 个 + 共享 release）"
+  rsh "set -e
+    cd '${RELEASES_DIR}'
+    keep=\$(ls -1dt */ 2>/dev/null | head -${KEEP_RELEASES} | sed 's|/\$||')
+    for d in */; do
+      d=\"\${d%/}\"
+      [[ \"\$d\" == \"${SHARED_RELEASE}\" ]] && continue
+      printf '%s\n' \"\$keep\" | grep -qx \"\$d\" && continue
+      echo \"  删除 \$d\"
+      rm -rf -- \"\$d\"
+    done
+    test -d '${SHARED_DIR}/node_modules/express' || { echo '清理后共享 node_modules 丢失' >&2; exit 1; }
+    ls -1dt */ | head"
+fi
+
 echo
 echo "==> 部署完成：http://${DEPLOY_HOST}:${PORT}/"
 echo "    发布号：${RELEASE}"
-echo "    回滚：sed -i -E 's#^WorkingDirectory=.*#WorkingDirectory=${RELEASES_DIR}/<旧发布号>#; s#^ExecStart=.*#ExecStart=${RELEASES_DIR}/<旧发布号>/runtime/node ${RELEASES_DIR}/<旧发布号>/dist-server/server/index.js#' ${UNIT} && systemctl daemon-reload && systemctl restart ${APP_NAME}.service"
+echo "    回滚：sed -i -E 's#^WorkingDirectory=.*#WorkingDirectory=${RELEASES_DIR}/<旧发布号>#; s#^ExecStart=.*#ExecStart=${RUNTIME_DIR}/bin/node ${RELEASES_DIR}/<旧发布号>/dist-server/server/index.js#' ${UNIT} && systemctl daemon-reload && systemctl restart ${APP_NAME}.service"
