@@ -10,3 +10,6 @@ scripts/output/
 # 本地服务器凭据，禁止提交
 local-secrets.md
 AGENTS.local.md
+
+# 调试用临时目录（截图/原始转储/探针脚本），不入库
+tmp-analysis/
