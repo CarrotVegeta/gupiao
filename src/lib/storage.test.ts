@@ -15,6 +15,9 @@ const stateWithHolding = (overrides: Partial<Holding> = {}): StorageState => ({
       note: '',
       createdAt: '2026-08-18T00:00:00.000Z',
       updatedAt: '2026-08-18T00:00:00.000Z',
+      // 自选收益的基准价：新记录默认是空，加了自选那一刻才记
+      watchPrice: null,
+      watchPriceAt: null,
       ...overrides,
     },
   ],
@@ -58,6 +61,61 @@ describe('storage helpers', () => {
     saveState(localStorage, state);
 
     expect(loadState(localStorage)).toEqual({ state, recovered: false });
+  });
+
+  it('round-trips the watch baseline that drives 自选收益', () => {
+    const state = stateWithHolding({
+      openPrice: null,
+      quantity: null,
+      watchPrice: 12.27,
+      watchPriceAt: '2026-09-18T01:40:00.000Z',
+    });
+    saveState(localStorage, state);
+
+    expect(loadState(localStorage)).toEqual({ state, recovered: false });
+  });
+
+  it('keeps holdings written before 自选日/自选收益 existed, with an empty baseline', () => {
+    // 旧版本写下来的记录没有 watchPrice / watchPriceAt 这两个字段
+    localStorage.setItem(
+      'stock-dashboard:v1',
+      JSON.stringify({
+        groups: [],
+        holdings: [
+          {
+            id: 'h-legacy',
+            symbol: '600519',
+            name: '贵州茅台',
+            groupId: '',
+            openPrice: null,
+            quantity: null,
+            note: '',
+            createdAt: '2026-08-18T00:00:00.000Z',
+            updatedAt: '2026-08-18T00:00:00.000Z',
+          },
+        ],
+      }),
+    );
+
+    const { state, recovered } = loadState(localStorage);
+
+    expect(recovered).toBe(false);
+    expect(state.holdings[0].watchPrice).toBeNull();
+    expect(state.holdings[0].watchPriceAt).toBeNull();
+  });
+
+  it('drops a half-written watch baseline instead of pairing today with an old price', () => {
+    // 只有价没有取价时刻：宁可这一列显示「—」，也不能拿今天的时刻去配这个价
+    localStorage.setItem(
+      'stock-dashboard:v1',
+      JSON.stringify(stateWithHolding({ watchPrice: 12.27, watchPriceAt: null })),
+    );
+
+    const { state, recovered } = loadState(localStorage);
+
+    expect(recovered).toBe(false);
+    expect(state.holdings[0].watchPrice).toBeNull();
+    expect(state.holdings[0].watchPriceAt).toBeNull();
   });
 
   it('does not write invalid holding symbols, and reports the failure', () => {

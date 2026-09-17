@@ -121,9 +121,17 @@ const mapBoardSnapshot = (row: Record<string, unknown>): BoardSnapshot | null =>
   };
 };
 
-/** 拉取东财概念 + 行业板块快照（分页直到取完） */
-export const fetchBoardCatalog = async (fetchImpl: typeof fetch = fetch): Promise<BoardCatalog> => {
+/**
+ * 拉取东财概念 + 行业板块快照（分页直到取完）。
+ *
+ * 单页失败不能让整张目录为空：保留已经取到的页，只把失败页记下来。
+ * 否则「某个分页偶发超时」会表现成「全部题材都消失」，比少几个板块严重得多。
+ */
+export const fetchBoardCatalog = async (
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ catalog: BoardCatalog; errors: QuoteError[] }> => {
   const catalog: BoardCatalog = new Map();
+  const errors: QuoteError[] = [];
 
   for (const kind of BOARD_KINDS) {
     for (let page = 1; page <= MAX_PAGES; page += 1) {
@@ -139,9 +147,18 @@ export const fetchBoardCatalog = async (fetchImpl: typeof fetch = fetch): Promis
         fields: 'f3,f6,f8,f12,f14,f104,f105,f128,f140',
       });
 
-      const payload = await fetchJson(`${CLIST_ENDPOINT}?${params.toString()}`, fetchImpl);
-      const data = isRecord(payload) && isRecord(payload.data) ? payload.data : null;
-      const diff = data && Array.isArray(data.diff) ? data.diff : [];
+      let diff: unknown[] = [];
+      try {
+        const payload = await fetchJson(`${CLIST_ENDPOINT}?${params.toString()}`, fetchImpl);
+        const data = isRecord(payload) && isRecord(payload.data) ? payload.data : null;
+        diff = data && Array.isArray(data.diff) ? data.diff : [];
+      } catch (error) {
+        errors.push({
+          symbol: `${kind.label}#${page}`,
+          message: error instanceof Error ? error.message : '板块目录请求失败',
+        });
+        break;
+      }
       if (diff.length === 0) break;
 
       for (const raw of diff) {
@@ -154,7 +171,7 @@ export const fetchBoardCatalog = async (fetchImpl: typeof fetch = fetch): Promis
     }
   }
 
-  return catalog;
+  return { catalog, errors };
 };
 
 // ---------------------------------------------------------------------------
@@ -174,6 +191,11 @@ export type BoardMember = {
   volumeRatio: number | null;
   /** 流通市值（元） */
   floatMarketCap: number | null;
+  /**
+   * 所属行业板块名称（东财 clist 的 f100）。这是上游给的「这只票属于哪个板块」，
+   * 不是本项目自己算出来的题材归属；拿不到就是 null，界面上按「—」显示。
+   */
+  industry: string | null;
 };
 
 const mapBoardMember = (row: Record<string, unknown>): BoardMember | null => {
@@ -190,6 +212,7 @@ const mapBoardMember = (row: Record<string, unknown>): BoardMember | null => {
     volumeRatio: asNumber(row.f10),
     // f21 是流通市值（元）
     floatMarketCap: asNumber(row.f21),
+    industry: asString(row.f100) || null,
   };
 };
 
@@ -474,7 +497,8 @@ export const fetchMarketSnapshot = async (
       invt: '2',
       fid: 'f6',
       fs: ALL_MARKET_FILTER,
-      fields: 'f2,f3,f6,f8,f10,f12,f14,f21',
+      // f100 = 所属行业板块名称：形态扫描要展示「所属板块」，不能再拿空题材冒充
+      fields: 'f2,f3,f6,f8,f10,f12,f14,f21,f100',
     });
 
     const payload = await fetchJson(`${CLIST_ENDPOINT}?${params.toString()}`, fetchImpl);

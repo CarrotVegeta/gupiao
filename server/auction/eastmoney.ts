@@ -69,6 +69,48 @@ const DETAIL_RETRY_BASE_MS = 200;
 /** 连续失败到该阈值就认为明细源整体不可用，本次请求不再逐只尝试 */
 const DETAIL_FAILURE_THRESHOLD = 8;
 
+/** 开盘集合竞价 09:15 开始接单；在这之前当天不可能有任何竞价成交 */
+const CALL_AUCTION_OPEN_MINUTES = 9 * 60 + 15;
+
+const SHANGHAI_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+const SHANGHAI_CLOCK_FORMATTER = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Shanghai',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
+/** 上海时区的今天（YYYYMMDD）。和 server/index.ts 的 getShanghaiToday 同一口径，放这里避免循环依赖 */
+export const toShanghaiTradeDate = (now: Date = new Date()): string =>
+  SHANGHAI_DATE_FORMATTER.format(now).replaceAll('-', '');
+
+/** 距离当天 09:15 还有多少毫秒；已经过了就是 0 */
+export const msUntilCallAuction = (now: Date = new Date()): number => {
+  const [hour, minute, second] = SHANGHAI_CLOCK_FORMATTER.format(now)
+    .split(':')
+    .map((part) => Number(part));
+  const elapsedMs = (hour * 60 + minute) * 60_000 + second * 1_000;
+
+  return Math.max(0, CALL_AUCTION_OPEN_MINUTES * 60_000 - elapsedMs);
+};
+
+/**
+ * 09:15 之前请求「今天」的竞价：集合竞价还没开始，
+ * 行情源里的今开、分笔、大盘缺口都还停在**上一个交易日**，
+ * 按今天算会得到一张「池子是昨天、价格是昨天、日期写今天」的卡。
+ *
+ * 请求历史日期不受影响：那些日子的竞价早就结束了。
+ */
+export const isPreOpenAuctionFallback = (tradeDate: string, now: Date = new Date()): boolean =>
+  tradeDate === toShanghaiTradeDate(now) && msUntilCallAuction(now) > 0;
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
@@ -791,16 +833,44 @@ const fetchFallbackPreviousPool = async (
   return null;
 };
 
+/**
+ * 真正该展示的竞价日：09:15 前请求「今天」时退回到上一个交易日，
+ * 其余情况原样返回请求的日期（历史日期照查）。
+ */
+const resolveAuctionDate = async (
+  tradeDate: string,
+  fetchImpl: typeof fetch,
+  now: Date,
+): Promise<string> => {
+  if (!isPreOpenAuctionFallback(tradeDate, now)) {
+    return tradeDate;
+  }
+
+  try {
+    return (await fetchPreviousTradeDate(tradeDate, fetchImpl)) ?? tradeDate;
+  } catch {
+    // 交易日历也拿不到时退回「按日期回扫涨停池」的上一交易日：
+    // 两条日历源同时挂掉的概率极低，但也不该让卡片退化成「今天的日期 + 昨天的价格」。
+    const fallback = await fetchFallbackPreviousPool(tradeDate, fetchImpl);
+    return fallback?.previousTradeDate ?? tradeDate;
+  }
+};
+
 export const fetchEastmoneyAuction = async (
   tradeDate: string,
   fetchImpl: typeof fetch = fetch,
+  now: Date = new Date(),
 ): Promise<AuctionResponse> => {
   const fetchedAt = new Date().toISOString();
 
   try {
+    // 09:15 前整卡退回上一个完整竞价日：竞价日 = 上一交易日，
+    // 昨日涨停 = 它的上一交易日涨停池，价格/缺口也正好都是那一天的 09:25。
+    const auctionDate = await resolveAuctionDate(tradeDate, fetchImpl, now);
+
     let previousTradeDate: string | null = null;
     try {
-      previousTradeDate = await fetchPreviousTradeDate(tradeDate, fetchImpl);
+      previousTradeDate = await fetchPreviousTradeDate(auctionDate, fetchImpl);
     } catch {
       previousTradeDate = null;
     }
@@ -809,7 +879,7 @@ export const fetchEastmoneyAuction = async (
     if (previousTradeDate !== null) {
       pool = await fetchAuctionPool(previousTradeDate, fetchImpl);
     } else {
-      const fallback = await fetchFallbackPreviousPool(tradeDate, fetchImpl);
+      const fallback = await fetchFallbackPreviousPool(auctionDate, fetchImpl);
       if (fallback === null) {
         return unavailableResponse('未找到上一交易日涨停池', fetchedAt);
       }
@@ -882,7 +952,7 @@ export const fetchEastmoneyAuction = async (
     );
 
     return {
-      tradeDate,
+      tradeDate: auctionDate,
       previousTradeDate,
       snapshotTime: '09:25:00',
       items,

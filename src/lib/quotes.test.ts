@@ -50,6 +50,50 @@ describe('quote helpers', () => {
     await expect(fetchQuotes(['600519'], fetchImpl)).rejects.toThrow(/500/);
   });
 
+  it('splits more than 50 symbols into several requests so none gets truncated', async () => {
+    const symbols = Array.from({ length: 51 }, (_value, index) => String(600000 + index));
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const batch = String(input).replace('/api/quotes?symbols=', '').split('%2C');
+      return new Response(
+        JSON.stringify({
+          quotes: batch.map((symbol) => quote({ symbol })),
+          fetchedAt: '2026-08-18T10:30:00.000Z',
+          source: 'tencent',
+          errors: [],
+        }),
+      );
+    });
+
+    const response = await fetchQuotes(symbols, fetchImpl);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl.mock.calls[0][0]).toBe(
+      `/api/quotes?symbols=${encodeURIComponent(symbols.slice(0, 50).join(','))}`,
+    );
+    expect(fetchImpl.mock.calls[1][0]).toBe(
+      `/api/quotes?symbols=${encodeURIComponent(symbols.slice(50).join(','))}`,
+    );
+    expect(response.quotes).toHaveLength(51);
+    expect(response.source).toBe('tencent');
+  });
+
+  it('keeps the batches that succeeded and reports the failed ones as errors', async () => {
+    const symbols = Array.from({ length: 60 }, (_value, index) => String(600000 + index));
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('600050')) {
+        throw new Error('network down');
+      }
+
+      return new Response(JSON.stringify(validQuotesResponse()));
+    });
+
+    const response = await fetchQuotes(symbols, fetchImpl);
+
+    expect(response.quotes).toHaveLength(1);
+    expect(response.errors).toHaveLength(10);
+    expect(response.errors[0]).toEqual({ symbol: '600050', message: 'network down' });
+  });
+
   it('marks a previous quote stale when the refresh response reports an error', () => {
     const previous = { '600519': quote({ symbol: '600519', status: 'fresh' }) };
     const next = mergeQuotes(previous, {

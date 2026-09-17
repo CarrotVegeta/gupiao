@@ -5,8 +5,10 @@ import App from './App';
 import type {
   AuctionResponse,
   DragonTigerResponse,
+  LimitUpLadderResponse,
   LimitUpResponse,
   MarketOverviewResponse,
+  Quote,
   QuotesResponse,
   SprintLimitUpResponse,
   StorageState,
@@ -17,9 +19,36 @@ type FetchPayload =
   | QuotesResponse
   | MarketOverviewResponse
   | LimitUpResponse
+  | LimitUpLadderResponse
   | SprintLimitUpResponse
-  | DragonTigerResponse;
+  | DragonTigerResponse
+  | TrendScanFixture;
 type FetchReply = FetchPayload | Error | (() => Promise<Response>);
+
+/** 选股页形态扫描的最小响应：只要够渲染一行，重点验证行尾的「添加自选」 */
+type TrendScanFixture = {
+  tradeDate: string;
+  items: Array<Record<string, unknown>>;
+  scanned: number;
+  candidates: number;
+  filters: Record<string, unknown>;
+  fetchedAt: string;
+  source: string;
+  status: string;
+  error: string | null;
+  coverage: {
+    total: number;
+    attempted: number;
+    succeeded: number;
+    failed: number;
+    unscanned: number;
+  };
+  matchedTotal: number;
+  returnedCount: number;
+  truncated: boolean;
+  metricsTradeDate: string;
+  quoteAsOf: string;
+};
 
 const makeResponse = (payload: FetchPayload): Response => new Response(JSON.stringify(payload));
 
@@ -126,6 +155,53 @@ const limitUpResponseFixture = (response: Partial<LimitUpResponse> = {}): LimitU
   ...response,
 });
 
+/** 连板天梯 / 今-昨对比的最小响应：够渲染一档梯子和一行对比 */
+const limitUpLadderResponseFixture = (
+  response: Partial<LimitUpLadderResponse> = {},
+): LimitUpLadderResponse => {
+  const todayItem = {
+    symbol: '605058',
+    name: '澳弘电子',
+    price: 28.1,
+    pct: 9.99,
+    boardCount: 5,
+    firstSealTime: '09:25:00',
+    lastSealTime: '09:25:00',
+    industry: '元件',
+    breakCount: 0,
+  };
+  const previousItem = {
+    ...todayItem,
+    price: 25.55,
+    boardCount: 4,
+  };
+
+  return {
+    tradeDate: '20260819',
+    previousTradeDate: '20260818',
+    items: [todayItem],
+    ladder: [{ boardCount: 5, items: [todayItem] }],
+    previousLadder: [{ boardCount: 4, items: [previousItem] }],
+    comparison: [
+      {
+        boardCount: 4,
+        total: 2,
+        carried: [{ symbol: '605058', name: '澳弘电子', boardCount: 5, pct: 9.99 }],
+        fallen: [{ symbol: '600111', name: '北方稀土', boardCount: null, pct: 10.02 }],
+      },
+    ],
+    previousCount: 2,
+    carriedCount: 1,
+    promotionRate: 50,
+    previousAvailable: true,
+    fetchedAt: '2026-08-19T07:33:00.000Z',
+    source: 'eastmoney',
+    status: 'fresh',
+    error: null,
+    ...response,
+  };
+};
+
 const sprintLimitUpResponseFixture = (
   response: Partial<SprintLimitUpResponse> = {},
 ): SprintLimitUpResponse => ({
@@ -209,6 +285,57 @@ const auctionResponseFixture = (
   ...response,
 });
 
+const trendScanResponseFixture = (
+  response: Partial<TrendScanFixture> = {},
+): TrendScanFixture => ({
+  tradeDate: '20260917',
+  items: [
+    {
+      symbol: '300499',
+      name: '高澜股份',
+      themes: [{ code: 'BK0900', name: '新能源车' }],
+      industry: '专用设备',
+      price: 38.26,
+      pct: 0.21,
+      ma5: 37.18,
+      ma10: 36.21,
+      ma20: 33.68,
+      distMa5: 2.9,
+      stableDays: 4,
+      shrink: 0.88,
+      pctWindow: 13.06,
+      avgAmount5d: 1.48e9,
+      turnoverRate: 13.9,
+      matched: ['5/10/20 日线多头排列'],
+      unmatched: [],
+    },
+  ],
+  scanned: 260,
+  candidates: 294,
+  filters: {
+    themeScope: 'all',
+    maxMa5Dist: 4,
+    maxPct: 20,
+    pctWindow: 10,
+    minStableDays: 3,
+    minAmountYi: 5,
+    minScore: 5,
+    mainOnly: false,
+    excludeSt: false,
+  },
+  fetchedAt: '2026-09-17T14:00:00.000Z',
+  source: 'eastmoney+10jqka',
+  status: 'fresh',
+  error: null,
+  coverage: { total: 294, attempted: 260, succeeded: 255, failed: 5, unscanned: 34 },
+  matchedTotal: 1,
+  returnedCount: 1,
+  truncated: false,
+  metricsTradeDate: '20260917',
+  quoteAsOf: '2026-09-17T14:00:00.000Z',
+  ...response,
+});
+
 const resolveFetchReply = (reply: FetchReply): Promise<Response> => {
   if (reply instanceof Error) {
     return Promise.reject(reply);
@@ -244,23 +371,29 @@ const createFetchMock = ({
     }),
   ],
   limitUp = [limitUpResponseFixture()],
+  limitUpLadder = [limitUpLadderResponseFixture()],
   sprintLimitUp = [sprintLimitUpResponseFixture()],
   dragonTiger = [dragonTigerResponseFixture()],
   auction = [auctionResponseFixture()],
+  screener = [trendScanResponseFixture()],
 }: {
   market?: FetchReply[];
   quotes?: FetchReply[];
   limitUp?: FetchReply[];
+  limitUpLadder?: FetchReply[];
   sprintLimitUp?: FetchReply[];
   dragonTiger?: FetchReply[];
   auction?: FetchReply[];
+  screener?: FetchReply[];
 } = {}) => {
   let marketIndex = 0;
   let quotesIndex = 0;
   let limitUpIndex = 0;
+  let limitUpLadderIndex = 0;
   let sprintLimitUpIndex = 0;
   let dragonTigerIndex = 0;
   let auctionIndex = 0;
+  let screenerIndex = 0;
 
   const nextReply = (queue: FetchReply[], index: number): FetchReply =>
     queue[Math.min(index, queue.length - 1)];
@@ -285,6 +418,12 @@ const createFetchMock = ({
       return resolveFetchReply(reply);
     }
 
+    if (url.startsWith('/api/limit-up-ladder')) {
+      const reply = nextReply(limitUpLadder, limitUpLadderIndex);
+      limitUpLadderIndex += 1;
+      return resolveFetchReply(reply);
+    }
+
     if (url.startsWith('/api/limit-up')) {
       const reply = nextReply(limitUp, limitUpIndex);
       limitUpIndex += 1;
@@ -306,6 +445,12 @@ const createFetchMock = ({
     if (url.startsWith('/api/auction')) {
       const reply = nextReply(auction, auctionIndex);
       auctionIndex += 1;
+      return resolveFetchReply(reply);
+    }
+
+    if (url.startsWith('/api/screener/trend')) {
+      const reply = nextReply(screener, screenerIndex);
+      screenerIndex += 1;
       return resolveFetchReply(reply);
     }
 
@@ -391,7 +536,10 @@ describe('Task 7 app interactions', () => {
     expect(await screen.findByRole('heading', { name: '大盘概览' })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: '一级导航' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: '大盘概览' })).toBeInTheDocument();
-    expect(screen.getByText('上证指数')).toBeInTheDocument();
+    // 页脚也展示同一份大盘行情，指数名要限定在大盘概览区域里查
+    expect(
+      within(screen.getByRole('region', { name: '大盘概览' })).getByText('上证指数'),
+    ).toBeInTheDocument();
     // 默认进入自选页：右侧常驻竞价候选，分组筛选在卡片表头里
     expect(screen.getByRole('button', { name: '自选 1' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('navigation', { name: '自选筛选' })).toBeInTheDocument();
@@ -423,10 +571,11 @@ describe('Task 7 app interactions', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: '刷新行情' })).not.toBeDisabled(),
     );
-    expect(screen.getByText('上证指数')).toBeInTheDocument();
-    expect(screen.getByText('深证成指')).toBeInTheDocument();
-    expect(screen.getByText('创业板指')).toBeInTheDocument();
-    expect(screen.getByText('两市成交')).toBeInTheDocument();
+    const overview = screen.getByRole('region', { name: '大盘概览' });
+    expect(within(overview).getByText('上证指数')).toBeInTheDocument();
+    expect(within(overview).getByText('深证成指')).toBeInTheDocument();
+    expect(within(overview).getByText('创业板指')).toBeInTheDocument();
+    expect(within(overview).getByText('两市成交')).toBeInTheDocument();
     expect(screen.getAllByText('无可用数据')).toHaveLength(3);
     expect(
       within(screen.getByRole('region', { name: '大盘概览' })).getAllByText('—'),
@@ -480,6 +629,8 @@ describe('Task 7 app interactions', () => {
     expect(getFetchUrls(fetchMock, '/api/limit-up')[0]).toMatch(/^\/api\/limit-up\?date=\d{8}$/);
     expect(screen.queryByRole('heading', { name: '总收益率' })).not.toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: '持仓筛选' })).not.toBeInTheDocument();
+    // 涨停聚焦页不重复展示大盘指数条（和选股页一样）
+    expect(screen.queryByRole('region', { name: '大盘概览' })).not.toBeInTheDocument();
     // 「添加股票」在顶栏，任何页面都能用
     expect(screen.getByRole('button', { name: '添加股票' })).toBeInTheDocument();
 
@@ -512,6 +663,49 @@ describe('Task 7 app interactions', () => {
     expect(getFetchUrls(fetchMock, '/api/auction').length).toBeGreaterThanOrEqual(1);
   });
 
+  it('shows the live change percent on the auction list from a separate quotes call', async () => {
+    const user = userEvent.setup();
+    const fetchMock = createFetchMock({
+      quotes: [
+        quotesResponseFixture({
+          quotes: [
+            {
+              symbol: '603000',
+              name: '人民网',
+              price: 10.85,
+              change: 0.45,
+              pct: 4.33,
+              turnover: 8.5,
+              volumeRatio: 1.4,
+              amount: 520_000_000,
+              preClose: 10.4,
+              updatedAt: '2026-08-19T02:10:00.000Z',
+              source: 'tencent',
+              status: 'fresh',
+            },
+          ],
+        }),
+      ],
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: '大盘概览' });
+
+    await user.click(screen.getByRole('button', { name: /^竞价/ }));
+    expect(await screen.findByRole('heading', { name: '竞价连板候选' })).toBeInTheDocument();
+
+    // 09:25 快照里没有现价：涨跌幅必须另走一次行情接口
+    await waitFor(() =>
+      expect(getFetchUrls(fetchMock, '/api/quotes?')).toEqual(['/api/quotes?symbols=603000']),
+    );
+
+    const row = await screen.findByRole('row', { name: /人民网/ });
+    expect(within(row).getByText('+4.33%')).toHaveClass('value--rise');
+    // 竞价涨幅仍在：两列是不同口径，不能互相顶掉
+    expect(within(row).getByText('+4.00%')).toBeInTheDocument();
+  });
+
   it('switches the two limit-up focus tabs and fetches the sprint list only when selected', async () => {
     const user = userEvent.setup();
     const fetchMock = createFetchMock({
@@ -541,6 +735,41 @@ describe('Task 7 app interactions', () => {
     expect(await screen.findByRole('heading', { name: '涨停池' })).toBeInTheDocument();
     expect(screen.getByText('桂发祥')).toBeInTheDocument();
     expect(screen.queryByText('冲刺样本')).not.toBeInTheDocument();
+  });
+
+  it('fetches the ladder only when the 今/昨对比 or 连板天梯 tab is selected', async () => {
+    const user = userEvent.setup();
+    const fetchMock = createFetchMock();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: '大盘概览' });
+
+    await user.click(screen.getByRole('button', { name: /涨停聚焦/ }));
+    expect(await screen.findByRole('heading', { name: '涨停池' })).toBeInTheDocument();
+    // 停在涨停池页签时不该打天梯接口
+    expect(getFetchUrls(fetchMock, '/api/limit-up-ladder')).toHaveLength(0);
+
+    await user.click(screen.getByRole('tab', { name: '连板天梯' }));
+
+    expect(await screen.findByRole('heading', { name: '连板天梯' })).toBeInTheDocument();
+    expect(screen.getByText('澳弘电子')).toBeInTheDocument();
+    expect(getFetchUrls(fetchMock, '/api/limit-up-ladder')).toHaveLength(1);
+    expect(getFetchUrls(fetchMock, '/api/limit-up-ladder')[0]).toMatch(
+      /^\/api\/limit-up-ladder\?date=\d{8}$/,
+    );
+
+    // 两个视图共用同一份响应：切到今/昨对比不会再打一次
+    await user.click(screen.getByRole('tab', { name: '今/昨对比' }));
+
+    expect(await screen.findByRole('heading', { name: '今/昨对比' })).toBeInTheDocument();
+    expect(screen.getByText('北方稀土')).toBeInTheDocument();
+    expect(getFetchUrls(fetchMock, '/api/limit-up-ladder')).toHaveLength(1);
+
+    await user.click(screen.getByRole('tab', { name: '涨停池' }));
+
+    expect(await screen.findByRole('heading', { name: '涨停池' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '连板天梯' })).not.toBeInTheDocument();
   });
 
   it('requests and renders dragon-tiger data when navigating, then keeps the last rows after refresh failure', async () => {
@@ -638,15 +867,16 @@ describe('Task 7 app interactions', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('上证指数')).toBeInTheDocument();
-    expect(screen.getByText('3301.25')).toBeInTheDocument();
+    const overview = await screen.findByRole('region', { name: '大盘概览' });
+    expect(within(overview).getByText('上证指数')).toBeInTheDocument();
+    expect(within(overview).getByText('3301.25')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '刷新行情' }));
 
     expect(await screen.findAllByText('数据已过期')).toHaveLength(3);
-    expect(screen.getByText('3301.25')).toBeInTheDocument();
-    expect(screen.getByText('+12.38')).toHaveClass('value--neutral');
-    expect(screen.getByText('+0.38%')).toHaveClass('value--neutral');
+    expect(within(overview).getByText('3301.25')).toBeInTheDocument();
+    expect(within(overview).getByText('+12.38')).toHaveClass('value--neutral');
+    expect(within(overview).getByText('+0.38%')).toHaveClass('value--neutral');
   });
 
   it('keeps the last limit-up items when a later limit-up refresh rejects', async () => {
@@ -677,7 +907,30 @@ describe('Task 7 app interactions', () => {
     expect(screen.getByText('ST中华')).toBeInTheDocument();
   });
 
-  it('adds a holding, persists its note, and filters by group', async () => {
+  it('adds a limit-up stock to the watchlist from the pool row-end button', async () => {
+    const user = userEvent.setup();
+    const fetchMock = createFetchMock();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: '大盘概览' });
+
+    await user.click(screen.getByRole('button', { name: /涨停聚焦/ }));
+
+    expect(await screen.findByRole('heading', { name: '涨停池' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '添加 桂发祥 到自选' }));
+
+    expect(await screen.findByText('已把 桂发祥 加入自选。')).toBeInTheDocument();
+    // 同一条记录：按钮置灰 + 顶栏自选数 +1
+    expect(screen.getByRole('button', { name: '桂发祥 已在自选' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '自选 1' })).toBeInTheDocument();
+    expect(localStorage.getItem('stock-dashboard:v1')).toContain('"symbol":"002820"');
+  });
+
+  // 这几个用例要跑完整交互（增删分组 + 行情刷新），并行跑全量测试时容易贴到 5s 默认超时，
+  // 单独跑约 1~4s。这里给它们明确的宽松超时，避免整机负载把结果变成随机失败。
+  it('adds a holding, persists its note, and filters by group', { timeout: 20_000 }, async () => {
     const user = userEvent.setup();
 
     render(<App />);
@@ -840,7 +1093,7 @@ describe('Task 7 app interactions', () => {
     expect(getFetchUrls(fetchMock, '/api/quotes?').at(-1)).toBe('/api/quotes?symbols=600519%2C000001');
   });
 
-  it('keeps holdings when their custom group is deleted', async () => {
+  it('keeps holdings when their custom group is deleted', { timeout: 20_000 }, async () => {
     const user = userEvent.setup();
 
     render(<App />);
@@ -871,7 +1124,7 @@ describe('Task 7 app interactions', () => {
     expect(screen.getByText('600519')).toBeInTheDocument();
   });
 
-  it('falls back to the all view after deleting the selected custom group', async () => {
+  it('falls back to the all view after deleting the selected custom group', { timeout: 20_000 }, async () => {
     const user = userEvent.setup();
 
     render(<App />);
@@ -1341,5 +1594,120 @@ describe('Task 7 app interactions', () => {
     expect(await screen.findByText('平安银行')).toBeInTheDocument();
     expect(localStorage.getItem('stock-dashboard:v1')).toContain('"name":"000001"');
     expect(localStorage.getItem('stock-dashboard:v1')).not.toContain('平安银行');
+  });
+
+  it('选股页不展示大盘数据，并能在结果行尾把股票加入自选', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    // 其他页仍有大盘概览，只有选股页去掉
+    expect(await screen.findByRole('heading', { name: '大盘概览' })).toBeInTheDocument();
+
+    await clickPrimaryNav(user, /^选股/);
+
+    expect(screen.queryByRole('region', { name: '大盘概览' })).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: '趋势形态扫描（不是选股信号）' }),
+    ).toBeInTheDocument();
+
+    await user.click(await screen.findByRole('button', { name: '添加 高澜股份 到自选' }));
+
+    expect(await screen.findByText('已把 高澜股份 加入自选。')).toBeInTheDocument();
+    // 同一条记录：按钮置灰 + 顶栏自选数 +1
+    expect(screen.getByRole('button', { name: '高澜股份 已在自选' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '自选 1' })).toBeInTheDocument();
+    expect(localStorage.getItem('stock-dashboard:v1')).toContain('"symbol":"300499"');
+  });
+
+  it('把股票加入自选时顺手记下当时的价格，作为「自选收益」的基准', async () => {
+    const user = userEvent.setup();
+    /*
+     * 加入自选后要拿 002820 当时的现价：默认行情夹具里只有 600519。
+     * 加完之后那一次请求只查新代码（列表里原来没有自选），所以第一份就是带 002820 的响应；
+     * 后面再刷（含定时器）沿用最后一份，不影响断言。
+     */
+    const quoteForRequest = (symbol: string, price: number): Quote => ({
+      symbol,
+      name: symbol === '002820' ? '桂发祥' : '贵州茅台',
+      price,
+      change: 1.12,
+      pct: 10.04,
+      turnover: 8.5,
+      volumeRatio: 2.4,
+      amount: 320_000_000,
+      preClose: price - 1,
+      updatedAt: '2026-08-18T10:30:00.000Z',
+      source: 'eastmoney',
+      status: 'fresh',
+    });
+    const fetchMock = createFetchMock({
+      quotes: [
+        quotesResponseFixture({
+          quotes: [quoteForRequest('002820', 12.27)],
+        }),
+        quotesResponseFixture({
+          quotes: [quoteForRequest('600519', 168.2), quoteForRequest('002820', 12.27)],
+        }),
+      ],
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: '大盘概览' });
+
+    await user.click(screen.getByRole('button', { name: /涨停聚焦/ }));
+    await user.click(await screen.findByRole('button', { name: '添加 桂发祥 到自选' }));
+    expect(await screen.findByText('已把 桂发祥 加入自选。')).toBeInTheDocument();
+
+    // 基准价 = 加入那一刻的现价；取价时刻也要一起记（自选日靠它）
+    await waitFor(() => {
+      const saved = JSON.parse(
+        localStorage.getItem('stock-dashboard:v1') ?? '{}',
+      ) as StorageState;
+      const added = saved.holdings.find((holding) => holding.symbol === '002820');
+
+      expect(added?.watchPrice).toBe(12.27);
+      expect(added?.watchPriceAt).toEqual(expect.any(String));
+    });
+  });
+
+  it('给没有基准价的旧自选记录补记「自选收益」的起点', async () => {
+    const fetchMock = createFetchMock();
+    vi.stubGlobal('fetch', fetchMock);
+
+    // 本功能上线前写下来的记录：有 createdAt，但没有 watchPrice
+    localStorage.setItem(
+      'stock-dashboard:v1',
+      JSON.stringify({
+        groups: [],
+        holdings: [
+          {
+            id: 'h-legacy',
+            symbol: '600519',
+            name: '贵州茅台',
+            groupId: '',
+            openPrice: null,
+            quantity: null,
+            note: '',
+            createdAt: '2026-08-18T00:00:00.000Z',
+            updatedAt: '2026-08-18T00:00:00.000Z',
+          },
+        ],
+      }),
+    );
+
+    render(<App />);
+    await screen.findByRole('heading', { name: '大盘概览' });
+
+    // 第一次刷行情（进页面时就刷）顺手补上基准价，用户不用做任何操作
+    await waitFor(() => {
+      const saved = JSON.parse(
+        localStorage.getItem('stock-dashboard:v1') ?? '{}',
+      ) as StorageState;
+      const legacy = saved.holdings.find((holding) => holding.id === 'h-legacy');
+
+      expect(legacy?.watchPrice).toBe(168.2);
+      expect(legacy?.watchPriceAt).toEqual(expect.any(String));
+    });
   });
 });

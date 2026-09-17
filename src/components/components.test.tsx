@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { useState } from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type {
@@ -23,6 +23,7 @@ import { Overview } from './Overview';
 import { PrimaryNav } from './PrimaryNav';
 import { Watchlist } from './Watchlist';
 import { WatchlistFilterBar } from './WatchlistFilterBar';
+import { WarningNotes } from './WarningNotes';
 
 const groupsFixture = (): StockGroup[] => [
   {
@@ -784,7 +785,7 @@ describe('Task 6 dashboard components', () => {
     expect(container.querySelector('.holding-card__note')).toBeNull();
   });
 
-  it('marks every quote list with the design avatar and red tag', () => {
+  it('marks every quote list with the design avatar, tagging only the lists that need it', () => {
     render(
       <>
         <Watchlist
@@ -810,16 +811,22 @@ describe('Task 6 dashboard components', () => {
           })}
           isRefreshing={false}
           onRefresh={vi.fn()}
+          onAddToWatchlist={vi.fn()}
+          watchlistSymbols={new Set<string>()}
         />
       </>,
     );
 
     // 标签在名称旁边（同一个 .stock-identity__name），不是另起一行
-    for (const text of ['核心仓', '3 连板']) {
-      const tag = screen.getAllByText(text).find((node) => node.classList.contains('stock-tag'));
-      expect(tag).toBeDefined();
-      expect(tag?.closest('.stock-identity__name')).not.toBeNull();
-    }
+    const noteTag = screen
+      .getAllByText('核心仓')
+      .find((node) => node.classList.contains('stock-tag'));
+    expect(noteTag).toBeDefined();
+    expect(noteTag?.closest('.stock-identity__name')).not.toBeNull();
+
+    // 涨停池不挂标签：连板数只留在「连板」列，名称旁没有红标签
+    expect(document.querySelectorAll('.stock-tag')).toHaveLength(1);
+    expect(screen.getByText('3 连板').classList.contains('stock-tag')).toBe(false);
 
     // 沪市 6 开头是蓝块，深市 0 开头是绿块
     const avatars = document.querySelectorAll('.stock-identity__avatar');
@@ -921,6 +928,141 @@ describe('Task 6 dashboard components', () => {
     expect(screen.getByText('换手')).toBeInTheDocument();
     expect(screen.getByText('最新价')).toBeInTheDocument();
     expect(screen.getByText('先观察')).toBeInTheDocument();
+  });
+
+  it('shows 自选日 and 自选收益 on the watchlist, and a dash when there is no baseline', () => {
+    render(
+      <Watchlist
+        holdings={[
+          holding({
+            id: 'h-1',
+            symbol: '600519',
+            watchPrice: 10,
+            watchPriceAt: '2026-09-18T01:40:00.000Z',
+          }),
+          // 本功能上线前的旧记录 / 加入时没拿到行情：没有基准价
+          holding({ id: 'h-2', symbol: '000001', name: '平安银行' }),
+        ]}
+        quotes={{
+          '600519': quote({ price: 12 }),
+          '000001': quote({ symbol: '000001', name: '平安银行', price: 9 }),
+        }}
+        onEdit={vi.fn()}
+      />,
+    );
+
+    // 自选相关三列收在表格最右：自选日 → 自选价 → 自选收益
+    const headers = screen
+      .getAllByRole('columnheader')
+      .map((cell) => cell.textContent)
+      .slice(-3);
+    expect(headers).toEqual(['自选日', '自选价', '自选收益']);
+    expect(screen.getByRole('columnheader', { name: '自选价' })).toBeInTheDocument();
+
+    const rows = screen.getAllByRole('row');
+    // 自选价就是记下来的基准价，和「自选收益」配成一组：10.00 对应 +20.00%
+    const watchPrices = () =>
+      Array.from(document.querySelectorAll('.quote-table__watch-price')).map(
+        (cell) => cell.textContent,
+      );
+    expect(watchPrices()).toEqual(['10.00', '—']);
+
+    // 第一行：自选以来 10 → 12
+    expect(rows[1]).toHaveTextContent('+20.00%');
+    expect(rows[1]).toHaveTextContent('2026/09/18');
+
+    // 第二行：没有基准价就如实显示「—」，不拿现价顶替成 +0.00%
+    expect(rows[2]).not.toHaveTextContent('+0.00%');
+    expect(within(rows[2]).getAllByText('—').length).toBeGreaterThan(0);
+  });
+
+  it('sorts the watchlist by 自选价, keeping rows without a baseline at the bottom', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <Watchlist
+        holdings={[
+          holding({ id: 'h-1', symbol: '600519', watchPrice: 10 }),
+          holding({ id: 'h-2', symbol: '000001', name: '平安银行', watchPrice: 20 }),
+          // 没有基准价：自选价和自选收益都是「—」，排序永远沉底
+          holding({ id: 'h-3', symbol: '300750', name: '宁德时代' }),
+        ]}
+        quotes={{}}
+        onEdit={vi.fn()}
+      />,
+    );
+
+    const prices = () =>
+      Array.from(document.querySelectorAll('.quote-table__watch-price')).map(
+        (cell) => cell.textContent,
+      );
+
+    // 默认：添加时间倒序
+    expect(prices()).toEqual(['10.00', '20.00', '—']);
+
+    await user.click(screen.getByRole('button', { name: '自选价' }));
+    await expect(waitFor(prices)).resolves.toEqual(['20.00', '10.00', '—']);
+
+    await user.click(screen.getByRole('button', { name: '自选价' }));
+    await expect(waitFor(prices)).resolves.toEqual(['10.00', '20.00', '—']);
+  });
+
+  it('sorts the watchlist by 自选收益 and by 自选日', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <Watchlist
+        holdings={[
+          holding({
+            id: 'h-1',
+            symbol: '600519',
+            name: '贵州茅台',
+            watchPrice: 10,
+            watchPriceAt: '2026-09-18T01:40:00.000Z',
+            createdAt: '2026-09-18T01:40:00.000Z',
+          }),
+          holding({
+            id: 'h-2',
+            symbol: '000001',
+            name: '平安银行',
+            watchPrice: 10,
+            watchPriceAt: '2026-09-01T01:40:00.000Z',
+            createdAt: '2026-09-01T01:40:00.000Z',
+          }),
+          // 没有基准价：收益是 null，排序时永远沉底
+          holding({ id: 'h-3', symbol: '300750', name: '宁德时代' }),
+        ]}
+        quotes={{
+          '600519': quote({ price: 12 }),
+          '000001': quote({ symbol: '000001', name: '平安银行', price: 8 }),
+          '300750': quote({ symbol: '300750', name: '宁德时代', price: 99 }),
+        }}
+        onEdit={vi.fn()}
+      />,
+    );
+
+    // 代码是每行里唯一稳定的标识（首字头像会和名称首字重复）
+    const codes = () =>
+      Array.from(document.querySelectorAll('.stock-identity__code')).map((cell) => cell.textContent);
+    const codesAfterNextPaint = () => waitFor(() => codes());
+
+    // 默认：添加时间倒序
+    expect(codes()).toEqual(['600519', '000001', '300750']);
+
+    // 收益降序：+20% 在 −20% 前面，没有基准价的沉底
+    await user.click(screen.getByRole('button', { name: '自选收益' }));
+    await expect(codesAfterNextPaint()).resolves.toEqual(['600519', '000001', '300750']);
+
+    await user.click(screen.getByRole('button', { name: '自选收益' }));
+    await expect(codesAfterNextPaint()).resolves.toEqual(['000001', '600519', '300750']);
+
+    // 自选日：换一列从降序（加得晚的在前）开始
+    await user.click(screen.getByRole('button', { name: '自选日' }));
+    await expect(codesAfterNextPaint()).resolves.toEqual(['600519', '000001', '300750']);
+
+    // 升序：加得早的在前（300750 没有基准价，退回到创建时间 08-18）
+    await user.click(screen.getByRole('button', { name: '自选日' }));
+    await expect(codesAfterNextPaint()).resolves.toEqual(['300750', '000001', '600519']);
   });
 
   it('hides the sort arrow until a column is actually sorted', async () => {
@@ -1096,7 +1238,13 @@ describe('Task 6 dashboard components', () => {
           quotes={{ '600519': quote() }}
           onEdit={vi.fn()}
         />
-        <LimitUpList data={limitUpResponseFixture()} isRefreshing={false} onRefresh={vi.fn()} />
+        <LimitUpList
+          data={limitUpResponseFixture()}
+          isRefreshing={false}
+          onRefresh={vi.fn()}
+          onAddToWatchlist={vi.fn()}
+          watchlistSymbols={new Set<string>()}
+        />
       </>,
     );
 
@@ -1435,7 +1583,13 @@ section[aria-labelledby='limit-up-list-title'] tbody th {
     const staleData = limitUpResponseFixture({ status: 'stale' });
     const emptyData = limitUpResponseFixture({ items: [] });
     const { rerender } = render(
-      <LimitUpList data={staleData} isRefreshing={false} onRefresh={vi.fn()} />,
+      <LimitUpList
+        data={staleData}
+        isRefreshing={false}
+        onRefresh={vi.fn()}
+        onAddToWatchlist={vi.fn()}
+        watchlistSymbols={new Set<string>()}
+      />,
     );
 
     expect(screen.getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([
@@ -1447,6 +1601,7 @@ section[aria-labelledby='limit-up-list-title'] tbody th {
       '首次封板',
       '最后封板',
       '炸板次数',
+      '自选',
     ]);
 
     const rows = screen.getAllByRole('row');
@@ -1465,16 +1620,27 @@ section[aria-labelledby='limit-up-list-title'] tbody th {
       '—',
       '—',
       '—',
+      // 最后一格是行尾的「添加自选」按钮
+      '添加自选',
     ]);
     expect(screen.queryByText('包含 ST / 风险标的')).not.toBeInTheDocument();
     expect(screen.getByText('数据已过期')).toBeInTheDocument();
     expect(screen.getByText('2026-08-19')).toBeInTheDocument();
     expect(screen.getByText('2 只')).toBeInTheDocument();
-    // 「3 连板」现在有两处：名称右边的红色标签 + 「连板」列，两处都要在
-    expect(screen.getAllByText('3 连板')).toHaveLength(2);
+    // 名称右边不再放标签，所以「3 连板」只出现在「连板」列里
+    expect(screen.getAllByText('3 连板')).toHaveLength(1);
+    expect(document.querySelector('.stock-tag')).toBeNull();
     expect(screen.getAllByText('—')).not.toHaveLength(0);
 
-    rerender(<LimitUpList data={emptyData} isRefreshing={true} onRefresh={vi.fn()} />);
+    rerender(
+      <LimitUpList
+        data={emptyData}
+        isRefreshing={true}
+        onRefresh={vi.fn()}
+        onAddToWatchlist={vi.fn()}
+        watchlistSymbols={new Set<string>()}
+      />,
+    );
 
     expect(screen.getByText('暂无涨停数据')).toBeInTheDocument();
     expect(screen.getByText('刷新中…')).toBeInTheDocument();
@@ -1588,6 +1754,8 @@ section[aria-labelledby='limit-up-list-title'] tbody th {
         })}
         isRefreshing={false}
         onRefresh={vi.fn()}
+        onAddToWatchlist={vi.fn()}
+        watchlistSymbols={new Set<string>()}
       />,
     );
 
@@ -1617,6 +1785,57 @@ section[aria-labelledby='limit-up-list-title'] tbody th {
     expect(rows[9]).toHaveTextContent('ST中华');
   });
 
+  it('adds a limit-up stock to the watchlist from the row-end button, greying out ones already there', async () => {
+    const user = userEvent.setup();
+    const onAddToWatchlist = vi.fn();
+
+    render(
+      <LimitUpList
+        data={limitUpResponseFixture({
+          items: [
+            {
+              symbol: '002820',
+              name: '桂发祥',
+              price: 12.27,
+              pct: 10.04,
+              boardCount: 3,
+              firstSealTime: '09:25:00',
+              lastSealTime: '14:42:10',
+              industry: '食品饮料',
+              breakCount: 1,
+            },
+            {
+              symbol: '002557',
+              name: '洽洽食品',
+              price: 18.8,
+              pct: 10.02,
+              boardCount: 3,
+              firstSealTime: '09:30:00',
+              lastSealTime: '10:12:00',
+              industry: '食品饮料',
+              breakCount: 0,
+            },
+          ],
+        })}
+        isRefreshing={false}
+        onRefresh={vi.fn()}
+        onAddToWatchlist={onAddToWatchlist}
+        watchlistSymbols={new Set(['002557'])}
+      />,
+    );
+
+    // 没在自选里的：按钮可点，把代码和名称原样交给宿主
+    await user.click(screen.getByRole('button', { name: '添加 桂发祥 到自选' }));
+    expect(onAddToWatchlist).toHaveBeenCalledWith({ symbol: '002820', name: '桂发祥' });
+
+    // 已经在自选里的：置灰显示「已在自选」，点了也不再回调
+    const added = screen.getByRole('button', { name: '洽洽食品 已在自选' });
+    expect(added).toBeDisabled();
+    expect(added).toHaveTextContent('已在自选');
+    await user.click(added);
+    expect(onAddToWatchlist).toHaveBeenCalledTimes(1);
+  });
+
   it('shows an explicit unavailable state without inventing a trade date', () => {
     render(
       <LimitUpList
@@ -1628,6 +1847,8 @@ section[aria-labelledby='limit-up-list-title'] tbody th {
         })}
         isRefreshing={false}
         onRefresh={vi.fn()}
+        onAddToWatchlist={vi.fn()}
+        watchlistSymbols={new Set<string>()}
       />,
     );
 
@@ -1635,5 +1856,96 @@ section[aria-labelledby='limit-up-list-title'] tbody th {
     expect(screen.getByText('暂无可用涨停数据')).toBeInTheDocument();
     expect(screen.getByText('交易日：暂无数据')).toBeInTheDocument();
     expect(screen.queryByText('数据已过期')).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 警示按钮：题材页与趋势页共用的「⚠ 标题 ▸」+ 面板
+// ---------------------------------------------------------------------------
+
+describe('WarningNotes', () => {
+  it('默认收起，点开才显示正文，再点一次收起', async () => {
+    const user = userEvent.setup();
+    render(
+      <WarningNotes title="数据说明与限制" count={2}>
+        <p>第一条限制</p>
+        <p>第二条限制</p>
+      </WarningNotes>,
+    );
+
+    const toggle = screen.getByRole('button', { name: /数据说明与限制/ });
+    expect(toggle.textContent).toContain('（2 条）');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    const panel = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
+    expect(panel).not.toBeNull();
+    expect(panel?.hasAttribute('hidden')).toBe(true);
+    // 正文不能藏在折叠的 details 里，否则点了按钮也看不到
+    expect(panel?.closest('details')).toBeNull();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(panel?.hasAttribute('hidden')).toBe(false);
+    expect(screen.getByText('第一条限制')).toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(panel?.hasAttribute('hidden')).toBe(true);
+  });
+
+  it('没有正文时不渲染按钮，避免点了什么都没有', () => {
+    render(
+      <WarningNotes title="数据说明与限制" count={0}>
+        {null}
+      </WarningNotes>,
+    );
+
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('有正文但条数为 0 时按钮照常显示，只是不写「（0 条）」', () => {
+    render(
+      <WarningNotes title="数据说明与限制" count={0}>
+        <p>本次结果不完整</p>
+      </WarningNotes>,
+    );
+
+    const toggle = screen.getByRole('button', { name: /数据说明与限制/ });
+    expect(toggle.textContent).toContain('数据说明与限制');
+    expect(toggle.textContent).not.toContain('0 条');
+  });
+
+  it('面板在标题行下面展开（和趋势页同一套行为），标题不被顶动', async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <div className="theme-title-row">
+        <h2>新能源车</h2>
+        <WarningNotes title="数据说明与限制" count={1}>
+          <p>本次结果不完整</p>
+        </WarningNotes>
+      </div>,
+    );
+
+    const row = container.querySelector('.theme-title-row') as HTMLElement;
+    const title = screen.getByRole('heading', { name: '新能源车' });
+    const toggle = screen.getByRole('button', { name: /数据说明与限制/ });
+    const panelId = toggle.getAttribute('aria-controls') ?? '';
+    const panel = () => document.getElementById(panelId);
+    const rowHeight = row.offsetHeight;
+
+    expect(panel()?.hasAttribute('hidden')).toBe(true);
+
+    await user.click(toggle);
+
+    // 展开后标题行高度不变：面板是换行项，不长在标题那一行里
+    expect(row.offsetHeight).toBe(rowHeight);
+    // 面板在标题之后，且不在折叠的 details 里
+    expect(
+      title.compareDocumentPosition(panel() as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(panel()?.closest('details')).toBeNull();
+    expect(panel()?.hasAttribute('hidden')).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: /数据说明与限制/ }));
+    expect(panel()?.hasAttribute('hidden')).toBe(true);
   });
 });

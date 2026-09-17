@@ -6,24 +6,27 @@ import type {
   AuctionResponse,
   DragonTigerResponse,
   LimitUpResponse,
+  LimitUpLadderResponse,
   MarketOverviewResponse,
   QuotesResponse,
   SprintLimitUpResponse,
   StockSearchResponse,
+  ThemeDetailResponseV2,
   ThemeStocksResponse,
   ThemesResponse,
   TrendScanResponse,
 } from '../src/types.js';
 import { fetchEastmoneyDragonTiger } from './dragon-tiger/eastmoney.js';
-import { fetchEastmoneyAuction } from './auction/eastmoney.js';
+import { fetchEastmoneyAuction, msUntilCallAuction } from './auction/eastmoney.js';
 import { createAuctionCache } from './auction/cache.js';
 import { mergeMarketIndices, mergeQuoteBundles } from './merge.js';
 import { fetchEastmoneyLimitUp } from './limit-up/eastmoney.js';
+import { fetchLimitUpLadder } from './limit-up/ladder.js';
 import { fetchMarketBreadth } from './market/breadth.js';
 import { fetchEastmoneyMarket } from './market/eastmoney.js';
 import { fetchTencentMarket } from './market/tencent.js';
 import { fetchEastmoneySprintLimitUp } from './sprint-limit-up/eastmoney.js';
-import { buildThemes, buildThemeStocks } from './themes/service.js';
+import { buildThemeDetail, buildThemes, buildThemeStocks } from './themes/service.js';
 import { parseTrendFilters, scanTrend } from './screener/trend.js';
 import {
   fetchEastmoneyQuotes,
@@ -119,6 +122,17 @@ export const createApp = () => {
     return res.status(200).json(body);
   });
 
+  app.get('/api/limit-up-ladder', async (req, res) => {
+    const tradeDate = parseTradeDate(req.query.date);
+
+    if (tradeDate === null) {
+      return res.status(400).json({ message: 'date 必须是 YYYYMMDD 格式' });
+    }
+
+    const body: LimitUpLadderResponse = await fetchLimitUpLadder(tradeDate);
+    return res.status(200).json(body);
+  });
+
   app.get('/api/sprint-limit-up', async (req, res) => {
     const tradeDate = parseTradeDate(req.query.date);
 
@@ -157,7 +171,17 @@ export const createApp = () => {
 
     // 只缓存成功结果：失败结果留给下次请求重试，避免把偶发故障固化 5 分钟。
     if (body.status === 'fresh') {
-      auctionCache.set(tradeDate, body);
+      /*
+       * 09:15 之前请求「今天」时，返回的是上一个交易日的整卡快照（tradeDate 被回退）：
+       * 那份数据在开盘前不会再变，缓存到集合竞价开始即可 —— 既不用反复打上游，
+       * 也能在 09:15 一到就自然过期、立刻换回当天的竞价。
+       */
+      const isPreviousSession = body.tradeDate !== null && body.tradeDate !== tradeDate;
+      auctionCache.set(
+        tradeDate,
+        body,
+        isPreviousSession ? Math.max(msUntilCallAuction(), 5_000) : undefined,
+      );
     }
 
     return res.status(200).json(body);
@@ -173,6 +197,23 @@ export const createApp = () => {
     return res.status(200).json(body);
   });
 
+  // 新接口：一个题材一张去重股票表（响应为 ThemeDetailResponseV2，不接收 role）
+  app.get('/api/themes/:code/detail', async (req, res) => {
+    const tradeDate = parseTradeDate(req.query.date);
+    if (tradeDate === null) {
+      return res.status(400).json({ message: 'date 必须是 YYYYMMDD 格式' });
+    }
+
+    const code = String(req.params.code ?? '').trim().toUpperCase();
+    if (!/^BK\d{4}$/.test(code)) {
+      return res.status(400).json({ message: 'code 必须是 BK 开头的板块代码' });
+    }
+
+    const body: ThemeDetailResponseV2 = await buildThemeDetail(tradeDate, code);
+    return res.status(200).json(body);
+  });
+
+  // 兼容包装：调用同一个新服务，再按 roles 包含指定角色筛选。已无调用方时后续单独清理。
   app.get('/api/themes/:code/stocks', async (req, res) => {
     const tradeDate = parseTradeDate(req.query.date);
     if (tradeDate === null) {

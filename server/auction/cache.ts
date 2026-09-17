@@ -10,12 +10,13 @@ export const AUCTION_CACHE_MAX_ENTRIES = 6;
 
 export type AuctionCache = {
   get: (tradeDate: string) => AuctionResponse | null;
-  set: (tradeDate: string, body: AuctionResponse) => void;
+  /** ttlMs 缺省用创建缓存时的默认值；个别条目的有效期和默认值不同时单独传 */
+  set: (tradeDate: string, body: AuctionResponse, ttlMs?: number) => void;
   size: () => number;
 };
 
 export const createAuctionCache = (
-  ttlMs: number = AUCTION_CACHE_TTL_MS,
+  defaultTtlMs: number = AUCTION_CACHE_TTL_MS,
   maxEntries: number = AUCTION_CACHE_MAX_ENTRIES,
 ): AuctionCache => {
   const store = new Map<string, { body: AuctionResponse; expiresAt: number }>();
@@ -41,7 +42,7 @@ export const createAuctionCache = (
       }
       return entry.body;
     },
-    set(tradeDate, body) {
+    set(tradeDate, body, ttlMs = defaultTtlMs) {
       prune();
       while (store.size >= maxEntries) {
         const oldest = store.keys().next();

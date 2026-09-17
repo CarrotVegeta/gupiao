@@ -19,24 +19,40 @@
   --neutral: #8a93a5;
   --glass-strong: rgba(255, 255, 255, 0.86);
   --glass-border: rgba(255, 255, 255, 0.92);
+  /*
+   * 大玻璃面（卡片 / 顶栏）不再用 backdrop-filter，只保留给输入框、胶囊这类
+   * 小控件（--blur-sm）。原因见 .card 规则里的说明：blur(18px) 在卡片边界
+   * 采样的是卡片“外面”的底色，会在四条边糊出一圈和卡片不一致的色块，
+   * 卡片之间的竖缝、卡片底部那条水平分界就是这么来的。
+   */
   --blur-lg: saturate(160%) blur(18px);
   --blur-md: saturate(160%) blur(14px);
   --blur-sm: saturate(150%) blur(10px);
+  /*
+   * 阴影：饱和度很低但带蓝，两张卡片并排时中间的 14px 缝会被两条阴影叠在一起，
+   * 颜色明显深于页面背景，看起来像一条灰蓝色竖条。所以把扩散收到 10px、
+   * 再加 -2px 收紧、蓝色分量和不透明度都降下来：只留「卡片轻轻浮起」，
+   * 阴影够不到旁边的卡片（缝隙里最多差 1~2 个色阶，肉眼看不出来）。
+   */
   --shadow-soft:
-    0 10px 30px rgba(20, 35, 70, 0.07),
+    0 4px 10px -2px rgba(30, 42, 70, 0.05),
     inset 0 1px 0 rgba(255, 255, 255, 0.85);
   --shadow-sm:
-    0 1px 3px rgba(20, 35, 70, 0.1),
+    0 1px 3px rgba(30, 42, 70, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.7);
   /* 稿子 F：顶栏和指数条比内容卡片轻一档 */
   --shadow-bar:
-    0 8px 24px rgba(20, 35, 70, 0.07),
+    0 4px 10px -2px rgba(30, 42, 70, 0.05),
     inset 0 1px 0 rgba(255, 255, 255, 0.85);
-  --shadow-strip: 0 8px 24px rgba(20, 35, 70, 0.06);
+  --shadow-strip: 0 4px 10px -2px rgba(30, 42, 70, 0.04);
   /* 警示色：竞价「观察 / 溢价偏高」这类中间档 */
   --warn: #8a5a12;
   --warn-border: rgba(217, 145, 32, 0.3);
   --warn-surface: rgba(255, 248, 232, 0.76);
+  /* 成功色：只用于「已加入自选」这类确认提示 */
+  --success: #14663a;
+  --success-border: rgba(14, 159, 82, 0.3);
+  --success-surface: rgba(236, 253, 243, 0.76);
   --radius-lg: 16px;
   --radius-md: 12px;
   --radius-sm: 10px;
@@ -73,49 +89,32 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  /* 稿子 F：底色只有一条斜向线性渐变，柔光是三个独立的模糊圆（见 .page-glow） */
-  background: linear-gradient(158deg, #eaf0fa 0%, #f3f5fa 42%, #edf1f8 100%);
-  background-attachment: fixed;
   color: var(--text-primary);
+  /*
+   * 整页背景只在最底层画一次：一条斜向渐变 + 三团柔光，全部用 radial-gradient
+   * 直接铺在 body 上（fixed，不随滚动移动）。
+   *
+   * 为什么不用原来的「独立模糊圆节点 + filter: blur(80px)」：
+   * 那种画法要靠 filter 把一个 460~620px 的圆单独栅格化，这层栅格有自己的边界，
+   * 卡片底边一旦和它相交，交界处就是一条颜色突变；再叠上卡片的 backdrop-filter
+   * 采样，就会出现「圆角外面像是垫了一层方块」的观感。
+   * 改用 radial-gradient（0% 实心 → 70% 完全透明，和 blur(80px) 的衰减一致）后，
+   * 底色是连续渐变的，没有任何直线边界，中间竖缝和卡片下方留白自然连成一片。
+   */
+  background:
+    radial-gradient(300px 300px at 15% -22%, rgba(96, 140, 255, 0.28), transparent 70%),
+    radial-gradient(260px 260px at 94% 6%, rgba(255, 140, 120, 0.18), transparent 70%),
+    radial-gradient(230px 230px at 52% 92%, rgba(120, 220, 190, 0.16), transparent 70%),
+    linear-gradient(158deg, #eaf0fa 0%, #f3f5fa 42%, #edf1f8 100%);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
 }
 
 /*
- * 稿子 F 的三团柔光：左上冷蓝、右上暖粉、底部青绿。
- * 必须保持「小而浓 + blur(80px)」的形态——换成又大又淡的 radial-gradient 后，
- * 玻璃卡片透出来的颜色会被摊平成一片白灰，看起来比稿子「白」。
- * 位置/尺寸/颜色/模糊半径都照抄 f-glass-refined.html。
+ * 三团柔光（左上冷蓝、右上暖粉、底部青绿）已经挪进 body 的 background，见上面的注释。
+ * 这里不再保留「独立模糊圆 + filter: blur()」的节点：那层栅格有自己的矩形边界，
+ * 会和卡片底边切出一条颜色突变，正是「圆角外面像垫了方块」的来源。
  */
-.page-glow {
-  position: fixed;
-  z-index: 0;
-  border-radius: 50%;
-  filter: blur(80px);
-  pointer-events: none;
-}
-
-.page-glow--g1 {
-  top: -220px;
-  left: -160px;
-  width: 620px;
-  height: 620px;
-  background: rgba(96, 140, 255, 0.28);
-}
-
-.page-glow--g2 {
-  top: 60px;
-  right: -120px;
-  width: 520px;
-  height: 520px;
-  background: rgba(255, 140, 120, 0.18);
-}
-
-.page-glow--g3 {
-  bottom: -260px;
-  left: 38%;
-  width: 460px;
-  height: 460px;
-  background: rgba(120, 220, 190, 0.16);
-}
 
 button,
 input,
@@ -208,9 +207,8 @@ textarea:focus-visible {
   padding: 0 18px;
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
-  background: var(--bg-surface);
-  -webkit-backdrop-filter: var(--blur-lg);
-  backdrop-filter: var(--blur-lg);
+  /* 和 .card 同一个理由去掉 backdrop-filter，靠 0.76 的表面不透明度撑住顶栏 */
+  background: rgba(255, 255, 255, 0.76);
   box-shadow: var(--shadow-bar);
 }
 
@@ -329,15 +327,26 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   color: var(--text-tertiary);
 }
 
+/*
+ * 卡片 / 弹窗表面：半透明浅色 + 1px 高光边 + 柔和外阴影，靠底层的页面背景透出冷暖。
+ *
+ * 这里刻意不加 backdrop-filter（原来是 saturate(160%) blur(18px)）：
+ * 1) blur 会在卡片边界外侧采样底色——卡片右边拾到的是卡片外的页面背景，
+ *    卡片之间那条 14px 的缝同时被两张卡片的边缘采样覆盖，于是缝里出现一块
+ *    比页面背景更暗的灰蓝色；卡片底边同样会在下方糊出一条水平分界。
+ * 2) 卡片在定高布局里带 overflow: hidden（见文件末尾的填充模式），自己又带圆角，
+ *    backdrop-filter 生成的采样层被这个圆角矩形裁切后，四条边上会留下
+ *    「圆角之外还有一层直角」的残留感。
+ * 底色本身是连续渐变、后面也没有可读内容，模糊没有实际作用，
+ * 去掉它、把表面不透明度提到 0.78 即可保住原来的通透观感。
+ */
 .card,
 .dialog-card {
   isolation: isolate;
-  background: var(--bg-surface);
+  background: rgba(255, 255, 255, 0.78);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-soft);
-  -webkit-backdrop-filter: var(--blur-lg);
-  backdrop-filter: var(--blur-lg);
 }
 
 .card {
@@ -1181,6 +1190,13 @@ select.input option::checkmark {
   color: var(--warn);
 }
 
+/* 成功提示（「已加入自选」）：绿色系，和警示黄分开 */
+.banner--success {
+  background: var(--success-surface);
+  border-color: var(--success-border);
+  color: var(--success);
+}
+
 .empty-state {
   display: grid;
   gap: 8px;
@@ -1231,7 +1247,7 @@ section[aria-labelledby='limit-up-list-title'] .empty-state {
 
 section[aria-labelledby='limit-up-list-title'] table {
   width: 100%;
-  min-width: 860px;
+  min-width: 960px;
   border-collapse: collapse;
   border-spacing: 0;
 }
@@ -1289,6 +1305,18 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
 
 section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
   color: var(--rise);
+}
+
+/* 行尾「添加自选」：就是表格最后一列，宽度贴内容、居中。
+   这里要显式把字体换回正文体：数字列的等宽规则会顺着继承落到按钮文字上。 */
+section[aria-labelledby='limit-up-list-title'] thead th:last-child,
+section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
+  width: 1%;
+  padding-right: 6px;
+  padding-left: 8px;
+  font-family: var(--font-sans);
+  text-align: center;
+  white-space: nowrap;
 }
 
 .limit-up-focus-tabs {
@@ -1422,6 +1450,357 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
   color: var(--text-secondary);
   line-height: 1.5;
   text-align: left !important;
+}
+
+/* ---------------------------------------------------------------------------
+ * 涨停聚焦：连板天梯 + 今/昨对比
+ *
+ * 这两个视图不是表格，而是「按板位分层的方块」和「按昨日板位对齐的宽表」，
+ * 所以不复用涨停池那套 table 规则，各自定义。
+ * ------------------------------------------------------------------------- */
+
+.limit-up-ladder,
+.limit-up-comparison {
+  display: grid;
+  gap: 14px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.limit-up-ladder .overview__header,
+.limit-up-comparison .overview__header {
+  margin-bottom: 0;
+}
+
+.limit-up-ladder .banner,
+.limit-up-ladder .status-note,
+.limit-up-comparison .banner,
+.limit-up-comparison .status-note {
+  margin: 0;
+}
+
+.limit-up-ladder .empty-state,
+.limit-up-comparison .empty-state {
+  min-height: 144px;
+  justify-items: center;
+  align-content: center;
+  text-align: center;
+}
+
+/* 统计条：全部 / 首板 / 2 板 / 晋级率 */
+.limit-up-ladder__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.limit-up-ladder__stat {
+  display: flex;
+  min-width: 118px;
+  flex: 1 1 118px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.limit-up-ladder__stat-label {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.limit-up-ladder__stat-value {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 梯子本体：一档一个方块，档内股票名平铺 */
+.limit-up-ladder__list {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.limit-up-ladder__group {
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* 整行表头就是展开/收起的开关：按钮外观重置成一行文字，hover 时给一点底色 */
+.limit-up-ladder__group-head {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border-color);
+  border-radius: 12px 12px 0 0;
+  background: transparent;
+  text-align: left;
+}
+
+.limit-up-ladder__group-head:hover {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.limit-up-ladder__group-label {
+  color: var(--rise);
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.limit-up-ladder__group-count {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.limit-up-ladder__chevron {
+  width: 12px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.limit-up-ladder__hint {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+}
+
+.limit-up-ladder__stocks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 4px 12px;
+  margin: 0;
+  padding: 6px 12px 10px;
+  list-style: none;
+}
+
+.limit-up-ladder__stock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.limit-up-ladder__pct {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+/* ------------------------------------------------------------------ */
+/* 今/昨对比：一档 = 昨日一个板位，一档两栏逐行对齐（左=昨日全部、右=今天晋级）*/
+/* 浅色表格风：发丝线 + 右栏淡红底，行高 22px，尽量紧凑。                   */
+/* 动画只在能播的时候播（全局 prefers-reduced-motion 会整段关掉），         */
+/* 所以进度条用 transform: scaleX() 而不是 width。                        */
+/* ------------------------------------------------------------------ */
+
+/* 顶上的三张统计卡铺满整行（限宽只作用在下面的档位列表上） */
+.limit-up-comparison__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.limit-up-comparison__summary-item {
+  display: flex;
+  min-width: 104px;
+  flex: 1 1 104px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.limit-up-comparison__summary-label {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+.limit-up-comparison__summary-value {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 1.25rem;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 不铺满：整体限宽，方块贴着列表的宽度，右侧留白。
+ * 档位按板位从上到下依次排，一档一行。
+ */
+.limit-up-comparison__body {
+  display: grid;
+  gap: 6px;
+  max-width: 545px;
+}
+
+.limit-up-comparison__caption {
+  max-width: 760px;
+  color: var(--text-tertiary);
+  font-size: 0.78rem;
+}
+
+.limit-up-comparison__levels {
+  display: grid;
+  gap: 6px;
+}
+
+/* 每一档 = 一个方块：档头 + 3px 进度条 + 两栏逐票对齐的表 */
+.limit-up-comparison__level {
+  display: grid;
+  gap: 5px;
+  padding: 8px 12px 9px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.55);
+  animation: cmp-rise 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 50ms);
+}
+
+.limit-up-comparison__level-head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.limit-up-comparison__level-badge {
+  padding: 2px 9px;
+  border-radius: 7px;
+  color: #fff;
+  background: linear-gradient(135deg, #fb7185, #be123c);
+  box-shadow: 0 3px 10px rgba(190, 18, 60, 0.22);
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.limit-up-comparison__level-count {
+  color: var(--text-tertiary);
+  font-size: 0.76rem;
+}
+
+.limit-up-comparison__arrow {
+  color: var(--rise);
+  font-size: 0.78rem;
+}
+
+.limit-up-comparison__level-next {
+  color: var(--rise);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.limit-up-comparison__level-rate {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 晋级率进度条：进场时从左长出来 */
+.limit-up-comparison__bar {
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.07);
+  overflow: hidden;
+}
+
+.limit-up-comparison__bar i {
+  display: block;
+  width: var(--rate, 0%);
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #fb7185, #be123c);
+  transform-origin: left center;
+  animation: cmp-grow 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 50ms + 80ms);
+}
+
+/* ---- 一档一列：一只票只出现一次，今天晋级的那几只标红 ---- */
+.limit-up-comparison__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.limit-up-comparison__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+  padding: 2px 8px;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.84rem;
+}
+
+.limit-up-comparison__row:first-child {
+  border-top: 0;
+}
+
+.limit-up-comparison__row:hover {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+/* 晋级的票：左边一道红条 + 红名字，一眼扫出来，不用第二栏重复票名 */
+.limit-up-comparison__row--carried {
+  background: rgba(220, 47, 53, 0.05);
+  box-shadow: inset 2px 0 0 var(--rise);
+}
+
+.limit-up-comparison__row--carried .stock-identity__name {
+  color: var(--rise);
+  font-weight: 600;
+}
+
+.limit-up-comparison__pct {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.limit-up-comparison__pct.value--rise {
+  color: var(--rise);
+}
+
+.limit-up-comparison__pct.value--fall {
+  color: var(--fall);
+}
+@keyframes cmp-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes cmp-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
 }
 
 .dragon-tiger-list {
@@ -1716,7 +2095,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
 
 .auction-list table {
   width: 100%;
-  min-width: 1180px;
+  min-width: 1250px;
   border-collapse: collapse;
   border-spacing: 0;
 }
@@ -1767,11 +2146,13 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
   font-weight: 500;
 }
 
+/* 昨日连板 / 竞价结论 / 溢价 / 竞价涨幅 / 涨跌幅（现价）/ 竞价金额：数字列统一等宽加粗 */
 .auction-list tbody td:nth-child(2),
 .auction-list tbody td:nth-child(4),
 .auction-list tbody td:nth-child(5),
 .auction-list tbody td:nth-child(6),
-.auction-list tbody td:nth-child(7) {
+.auction-list tbody td:nth-child(7),
+.auction-list tbody td:nth-child(8) {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1930,7 +2311,8 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
 }
 
 .quote-table--watchlist {
-  min-width: 720px;
+  /* 比通用 min-width 窄一档，但加了三列自选数据（自选日 / 自选价 / 自选收益）后要 1000 才不挤 */
+  min-width: 1000px;
 }
 
 .quote-table thead th:last-child,
@@ -2287,17 +2669,12 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
   border-bottom: 0;
 }
 
+/*
+ * 不支持 backdrop-filter 的浏览器兜底。
+ * 卡片 / 顶栏已经不用模糊（见 .card 的说明），这里的名单只剩真正依赖模糊的控件：
+ * 它们本来就是在浅色玻璃上给出「磨砂」层的，不支持时退回不透明浅色。
+ */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .card,
-  .dialog-card {
-    background: rgba(255, 255, 255, 0.94);
-  }
-
-  .app-topbar {
-    /* 不支持 backdrop-filter 时也只能回退成不透明浅色，不能退回旧的红顶栏 */
-    background: rgba(255, 255, 255, 0.94);
-  }
-
   .market-index-card,
   .metric-card,
   .input,
@@ -2576,21 +2953,111 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
   background: rgba(17, 24, 39, 0.22);
 }
 
-/* 页脚状态条 */
+/* 页脚状态条：一条细长的状态卡 —— 左边大盘行情 + 情绪，右边时间戳 */
 .dashboard-footer {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 0 4px;
-  font-size: 11.5px;
-  color: var(--text-tertiary);
+  gap: 14px;
   flex-wrap: wrap;
+  padding: 7px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--glass-strong);
+  box-shadow: var(--shadow-sm);
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* 三个指数：指数名弱化、点位加重、涨跌幅做成小色块 */
+.dashboard-footer__indices,
+.dashboard-footer__stats,
+.dashboard-footer__times {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.dashboard-footer__index {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.dashboard-footer__index-name {
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+}
+
+.dashboard-footer__index-value {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+/* 涨跌幅色块：底色比文字淡一档，整条不需要胶囊也不会糊成一片灰 */
+.dashboard-footer__pct {
+  padding: 1.5px 6px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.dashboard-footer__pct.value--rise {
+  color: var(--rise);
+  background: rgba(220, 47, 53, 0.1);
+}
+
+.dashboard-footer__pct.value--fall {
+  color: var(--fall);
+  background: rgba(14, 159, 82, 0.1);
+}
+
+.dashboard-footer__pct.value--neutral {
+  color: var(--neutral);
+  background: rgba(138, 147, 165, 0.12);
+}
+
+.dashboard-footer__stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.dashboard-footer__stat b {
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+/* 涨跌家数按涨红跌绿上色 */
+.dashboard-footer__stat b.value--rise {
+  color: var(--rise);
+}
+
+.dashboard-footer__stat b.value--fall {
+  color: var(--fall);
+}
+
+/* 时间戳靠右，颜色比行情数据再弱一档 */
+.dashboard-footer__times {
+  margin-left: auto;
+  gap: 10px;
+}
+
+.dashboard-footer__times b {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 
 .dashboard-footer__sep {
   width: 1px;
-  height: 11px;
-  background: var(--border-color);
+  height: 12px;
+  background: var(--border-strong);
 }
 
 .rail-card__more {
@@ -2613,6 +3080,40 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/*
+ * 自选表最后三列：「自选日」（年月日）→「自选价」（基准价）→「自选收益」（带色百分比）。
+ *
+ * 它们都不走通用的 `.quote-table thead th:last-child` 那套 132px 居中样式
+ * ——那是给「操作」列留的宽度和居中，这三列偏窄、且各要自己的对齐。
+ */
+.quote-table--watchlist thead th.quote-table__watch-date,
+.quote-table--watchlist tbody td.quote-table__watch-date {
+  width: 96px;
+  min-width: 96px;
+  padding-left: 10px;
+  text-align: center;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* 自选价是价格：和「最新价」一样右对齐，宽度和收益列对齐 */
+.quote-table--watchlist thead th.quote-table__watch-price,
+.quote-table--watchlist tbody td.quote-table__watch-price {
+  width: 92px;
+  min-width: 92px;
+  padding-left: 10px;
+  white-space: nowrap;
+}
+
+/* 收益是数字列：跟其它数字列一样右对齐，只把宽度收窄一点 */
+.quote-table--watchlist thead th.quote-table__watch-return,
+.quote-table--watchlist tbody td.quote-table__watch-return {
+  width: 96px;
+  min-width: 96px;
+  padding-left: 10px;
+  white-space: nowrap;
 }
 
 .watch-pct {
@@ -2842,11 +3343,33 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
   .sprint-limit-up-list,
   .dragon-tiger-list,
   .auction-list,
+  .limit-up-comparison,
   section[aria-labelledby='limit-up-list-title'] {
     display: flex;
     flex-direction: column;
     min-height: 0;
     overflow: hidden;
+  }
+
+  /* 连板天梯是纵向堆叠的方块，溢出的是整块内容而不是表体，所以自己纵向滚 */
+  .limit-up-ladder {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden auto;
+    overscroll-behavior: contain;
+  }
+
+  /* 天梯里的统计条和档位方块按内容高度，不参与伸缩 */
+  .limit-up-ladder__stats,
+  .limit-up-ladder__group {
+    flex: 0 0 auto;
+  }
+
+  .limit-up-ladder__list {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
   }
 
   .panel-card > .holding-list {
@@ -2879,6 +3402,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
   .limit-up-list__table-wrap,
   .sprint-limit-up-list__table-wrap,
   .dragon-tiger-list__table-wrap,
+  .limit-up-comparison__body,
   .auction-list__table-wrap {
     flex: 1 1 auto;
     min-height: 0;
@@ -3055,9 +3579,18 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
   text-decoration: underline;
 }
 
-/* ---- 形态扫描的回测结论横幅（页头固定，不折叠） ---- */
+/* ---- 趋势页：研究结论（开关紧跟在标题后面，正文在原位置展开） ---- */
 
-.trend-evidence {
+/* 标题 + 警示按钮一行：按钮贴着「趋势形态扫描（不是选股信号）」后面 */
+.trend-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 正文面板：位置和原来的折叠条一样（标题下面、表格上面），只是由按钮控制显隐 */
+.trend-research {
   margin: var(--space-2) 0 var(--space-3);
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--warn-border);
@@ -3065,23 +3598,194 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
   background: var(--warn-surface);
 }
 
-.trend-evidence__headline {
+.trend-research[hidden] {
+  display: none;
+}
+
+/* 标题行里的警示按钮不要被压缩 */
+.trend-research__toggle {
+  flex: 0 0 auto;
+}
+
+.trend-research__headline {
   margin: 0 0 var(--space-1);
   color: var(--warn);
   font-weight: 600;
 }
 
-.trend-evidence ul {
+.trend-research ul {
   margin: 0;
   padding-left: 18px;
   color: var(--text-secondary);
 }
 
-.trend-evidence li {
+.trend-research li {
   margin-bottom: 2px;
 }
 
-/* ---- 趋势条件区 ---- */
+.trend-research__details {
+  margin-top: var(--space-2);
+  color: var(--text-secondary);
+}
+
+.trend-research__details summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.trend-research__details ul {
+  margin: var(--space-1) 0;
+}
+
+/* ---- 标题旁的警示按钮 + 面板（题材页「数据说明与限制」用） ---- */
+
+/* 标题 + 警示按钮同一行：这些说明不再占满一整条横幅 */
+.theme-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/*
+ * 警示按钮容器：display:contents 让按钮本身成为标题行的 flex 项（紧跟在标题后面）。
+ * 正文面板由调用方渲染在表头外面（.warning-notes__panel），所以这里不需要布局。
+ */
+.warning-notes {
+  display: contents;
+}
+
+/* 警示按钮：胶囊小按钮，作为标题行里的一个 flex 项（紧跟在标题后面，不被压缩） */
+.warning-notes__toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.warning-notes__toggle--warning {
+  border-color: var(--warn-border);
+  background: var(--warn-surface);
+  color: var(--warn);
+}
+
+.warning-notes__toggle:hover {
+  border-color: var(--warn);
+}
+
+.warning-notes__toggle:focus-visible {
+  outline: 2px solid var(--warn);
+  outline-offset: 2px;
+}
+
+.warning-notes__icon {
+  font-size: 12px;
+}
+
+.warning-notes__caret {
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+/*
+ * 表头右栏（交易日 / 刷新题材等）永远不换行、从顶部对齐：
+ * 说明面板渲染在表头外面，不会再把右栏挤下去。
+ */
+.overview__header:has(.warning-notes__toggle) > .overview__actions {
+  flex: 0 0 auto;
+  align-self: flex-start;
+}
+
+/* 说明面板：在表头下方正常占位（把下面的内容推下去），不遮住表格 */
+.warning-notes__panel {
+  margin: var(--space-2) 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.warning-notes__panel[hidden] {
+  display: none;
+}
+
+.warning-notes__headline {
+  margin: 0 0 var(--space-1);
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.warning-notes__list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.warning-notes__list li {
+  margin-bottom: 2px;
+}
+
+/* ---- 趋势条件区（默认折叠：条件 + 生效条件 + 覆盖说明一起收起来） ---- */
+
+.trend-settings {
+  margin: var(--space-2) 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+}
+
+.trend-settings__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  cursor: pointer;
+  list-style: none;
+}
+
+.trend-settings__summary::-webkit-details-marker {
+  display: none;
+}
+
+.trend-settings > .trend-settings__summary::before {
+  content: '▸';
+  color: var(--text-tertiary);
+}
+
+.trend-settings[open] > .trend-settings__summary::before {
+  content: '▾';
+}
+
+.trend-settings__summary-text {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.trend-settings__summary-note {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.trend-settings__body {
+  margin-top: var(--space-2);
+}
+
+.trend-settings__body .trend-filters {
+  margin-bottom: var(--space-2);
+}
+
+/* ---- 趋势条件表单 ---- */
 
 .trend-filters {
   display: flex;
@@ -3312,13 +4016,13 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
   border-spacing: 0;
 }
 
-/* 10 列（趋势）/ 18 列（题材详情）的最小可读宽度 */
+/* 12 列（趋势）/ 9 列（题材详情）的最小可读宽度（含行尾「添加自选」列） */
 .screener-table--trend {
-  min-width: 1150px;
+  min-width: 1320px;
 }
 
 .screener-table--stocks {
-  min-width: 1180px;
+  min-width: 1360px;
 }
 
 .screener-table thead th {
@@ -3335,7 +4039,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
   color: var(--text-tertiary);
   font-size: 11px;
   font-weight: 600;
-  text-align: right;
+  text-align: left;
   white-space: nowrap;
 }
 
@@ -3345,7 +4049,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
   border-bottom: 1px solid var(--border-color);
   background: transparent;
   font-size: 13px;
-  text-align: right;
+  text-align: left;
   vertical-align: middle;
   white-space: nowrap;
 }
@@ -3360,9 +4064,23 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
   border-bottom: 0;
 }
 
-.screener-table thead th:first-child,
-.screener-table tbody th {
+/*
+ * 列对齐写在「列」自己身上：表头和数据用同一个类，不再靠
+ * 「表头一律右对齐、正文一律右对齐」这种隐含约定——那套约定下，
+ * 「命中条件 / 本轮关联 / 依据风险」这种左对齐内容列的表头会飘到列的最右边，
+ * 离它的数据几百像素远。数字列右对齐并对齐数位，胶囊 / 按钮列居中。
+ */
+.screener-table .is-left {
   text-align: left;
+}
+
+.screener-table .is-right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.screener-table .is-center {
+  text-align: center;
 }
 
 .screener-table tbody th {
@@ -3382,15 +4100,20 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
   line-height: 1.35;
 }
 
-.screener-table__price {
-  display: block;
+/*
+ * 现价、涨跌幅各自占一列后，每格只有一个值，这里不再需要 display: block
+ * （那是「两个值上下堆在一个格子里」时的写法）。
+ * 另外记住：这两个类只挂在单元格**里面**的 span 上——挂到 td 本身，
+ * display: block 会把单元格变成普通块元素，整张表的列会当场错位。
+ */
+.screener-table__price,
+.screener-table__pct {
   font-weight: 600;
 }
 
 .screener-table__pct {
-  display: block;
+  font-size: 13px;
   color: var(--text-secondary);
-  font-size: 12px;
 }
 
 .screener-table__pct.is-up {
@@ -3434,12 +4157,12 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 /* 命中 / 未命中：表格里改成横向换行的小胶囊，不再一条条竖着堆。
    这一列是整表最宽的内容，给它足够的宽度，否则每条胶囊都折成两三行、
-   行高会被撑到 500px 以上。 */
+   行高会被撑到 500px 以上。垂直方向跟其他列一样居中：原来是 top，
+   胶囊少的时候会贴在行顶，和居中的股票名对不上。 */
 .screener-table tbody td.screener-table__verdict {
   min-width: 376px;
-  padding-top: 12px;
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 .screener-table .theme-verdict {
@@ -3466,10 +4189,320 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 @media (max-width: 720px) {
   .screener-table--trend {
-    min-width: 1000px;
+    min-width: 1170px;
   }
 
   .screener-table--stocks {
-    min-width: 1040px;
+    min-width: 1210px;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   趋势扫描第一期纠错新增样式（只在文件末尾追加，不改上面的既有规则）
+   --------------------------------------------------------------------------- */
+
+.trend-filters__error {
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.trend-filters__actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding-bottom: 6px;
+}
+
+/* 覆盖 / 截断 / 数据截止说明：真实数字放正文，附加解释弱化。
+   现在它嵌在折叠的条件区里，去掉自身边框与底色避免双层盒子。 */
+.trend-settings__body .trend-coverage {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.trend-coverage {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.trend-coverage p {
+  margin: 0 0 4px;
+}
+
+.trend-coverage p:last-child {
+  margin-bottom: 0;
+}
+
+/* 每行的数据说明（例如剔除了未完成日K） */
+.screener-table .theme-verdict__note {
+  margin: 4px 0 0;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+/* ---- 题材 v2：统一股票表 + 角色标签（2026-09-18） ---- */
+
+/* 三分类卡片：主线 / 支线 / 待确认 */
+.theme-card--pending {
+  border-style: dashed;
+}
+
+.theme-card__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.theme-card__counts b {
+  color: var(--text-primary);
+}
+
+.theme-card__reason {
+  display: block;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-detail__reasons {
+  margin: var(--space-2) 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.theme-detail__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  margin: var(--space-2) 0;
+}
+
+/* 搜索框在整行最后（靠右）：用全站统一的 .input 观感，只收窄宽度 */
+.theme-detail__search {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.theme-detail__search input {
+  width: 220px;
+  max-width: 100%;
+}
+
+/* .theme-detail__legacy-metrics 仍在使用；.theme-detail__warnings 已并入
+   标题旁的警示按钮（.warning-notes），对应规则随之删掉 */
+.theme-detail__legacy-metrics {
+  margin: var(--space-2) 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.theme-detail__legacy-metrics summary {
+  cursor: pointer;
+  color: var(--text-primary);
+}
+
+/* 分类依据 + 旧 8 项观察指标：默认折叠 */
+.theme-detail__classification {
+  margin: var(--space-2) 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+}
+
+.theme-detail__classification-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 12px;
+  list-style: none;
+}
+
+.theme-detail__classification-summary::-webkit-details-marker {
+  display: none;
+}
+
+.theme-detail__classification > .theme-detail__classification-summary::before {
+  content: '▸';
+  color: var(--text-tertiary);
+}
+
+.theme-detail__classification[open] > .theme-detail__classification-summary::before {
+  content: '▾';
+}
+
+.theme-detail__classification-note {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.theme-detail__classification-body {
+  margin-top: var(--space-1);
+}
+
+/* 角色标签：同一行的多个标签并排显示，不拆成多行 */
+.theme-role-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.theme-role-badges__empty {
+  color: var(--text-tertiary);
+}
+
+.theme-role-badge {
+  padding: 2px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-muted);
+  color: var(--text-primary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.theme-role-badge--leader {
+  border-color: var(--accent-primary);
+  background: var(--accent-soft);
+}
+
+.theme-role-badge--turnover {
+  border-color: var(--rise);
+  background: var(--danger-soft);
+}
+
+.theme-role-badge--laggard {
+  border-style: dashed;
+}
+
+/* 本轮关联状态：驱动有依据 / 可能相关 / 仅概念归属 / 存在其他驱动 / 关联未知 */
+.theme-relation {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.theme-relation__state {
+  font-size: 12px;
+}
+
+.theme-relation--supported .theme-relation__state {
+  color: var(--rise);
+}
+
+.theme-relation--membership_only .theme-relation__state,
+.theme-relation--other_driver .theme-relation__state {
+  color: var(--text-tertiary);
+}
+
+.theme-relation--unknown .theme-relation__state {
+  color: var(--danger);
+}
+
+/* 展开行里的证据块 */
+.theme-evidence {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--bg-muted);
+  border-radius: var(--radius-sm);
+}
+
+.theme-evidence__title {
+  margin: 0 0 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.theme-evidence .theme-verdict li {
+  display: block;
+}
+
+.screener-table tr.is-expanded > th,
+.screener-table tr.is-expanded > td {
+  background: var(--accent-soft);
+}
+
+/* ------------------------------------------------------------------ */
+/* 整行可点的展开行（题材详情成员表）：点股票那一行就展开判断详情，      */
+/* 所以行本身要有指针和键盘焦点反馈，而不是只靠一个「展开」按钮。       */
+/* ------------------------------------------------------------------ */
+
+.screener-table tbody tr.screener-table__row--toggle {
+  cursor: pointer;
+}
+
+.screener-table tbody tr.screener-table__row--toggle:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  /* 描边画在行内侧：表格是 border-collapse，画在外面会被相邻行压掉 */
+  outline-offset: -2px;
+}
+
+/* 箭头和股票标识排在同一行（.stock-identity 是 flex 块级元素） */
+.screener-table__toggle-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.screener-table__caret {
+  flex: 0 0 auto;
+  width: 10px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1;
+}
+
+/* 悬停和展开态都把箭头点亮，作为「这一行可以点」的视觉提示 */
+.screener-table tbody tr.screener-table__row--toggle:hover .screener-table__caret,
+.screener-table tbody tr.is-expanded .screener-table__caret {
+  color: var(--accent-primary);
+}
+
+@media (max-width: 900px) {
+  .theme-detail__controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 选股列表行尾的「添加自选」（2026-09-18）                             */
+/* 就是表格的最后一列：和其他列同宽同底，跟着整表一起横向滚动，          */
+/* 不做吸附、不加分隔线。按钮不参与题材详情那一行的展开点击。            */
+/* ------------------------------------------------------------------ */
+
+.screener-table tbody td.screener-table__action {
+  width: 1%;
+  padding-left: 8px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.add-watchlist-button {
+  height: 26px;
+  min-width: 78px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
 }

@@ -1,4 +1,4 @@
-import type { Quote, QuoteMap, QuotesResponse } from '../types';
+import type { Quote, QuoteMap, QuotesResponse, QuoteSource } from '../types';
 
 const CURRENCY_FORMATTER = new Intl.NumberFormat('zh-CN', {
   minimumFractionDigits: 2,
@@ -53,18 +53,80 @@ const formatDateParts = (value: string): string | null => {
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
 };
 
-export const fetchQuotes = async (
+/**
+ * 服务端 `/api/quotes` 单次最多接受 50 个代码（见 server/index.ts 的 parseSymbols），
+ * 多出来的会被**静默丢掉**而不是报错，所以超过这个数必须分批。
+ * 竞价列表的候选池有 80~90 只，不分批会让后几十只永远没有行情。
+ */
+export const QUOTES_BATCH_SIZE = 50;
+
+const requestQuoteBatch = async (
   symbols: string[],
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: typeof fetch,
 ): Promise<QuotesResponse> => {
-  const dedupedSymbols = uniqueSymbols(symbols);
-  const response = await fetchImpl(`/api/quotes?symbols=${encodeURIComponent(dedupedSymbols.join(','))}`);
+  const response = await fetchImpl(`/api/quotes?symbols=${encodeURIComponent(symbols.join(','))}`);
 
   if (!response.ok) {
     throw new Error(`行情请求失败（${response.status}）`);
   }
 
   return (await response.json()) as QuotesResponse;
+};
+
+/** 多批合并时还原整体来源：都一样就用它，混着来就是「两家混用」 */
+const mergeQuoteSources = (sources: QuoteSource[]): QuoteSource =>
+  sources.every((source) => source === sources[0]) ? sources[0] : 'eastmoney+tencent';
+
+export const fetchQuotes = async (
+  symbols: string[],
+  fetchImpl: typeof fetch = fetch,
+): Promise<QuotesResponse> => {
+  const dedupedSymbols = uniqueSymbols(symbols);
+
+  if (dedupedSymbols.length === 0) {
+    return { quotes: [], fetchedAt: new Date().toISOString(), source: 'eastmoney', errors: [] };
+  }
+
+  const batches: string[][] = [];
+  for (let offset = 0; offset < dedupedSymbols.length; offset += QUOTES_BATCH_SIZE) {
+    batches.push(dedupedSymbols.slice(offset, offset + QUOTES_BATCH_SIZE));
+  }
+
+  const settled = await Promise.allSettled(
+    batches.map((batch) => requestQuoteBatch(batch, fetchImpl)),
+  );
+  const fulfilled = settled.filter(
+    (entry): entry is PromiseFulfilledResult<QuotesResponse> => entry.status === 'fulfilled',
+  );
+
+  // 全批都没拿到响应时保持老契约：直接抛错，由调用方决定怎么提示
+  if (fulfilled.length === 0) {
+    const failure = settled.find((entry) => entry.status === 'rejected');
+    throw failure && failure.status === 'rejected' ? failure.reason : new Error('行情刷新失败');
+  }
+
+  const errors = fulfilled.flatMap((entry) => entry.value.errors);
+  settled.forEach((entry, index) => {
+    if (entry.status === 'rejected') {
+      // 部分批次失败：只把这一批的代码标成失败，其它批的行情照常返回
+      for (const symbol of batches[index]) {
+        errors.push({
+          symbol,
+          message: entry.reason instanceof Error ? entry.reason.message : '行情刷新失败',
+        });
+      }
+    }
+  });
+
+  return {
+    quotes: fulfilled.flatMap((entry) => entry.value.quotes),
+    errors,
+    fetchedAt: fulfilled.reduce(
+      (latest, entry) => (entry.value.fetchedAt > latest ? entry.value.fetchedAt : latest),
+      fulfilled[0].value.fetchedAt,
+    ),
+    source: mergeQuoteSources(fulfilled.map((entry) => entry.value.source)),
+  };
 };
 
 const isFiniteNumber = (value: number | null): value is number =>

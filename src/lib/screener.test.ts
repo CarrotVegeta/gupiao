@@ -1,15 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ThemesResponse, ThemeStocksResponse, TrendScanResponse } from '../types';
+import type { ThemesResponse } from '../types';
 import {
-  fetchThemeStocks,
+  fetchThemeDetail,
   fetchThemes,
   fetchTrendScan,
   mergeThemes,
-  toThemeStocksResponse,
+  toThemeDetailResponse,
   toThemesResponse,
   toTrendScanResponse,
   TREND_EVIDENCE,
+  unavailableThemeDetail,
   unavailableThemes,
+  type TrendScanResponseV2,
 } from './screener';
 
 const themeItem = {
@@ -30,21 +32,124 @@ const themeItem = {
     { key: 'duration', label: '持续时间', hit: true, value: '6 天', detail: '连续 6 个交易日' },
   ],
   score: 6,
+  classificationReasons: ['最近 3 个交易日驱动有依据家数 5/2/2'],
+  conceptLimitUpCount: 12,
+  supportedLimitUpCount: 5,
+  unresolvedLimitUpCount: 7,
 };
 
 const themesPayload = {
+  schemaVersion: 2,
   tradeDate: '20260917',
   main: [themeItem],
   branch: [],
+  pending: [],
   fetchedAt: '2026-09-17T14:00:00.000Z',
   source: 'eastmoney+10jqka',
   status: 'fresh',
+  warnings: [],
+  error: null,
+};
+
+const stockItem = {
+  symbol: '605058',
+  name: '澳弘电子',
+  price: 48.76,
+  pct: 9.99,
+  boardCount: 5,
+  firstSealTime: '09:31:01',
+  sealType: '换手板',
+  openCount: 1,
+  sealAmount: 3e7,
+  turnoverRate: 15.8,
+  amount: 1.08e9,
+  avgAmount3d: 7.63e8,
+  avgAmount5d: 7.1e8,
+  floatMarketCap: 6.97e9,
+  reason: 'PCB + HDI板',
+  precise: true,
+  hits: [],
+  misses: [],
+  risks: [],
+  ma5: 40.67,
+  ma10: 34.8,
+  ma20: 31.09,
+  maBull: true,
+  distMa5: 19.9,
+  distMa10: 40.1,
+  stableDays10: 9,
+  pct10: 52.3,
+  pct20: 78.1,
+  limitUpIn60d: 3,
+  quoteAsOf: '2026-09-17T14:00:00.000Z',
+  relation: {
+    state: 'supported',
+    evidenceIds: ['ev-1'],
+    reasons: ['本轮有明确依据：PCB'],
+    alternativeThemeCodes: [],
+    topicKeys: [],
+    asOf: '2026-09-17T14:00:00.000Z',
+  },
+  roles: [
+    {
+      role: 'leader',
+      status: 'candidate',
+      reasons: ['题材内龙头候选比较排名第 1'],
+      missingEvidence: ['分时带动证据：缺少分钟级带动证据'],
+      assignedAt: '2026-09-17T14:00:00.000Z',
+      ruleVersion: 'roles-v1-2026-09-18',
+    },
+  ],
+  checks: {
+    leader: [
+      { key: '本轮关联', state: 'pass', value: 'supported', reason: '驱动有依据', evidenceIds: [] },
+      {
+        key: '分时带动证据',
+        state: 'pending',
+        value: null,
+        reason: '缺少分钟级带动证据',
+        evidenceIds: [],
+      },
+    ],
+  },
+  metricsState: 'ready',
+  metricsTradeDate: '20260917',
+  risksChecked: true,
+};
+
+const detailPayload = {
+  schemaVersion: 2,
+  ruleVersion: 'roles-v1-2026-09-18+classify-v2',
+  tradeDate: '20260917',
+  asOf: '2026-09-17T14:00:00.000Z',
+  theme: { code: 'BK0900', name: '新能源车' },
+  items: [stockItem],
+  evidence: [
+    {
+      id: 'ev-1',
+      themeCode: 'BK0900',
+      symbol: '605058',
+      sourceKind: 'limit_up_reason',
+      sourceName: '同花顺涨停池',
+      sourceUrl: null,
+      text: 'PCB',
+      publishedAt: null,
+      observedAt: '2026-09-17T14:00:00.000Z',
+      validTradeDate: '20260917',
+      topicKey: null,
+      match: 'ambiguous',
+    },
+  ],
+  coverage: { total: 30, attempted: 25, succeeded: 24, failed: 1, unscanned: 5 },
+  status: 'partial',
+  warnings: ['1 只成员日K取数失败'],
   error: null,
 };
 
 describe('TREND_EVIDENCE', () => {
-  it('把回测结论写进页面常量，避免页头文案和实测数字脱节', () => {
-    expect(TREND_EVIDENCE.headline).toContain('回测');
+  it('用受限结论替代「已被否定」这类确定性表述', () => {
+    expect(TREND_EVIDENCE.headline).not.toContain('否定');
+    expect(TREND_EVIDENCE.headline).toContain('未表现出收益优势');
     expect(TREND_EVIDENCE.lines.join(' ')).toContain('t=−3.28');
     expect(TREND_EVIDENCE.lines.join(' ')).toContain('−2.426%');
     expect(TREND_EVIDENCE.footer).toContain('不构成任何买入建议');
@@ -52,43 +157,43 @@ describe('TREND_EVIDENCE', () => {
 });
 
 describe('toThemesResponse', () => {
-  it('接受合法响应', () => {
-    const result = toThemesResponse(themesPayload);
+  it('接受 v2 合法响应（含 pending 与 warnings）', () => {
+    const result = toThemesResponse({ ...themesPayload, pending: [{ ...themeItem, kind: 'branch' }] });
     expect(result.status).toBe('fresh');
     expect(result.main).toHaveLength(1);
-    expect(result.main[0].name).toBe('新能源车');
+    expect(result.pending).toHaveLength(1);
   });
 
-  it('板块代码不是 BKxxxx 时退回不可用', () => {
-    const result = toThemesResponse({
-      ...themesPayload,
-      main: [{ ...themeItem, code: '900' }],
-    });
-    expect(result.status).toBe('unavailable');
+  it('partial 是「有可用结果但有缺失」，不返回空列表', () => {
+    const result = toThemesResponse({ ...themesPayload, status: 'partial', error: '部分上游失败' });
+    expect(result.status).toBe('partial');
+    expect(result.main).toHaveLength(1);
+    expect(result.error).toBe('部分上游失败');
   });
 
-  it('indicator 缺字段时退回不可用', () => {
+  it('schemaVersion 不是 2 时退回不可用', () => {
+    expect(toThemesResponse({ ...themesPayload, schemaVersion: 1 }).status).toBe('unavailable');
+  });
+
+  it('缺 v2 口径家数字段时退回不可用（不允许悄悄丢字段）', () => {
+    const broken = {
+      ...themesPayload,
+      main: [{ ...themeItem, supportedLimitUpCount: undefined }],
+    };
+    expect(toThemesResponse(broken).status).toBe('unavailable');
+  });
+
+  it('家数缺失必须是 null；null 可以接受', () => {
     const result = toThemesResponse({
       ...themesPayload,
-      main: [{ ...themeItem, metrics: [{ key: 'duration', label: '持续时间', hit: true, value: '6 天' }] }],
+      main: [{ ...themeItem, supportedLimitUpCount: null }],
     });
-    expect(result.status).toBe('unavailable');
+    expect(result.status).toBe('fresh');
+    expect(result.main[0].supportedLimitUpCount).toBeNull();
   });
 
   it('fresh 但 error 非空视为坏数据', () => {
-    const result = toThemesResponse({ ...themesPayload, error: '上游失败' });
-    expect(result.status).toBe('unavailable');
-  });
-
-  it('unavailable 时清空列表', () => {
-    const result = toThemesResponse({
-      ...themesPayload,
-      main: [themeItem],
-      status: 'unavailable',
-      error: '上游失败',
-    });
-    expect(result.status).toBe('unavailable');
-    expect(result.main).toEqual([]);
+    expect(toThemesResponse({ ...themesPayload, error: '上游失败' }).status).toBe('unavailable');
   });
 
   it('空对象退回不可用', () => {
@@ -98,19 +203,16 @@ describe('toThemesResponse', () => {
 });
 
 describe('mergeThemes', () => {
-  it('fresh 直接替换', () => {
-    const previous = unavailableThemes('旧');
-    const next = toThemesResponse(themesPayload);
-    expect(mergeThemes(previous, next)).toBe(next);
+  it('partial 也算有效结果，直接替换而不是标 stale', () => {
+    const next = toThemesResponse({ ...themesPayload, status: 'partial' });
+    expect(mergeThemes(unavailableThemes('旧'), next)).toBe(next);
   });
 
   it('失败时保留上一轮并标记 stale', () => {
     const previous: ThemesResponse = toThemesResponse(themesPayload);
-    const failure = unavailableThemes('上游挂了');
-    const merged = mergeThemes(previous, failure);
+    const merged = mergeThemes(previous, unavailableThemes('上游挂了'));
     expect(merged.status).toBe('stale');
     expect(merged.main).toHaveLength(1);
-    expect(merged.error).toBe('上游挂了');
   });
 
   it('没有上一轮成功数据时保持不可用', () => {
@@ -120,61 +222,67 @@ describe('mergeThemes', () => {
   });
 });
 
-describe('toThemeStocksResponse', () => {
-  const item = {
-    symbol: '605058',
-    name: '澳弘电子',
-    price: 48.76,
-    pct: 9.99,
-    boardCount: 5,
-    firstSealTime: '09:31:01',
-    sealType: '换手板',
-    openCount: 1,
-    sealAmount: 3e7,
-    turnoverRate: 15.8,
-    amount: 1.08e9,
-    avgAmount3d: 7.63e8,
-    avgAmount5d: 7.1e8,
-    floatMarketCap: 6.97e9,
-    reason: 'PCB + HDI板',
-    precise: true,
-    hits: ['首封时间早'],
-    misses: ['开板 37 次（要求 ≤1）'],
-    risks: [],
-    ma5: 40.67,
-    ma10: 34.8,
-    ma20: 31.09,
-    maBull: true,
-    distMa5: 19.9,
-    distMa10: 40.1,
-    stableDays10: 9,
-    pct10: 52.3,
-    pct20: 78.1,
-    limitUpIn60d: 3,
-  };
-
-  const payload = {
-    tradeDate: '20260917',
-    theme: { code: 'BK0900', name: '新能源车' },
-    role: 'leader',
-    items: [item],
-    scanned: 12,
-    fetchedAt: '2026-09-17T14:00:00.000Z',
-    source: 'eastmoney+10jqka+tencent',
-    status: 'fresh',
-    error: null,
-  };
-
-  it('接受合法响应并保留 hits / misses', () => {
-    const result: ThemeStocksResponse = toThemeStocksResponse(payload, 'leader');
-    expect(result.status).toBe('fresh');
-    expect(result.items[0].hits).toEqual(['首封时间早']);
-    expect(result.items[0].misses).toEqual(['开板 37 次（要求 ≤1）']);
+describe('toThemeDetailResponse', () => {
+  it('接受合法 v2 响应并保留角色、关联、覆盖', () => {
+    const result = toThemeDetailResponse(detailPayload);
+    expect(result.status).toBe('partial');
+    expect(result.items[0].roles[0].role).toBe('leader');
+    expect(result.items[0].relation.state).toBe('supported');
+    expect(result.coverage.unscanned).toBe(5);
+    expect(result.evidence).toHaveLength(1);
   });
 
-  it('缺 misses 字段时退回不可用（不允许悄悄丢字段）', () => {
-    const broken = { ...payload, items: [{ ...item, misses: undefined }] };
-    expect(toThemeStocksResponse(broken, 'leader').status).toBe('unavailable');
+  it('覆盖数不满足 attempted = succeeded + failed 时退回不可用', () => {
+    const result = toThemeDetailResponse({
+      ...detailPayload,
+      coverage: { total: 30, attempted: 25, succeeded: 20, failed: 1, unscanned: 5 },
+    });
+    expect(result.status).toBe('unavailable');
+  });
+
+  it('覆盖数不满足 total = attempted + unscanned 时退回不可用', () => {
+    const result = toThemeDetailResponse({
+      ...detailPayload,
+      coverage: { total: 30, attempted: 25, succeeded: 24, failed: 1, unscanned: 9 },
+    });
+    expect(result.status).toBe('unavailable');
+  });
+
+  it('checks 里的状态下发非法值（如任意字符串）时退回不可用', () => {
+    const result = toThemeDetailResponse({
+      ...detailPayload,
+      items: [
+        {
+          ...stockItem,
+          checks: { leader: [{ key: 'x', state: 'ok', value: 1, reason: 'r', evidenceIds: [] }] },
+        },
+      ],
+    });
+    expect(result.status).toBe('unavailable');
+  });
+
+  it('缺 relation 的股票行会让整体退回不可用', () => {
+    const result = toThemeDetailResponse({
+      ...detailPayload,
+      items: [{ ...stockItem, relation: undefined }],
+    });
+    expect(result.status).toBe('unavailable');
+  });
+
+  it('unavailable 时清空明细', () => {
+    const result = toThemeDetailResponse({
+      ...detailPayload,
+      status: 'unavailable',
+      error: '上游失败',
+    });
+    expect(result.status).toBe('unavailable');
+    expect(result.items).toEqual([]);
+  });
+
+  it('缺 schemaVersion 时退回不可用', () => {
+    const { schemaVersion: _removed, ...rest } = detailPayload;
+    void _removed;
+    expect(toThemeDetailResponse(rest).status).toBe('unavailable');
   });
 });
 
@@ -218,14 +326,35 @@ describe('toTrendScanResponse', () => {
     source: 'eastmoney+10jqka',
     status: 'fresh',
     error: null,
+    coverage: { total: 294, attempted: 260, succeeded: 255, failed: 5, unscanned: 34 },
+    matchedTotal: 12,
+    returnedCount: 1,
+    truncated: true,
+    metricsTradeDate: '20260917',
+    quoteAsOf: '2026-09-17T14:00:00.000Z',
   };
 
-  it('接受合法响应并带回 filters', () => {
-    const result: TrendScanResponse = toTrendScanResponse(payload);
+  it('接受合法响应并带回 filters 与覆盖披露', () => {
+    const result: TrendScanResponseV2 = toTrendScanResponse(payload);
     expect(result.items).toHaveLength(1);
     expect(result.scanned).toBe(260);
     expect(result.filters.minScore).toBe(5);
-    expect(result.filters.pctWindow).toBe(10);
+    expect(result.coverage?.unscanned).toBe(34);
+    expect(result.truncated).toBe(true);
+    expect(result.metricsTradeDate).toBe('20260917');
+  });
+
+  it('老版本服务端没有覆盖字段时降级为「未披露」而不是整体判坏', () => {
+    const { coverage: _coverage, matchedTotal: _matched, truncated: _truncated, ...rest } = payload;
+    void _coverage;
+    void _matched;
+    void _truncated;
+    const result = toTrendScanResponse(rest);
+    expect(result.status).toBe('fresh');
+    expect(result.coverage).toBeNull();
+    expect(result.matchedTotal).toBeNull();
+    expect(result.truncated).toBe(false);
+    expect(result.returnedCount).toBe(1);
   });
 
   it('themeScope 非法时退回 main', () => {
@@ -250,30 +379,35 @@ describe('请求函数', () => {
     expect(fetchImpl).toHaveBeenCalledWith('/api/themes?date=20260917');
   });
 
-  it('fetchThemeStocks 带上 role', async () => {
+  it('fetchThemeDetail 走新的 detail 路由并带上 date 与 signal', async () => {
     const fetchImpl = vi.fn(
-      async () =>
-        new Response(
-          JSON.stringify({
-            tradeDate: '20260917',
-            theme: { code: 'BK0900', name: '新能源车' },
-            role: 'trend',
-            items: [],
-            scanned: 0,
-            fetchedAt: '2026-09-17T14:00:00.000Z',
-            source: 'eastmoney+10jqka+tencent',
-            status: 'fresh',
-            error: null,
-          }),
-        ),
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify(detailPayload)),
     );
-    await fetchThemeStocks('BK0900', 'trend', undefined, fetchImpl as unknown as typeof fetch);
-    expect(fetchImpl).toHaveBeenCalledWith('/api/themes/BK0900/stocks?role=trend');
+    const controller = new AbortController();
+    await fetchThemeDetail(
+      'BK0900',
+      '20260917',
+      controller.signal,
+      fetchImpl as unknown as typeof fetch,
+    );
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe('/api/themes/BK0900/detail?date=20260917');
+    expect((init as RequestInit).signal).toBe(controller.signal);
+  });
+
+  it('fetchThemeDetail 不传 role（角色不再是请求维度）', async () => {
+    const fetchImpl = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify(detailPayload)),
+    );
+    await fetchThemeDetail('BK0900', undefined, undefined, fetchImpl as unknown as typeof fetch);
+    expect(String(fetchImpl.mock.calls[0][0])).toBe('/api/themes/BK0900/detail');
   });
 
   it('fetchTrendScan 把 filters 序列化成查询参数', async () => {
     const fetchImpl = vi.fn(
-      async (_input: RequestInfo | URL) =>
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
         new Response(
           JSON.stringify({
             tradeDate: '20260917',
@@ -307,8 +441,17 @@ describe('请求函数', () => {
 
   it('HTTP 失败时抛错而不是返回空数据', async () => {
     const fetchImpl = vi.fn(async () => new Response('', { status: 502 }));
+    await expect(fetchThemes(undefined, fetchImpl as unknown as typeof fetch)).rejects.toThrow(
+      '题材请求失败（502）',
+    );
     await expect(
-      fetchThemes(undefined, fetchImpl as unknown as typeof fetch),
-    ).rejects.toThrow('题材请求失败（502）');
+      fetchThemeDetail('BK0900', undefined, undefined, fetchImpl as unknown as typeof fetch),
+    ).rejects.toThrow('题材详情请求失败（502）');
+  });
+
+  it('unavailableThemeDetail 是可用的空壳，便于加载态展示', () => {
+    const blank = unavailableThemeDetail('加载中');
+    expect(blank.status).toBe('unavailable');
+    expect(blank.coverage.total).toBe(0);
   });
 });

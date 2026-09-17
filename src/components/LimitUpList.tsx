@@ -1,4 +1,5 @@
 import { formatPrice } from '../lib/quotes';
+import { AddToWatchlistButton } from './AddToWatchlistButton';
 import { StockIdentity } from './StockIdentity';
 import type { LimitUpItem, LimitUpResponse } from '../types';
 
@@ -6,6 +7,10 @@ type LimitUpListProps = {
   data: LimitUpResponse;
   isRefreshing: boolean;
   onRefresh: () => void;
+  /** 行尾「添加自选」：交给宿主写进自选列表 */
+  onAddToWatchlist: (stock: { symbol: string; name: string }) => void;
+  /** 已经在自选里的代码集合，用来把「添加自选」按钮置灰 */
+  watchlistSymbols: ReadonlySet<string>;
 };
 
 const formatTradeDate = (value: string | null): string => {
@@ -93,7 +98,13 @@ const compareLimitUpItems = (left: LimitUpItem, right: LimitUpItem): number => {
   return left.symbol.localeCompare(right.symbol, 'zh-CN');
 };
 
-export const LimitUpList = ({ data, isRefreshing, onRefresh }: LimitUpListProps) => {
+export const LimitUpList = ({
+  data,
+  isRefreshing,
+  onRefresh,
+  onAddToWatchlist,
+  watchlistSymbols,
+}: LimitUpListProps) => {
   const items = [...data.items].sort(compareLimitUpItems);
 
   return (
@@ -160,17 +171,15 @@ export const LimitUpList = ({ data, isRefreshing, onRefresh }: LimitUpListProps)
                 <th scope="col">首次封板</th>
                 <th scope="col">最后封板</th>
                 <th scope="col">炸板次数</th>
+                <th scope="col">自选</th>
               </tr>
             </thead>
             <tbody>
               {items.map((item) => (
                 <tr key={item.symbol}>
                   <th scope="row">
-                    <StockIdentity
-                      name={item.name}
-                      code={item.symbol}
-                      tag={formatBoardCount(item.boardCount)}
-                    />
+                    {/* 不挂标签：连板数已经在右侧「连板」列，名称旁再放一个红标签是重复的 */}
+                    <StockIdentity name={item.name} code={item.symbol} />
                   </th>
                   <td>{formatBoardCount(item.boardCount)}</td>
                   <td>{formatValue(item.industry)}</td>
@@ -179,6 +188,14 @@ export const LimitUpList = ({ data, isRefreshing, onRefresh }: LimitUpListProps)
                   <td>{formatValue(item.firstSealTime)}</td>
                   <td>{formatValue(item.lastSealTime)}</td>
                   <td>{formatInteger(item.breakCount)}</td>
+                  <td className="limit-up-list__action">
+                    <AddToWatchlistButton
+                      symbol={item.symbol}
+                      name={item.name}
+                      added={watchlistSymbols.has(item.symbol)}
+                      onAdd={onAddToWatchlist}
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>

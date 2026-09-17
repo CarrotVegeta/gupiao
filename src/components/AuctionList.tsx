@@ -1,9 +1,20 @@
 import { useState } from 'react';
 import { StockIdentity } from './StockIdentity';
-import type { AuctionItem, AuctionPremium, AuctionResponse, AuctionResult } from '../types';
+import type {
+  AuctionItem,
+  AuctionPremium,
+  AuctionResponse,
+  AuctionResult,
+  QuoteMap,
+} from '../types';
 
 type AuctionListProps = {
   data: AuctionResponse;
+  /**
+   * 竞价候选的实时行情。09:25 快照里没有现价，
+   * 「涨跌幅」这一列只能来自盘中行情（App 每 10 秒刷一轮）。
+   */
+  quotes: QuoteMap;
   isRefreshing: boolean;
   onRefresh: () => void;
 };
@@ -59,6 +70,10 @@ const compareItems = (left: AuctionItem, right: AuctionItem): number => {
 const formatProbability = (value: number | null): string =>
   value === null ? '—' : `${(value * 100).toFixed(0)}%`;
 
+/** 现价涨跌幅：行情没拿到就不上色，避免「—」被染成红/绿 */
+const quotePctClass = (value: number | null): string =>
+  value === null || value === 0 ? 'value--neutral' : value > 0 ? 'value--rise' : 'value--fall';
+
 /** 概率分档的配色：≥55% 合格、30~55% 观察、其余不合格 */
 const probabilityClass = (value: number | null): string =>
   value === null
@@ -69,7 +84,7 @@ const probabilityClass = (value: number | null): string =>
         ? 'auction-probability--mid'
         : 'auction-probability--low';
 
-export const AuctionList = ({ data, isRefreshing, onRefresh }: AuctionListProps) => {
+export const AuctionList = ({ data, quotes, isRefreshing, onRefresh }: AuctionListProps) => {
   const [filter, setFilter] = useState<ResultFilter>('all');
   const [buyableOnly, setBuyableOnly] = useState(false);
   const items = [...data.items].sort(compareItems);
@@ -95,6 +110,9 @@ export const AuctionList = ({ data, isRefreshing, onRefresh }: AuctionListProps)
           <p className="auction-list__description">
             <span>固定快照：09:25</span>
             <span>概率＝今日收盘继续涨停的概率，溢价＝按竞价价买入的性价比</span>
+            <span>涨跌幅＝现价相对昨收（盘中实时）</span>
+            {/* 09:15 前集合竞价还没开始，服务端会把整卡退回上一个完整竞价日 */}
+            <span>9:15 前显示上一交易日竞价</span>
           </p>
         </div>
         <div className="auction-list__toolbar">
@@ -221,6 +239,9 @@ export const AuctionList = ({ data, isRefreshing, onRefresh }: AuctionListProps)
                 <th scope="col">竞价结论</th>
                 <th scope="col">溢价</th>
                 <th scope="col">竞价涨幅</th>
+                <th scope="col" title="现价相对昨收的涨跌幅，盘中实时刷新（09:25 快照里没有现价）">
+                  涨跌幅
+                </th>
                 <th scope="col">竞价金额</th>
                 <th scope="col">竞价/昨成交</th>
                 <th scope="col">昨日封板</th>
@@ -228,61 +249,78 @@ export const AuctionList = ({ data, isRefreshing, onRefresh }: AuctionListProps)
               </tr>
             </thead>
             <tbody>
-              {visibleItems.map((item) => (
-                <tr key={item.symbol}>
-                  <th scope="row">
-                    <StockIdentity
-                      name={item.name}
-                      code={item.symbol}
-                      tag={item.boardCount === null ? null : `${item.boardCount} 连板`}
-                    />
-                  </th>
-                  <td>{item.boardCount === null ? '—' : `${item.boardCount} 连板`}</td>
-                  <td>
-                    <span className={`auction-probability ${probabilityClass(item.limitUpProbability)}`}>
-                      {formatProbability(item.limitUpProbability)}
-                    </span>
-                    {item.probabilityMissing > 0 ? (
+              {visibleItems.map((item) => {
+                const currentQuote = quotes[item.symbol];
+                const currentPct = currentQuote?.pct ?? null;
+
+                return (
+                  <tr key={item.symbol}>
+                    <th scope="row">
+                      <StockIdentity
+                        name={item.name}
+                        code={item.symbol}
+                        tag={item.boardCount === null ? null : `${item.boardCount} 连板`}
+                      />
+                    </th>
+                    <td>{item.boardCount === null ? '—' : `${item.boardCount} 连板`}</td>
+                    <td>
+                      <span className={`auction-probability ${probabilityClass(item.limitUpProbability)}`}>
+                        {formatProbability(item.limitUpProbability)}
+                      </span>
+                      {item.probabilityMissing > 0 ? (
+                        <span className="auction-list__subvalue">
+                          {item.probabilityMissing} 项特征缺失
+                        </span>
+                      ) : null}
+                    </td>
+                    <td>
+                      <span className={`auction-status auction-status--${item.result}`}>
+                        {resultLabels[item.result]}
+                      </span>
+                    </td>
+                    <td>
+                      {item.auctionPremium === null ? (
+                        '—'
+                      ) : (
+                        <span className={`auction-premium auction-premium--${item.auctionPremium}`}>
+                          {premiumLabels[item.auctionPremium]}
+                        </span>
+                      )}
+                    </td>
+                    <td className={item.auctionPct !== null && item.auctionPct >= 0 ? 'value--rise' : 'value--fall'}>
+                      {formatPercent(item.auctionPct)}
+                    </td>
+                    <td
+                      className={quotePctClass(currentPct)}
+                      title={
+                        currentQuote?.status === 'stale'
+                          ? '行情已过期，显示上一轮'
+                          : currentPct === null
+                            ? '暂无行情'
+                            : undefined
+                      }
+                    >
+                      {formatPercent(currentPct)}
+                    </td>
+                    <td>
+                      {formatAmount(item.auctionAmount)}
+                      {item.auctionAmount === null ? (
+                        <span className="auction-list__subvalue">量能缺失</span>
+                      ) : null}
+                    </td>
+                    <td>{formatRatio(item.auctionRatio)}</td>
+                    <td>
+                      {item.firstSealTime ?? '—'}
                       <span className="auction-list__subvalue">
-                        {item.probabilityMissing} 项特征缺失
+                        炸板 {item.breakCount === null ? '—' : item.breakCount} 次
                       </span>
-                    ) : null}
-                  </td>
-                  <td>
-                    <span className={`auction-status auction-status--${item.result}`}>
-                      {resultLabels[item.result]}
-                    </span>
-                  </td>
-                  <td>
-                    {item.auctionPremium === null ? (
-                      '—'
-                    ) : (
-                      <span className={`auction-premium auction-premium--${item.auctionPremium}`}>
-                        {premiumLabels[item.auctionPremium]}
-                      </span>
-                    )}
-                  </td>
-                  <td className={item.auctionPct !== null && item.auctionPct >= 0 ? 'value--rise' : 'value--fall'}>
-                    {formatPercent(item.auctionPct)}
-                  </td>
-                  <td>
-                    {formatAmount(item.auctionAmount)}
-                    {item.auctionAmount === null ? (
-                      <span className="auction-list__subvalue">量能缺失</span>
-                    ) : null}
-                  </td>
-                  <td>{formatRatio(item.auctionRatio)}</td>
-                  <td>
-                    {item.firstSealTime ?? '—'}
-                    <span className="auction-list__subvalue">
-                      炸板 {item.breakCount === null ? '—' : item.breakCount} 次
-                    </span>
-                  </td>
-                  <td className="auction-list__reasons" title={item.reasons.join('\n')}>
-                    <span className="auction-list__reasons-text">{item.reasons.join('；')}</span>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="auction-list__reasons" title={item.reasons.join('\n')}>
+                      <span className="auction-list__reasons-text">{item.reasons.join('；')}</span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

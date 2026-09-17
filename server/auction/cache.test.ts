@@ -48,4 +48,24 @@ describe('auction cache', () => {
     expect(cache.get('20260817')).toBeNull();
     expect(cache.get('20260819')).not.toBeNull();
   });
+
+  it('honours a per-entry TTL that differs from the default', () => {
+    vi.useFakeTimers();
+    try {
+      const cache = createAuctionCache(60_000, 6);
+      const longLived = responseOf('20260819');
+      cache.set('20260819', longLived, 600_000);
+      cache.set('20260818', responseOf('20260818'), 30_000);
+
+      // 长有效期的那条要活过默认的 5 分钟
+      vi.advanceTimersByTime(60_001);
+      expect(cache.get('20260819')).toBe(longLived);
+      expect(cache.get('20260818')).toBeNull();
+
+      vi.advanceTimersByTime(540_000);
+      expect(cache.get('20260819')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

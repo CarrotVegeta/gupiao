@@ -4,11 +4,14 @@ import {
   evaluateAuctionCandidate,
   fetchEastmoneyAuction,
   findPreviousTradeDate,
+  isPreOpenAuctionFallback,
   isPreviousOneWord,
   mapEastmoneyAuctionDetail,
   mapEastmoneyAuctionPoolItem,
   mapTencentAuctionTick,
+  msUntilCallAuction,
   sortAuctionItems,
+  toShanghaiTradeDate,
 } from './eastmoney.js';
 import { classifyAuctionPremium, predictLimitUpProbability, toProbabilityTier } from './model.js';
 
@@ -700,5 +703,128 @@ describe('tencent auction tick parsing', () => {
     expect(mapTencentAuctionTick('v_detail_data_sh600000=[0,""];')).toBeNull();
     expect(mapTencentAuctionTick('{"code":11,"msg":"Can\'t load controller"}')).toBeNull();
     expect(mapTencentAuctionTick('v_detail_data_sh600000=[0,"0/09:25:02/0.00/0.00/0/0/S"];')).toBeNull();
+  });
+});
+
+/**
+ * 09:15 之前集合竞价还没开始，行情源里的今开/分笔/大盘缺口全是上一个交易日的。
+ * 这时按请求日期（今天）出结果会得到「池子是昨天、价格是昨天、日期写今天」的卡，
+ * 所以整张卡退回上一个完整竞价日：竞价日 = 上一交易日，昨日涨停 = 它的上一交易日。
+ */
+describe('pre-open fallback before the call auction starts', () => {
+  const klines = { data: { klines: ['2026-09-15', '2026-09-16', '2026-09-17'] } };
+
+  const createPreOpenFetch = (poolDates: string[]) =>
+    vi.fn<typeof fetch>((input) => {
+      const url = String(input);
+      if (url.includes('/stock/kline/get')) {
+        return Promise.resolve(new Response(JSON.stringify(klines)));
+      }
+      if (url.includes('/getTopicZTPool')) {
+        poolDates.push(new URL(url).searchParams.get('date') ?? '');
+        return Promise.resolve(new Response(JSON.stringify({ data: { pool: [strongPoolRow], tc: 1 } })));
+      }
+      if (url.includes('/getTopicZBPool')) {
+        return Promise.resolve(new Response(JSON.stringify({ data: { pool: [], tc: 20 } })));
+      }
+      if (url.includes('/api/qt/stock/get')) {
+        return Promise.resolve(new Response(JSON.stringify({ data: { f46: 390000, f60: 389000 } })));
+      }
+      if (url.includes('/stock/details/get')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: { prePrice: 10, details: ['09:25:00,10.40,5000,0,4'] } })),
+        );
+      }
+      throw new Error('unexpected URL: ' + url);
+    });
+
+  it('treats 09:15 as the cutoff, and only for the current day', () => {
+    const beforeOpen = new Date('2026-09-18T01:00:00+08:00');
+    expect(toShanghaiTradeDate(beforeOpen)).toBe('20260918');
+    expect(msUntilCallAuction(beforeOpen)).toBe(8.25 * 60 * 60 * 1000);
+    expect(isPreOpenAuctionFallback('20260918', beforeOpen)).toBe(true);
+    // 历史日期的竞价早就结束了，不受开盘时间影响
+    expect(isPreOpenAuctionFallback('20260917', beforeOpen)).toBe(false);
+
+    const justBefore = new Date('2026-09-18T09:14:59+08:00');
+    expect(msUntilCallAuction(justBefore)).toBe(1_000);
+    expect(isPreOpenAuctionFallback('20260918', justBefore)).toBe(true);
+
+    const atOpen = new Date('2026-09-18T09:15:00+08:00');
+    expect(msUntilCallAuction(atOpen)).toBe(0);
+    expect(isPreOpenAuctionFallback('20260918', atOpen)).toBe(false);
+  });
+
+  it('reads the Shanghai wall clock instead of the process time zone', () => {
+    // 2026-09-17T17:30Z = 上海 09-18 01:30
+    const utcEvening = new Date('2026-09-17T17:30:00Z');
+    expect(toShanghaiTradeDate(utcEvening)).toBe('20260918');
+    expect(isPreOpenAuctionFallback('20260918', utcEvening)).toBe(true);
+  });
+
+  it('falls the whole card back to the previous session before the open', async () => {
+    const poolDates: string[] = [];
+    const fetchImpl = createPreOpenFetch(poolDates);
+
+    const body = await fetchEastmoneyAuction(
+      '20260918',
+      fetchImpl,
+      new Date('2026-09-18T08:00:00+08:00'),
+    );
+
+    expect(body).toMatchObject({
+      tradeDate: '20260917',
+      previousTradeDate: '20260916',
+      status: 'fresh',
+    });
+    // 候选池取 09-16（= 09-17 的昨日涨停），而不是请求日期那天的池子
+    expect(poolDates).toEqual(['20260916']);
+  });
+
+  it('keeps the requested day once the call auction has started', async () => {
+    const poolDates: string[] = [];
+    const fetchImpl = createPreOpenFetch(poolDates);
+
+    const body = await fetchEastmoneyAuction(
+      '20260918',
+      fetchImpl,
+      new Date('2026-09-18T09:15:00+08:00'),
+    );
+
+    expect(body).toMatchObject({ tradeDate: '20260918', previousTradeDate: '20260917' });
+    expect(poolDates).toEqual(['20260917']);
+  });
+
+  it('still falls back to the dated pool scan when the calendar host is down', async () => {
+    const poolDates: string[] = [];
+    const fetchImpl = vi.fn<typeof fetch>((input) => {
+      const url = String(input);
+      if (url.includes('/stock/kline/get')) {
+        return Promise.reject(new Error('calendar connection closed'));
+      }
+      if (url.includes('/getTopicZTPool')) {
+        poolDates.push(new URL(url).searchParams.get('date') ?? '');
+        return Promise.resolve(new Response(JSON.stringify({ data: { pool: [strongPoolRow], tc: 1 } })));
+      }
+      if (url.includes('/getTopicZBPool')) {
+        return Promise.resolve(new Response(JSON.stringify({ data: { pool: [], tc: 20 } })));
+      }
+      if (url.includes('/stock/details/get')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: { prePrice: 10, details: ['09:25:00,10.40,5000,0,4'] } })),
+        );
+      }
+      throw new Error('unexpected URL: ' + url);
+    });
+
+    const body = await fetchEastmoneyAuction(
+      '20260918',
+      fetchImpl,
+      new Date('2026-09-18T08:00:00+08:00'),
+    );
+
+    // 日历挂掉时用涨停池回扫找出上一交易日，再按它继续算「昨日」
+    expect(body).toMatchObject({ tradeDate: '20260917', previousTradeDate: '20260916' });
+    expect(poolDates).toEqual(['20260917', '20260916']);
   });
 });

@@ -6,6 +6,15 @@
  * * push2ex 的池子接口 —— 涨停池 / 炸板池，`data.tc` 是家数，`data.pool[].c` 是代码
  *
  * 晋级率 = 今日涨停 ∩ 昨日涨停 / 昨日涨停家数，衡量赚钱效应的延续性。
+ *
+ * ⚠️ 池子接口的日期语义（实测，别想当然）：
+ *   * `date` 参数返回「**不晚于**该日期的最近一个交易日」的池子：
+ *     请求 20260918（还没数据）与 20260917 拿到的是同一份 47 只；
+ *     请求 20260916 / 20260915 各自拿到 89 / 32 只——即历史交易日按各自日期返回。
+ *   * 响应里的 `data.qdate` **恒等于「最新交易日」**（上例里不管请求哪天都是 20260917），
+ *     它只说明「今日数据截至哪天」，不能用它当某份池子的所属日期。
+ * 所以「昨日池」不能按请求日期认，得按**内容**认：往后找第一份代码集合与今日不同的池子。
+ * 否则今天和昨天会落到同一份数据上，交集=全集，晋级率恒等于 100%。
  */
 import type { MarketBreadth, Quote } from '../../src/types.js';
 
@@ -32,6 +41,8 @@ const MAX_LOOKBACK_DAYS = 10;
 type PoolSnapshot = {
   total: number | null;
   codes: Set<string>;
+  /** 上游实际返回的那一天（data.qdate）；拿不到就是 null */
+  date: string | null;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -49,6 +60,15 @@ const asInteger = (value: unknown): number | null => {
 };
 
 const asString = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
+/** 上游的日期字段：可能是数字 20260917，也可能是字符串 */
+const asTradeDate = (value: unknown): string | null => {
+  const text =
+    typeof value === 'number' && Number.isFinite(value)
+      ? String(Math.trunc(value))
+      : asString(value);
+  return /^\d{8}$/.test(text) ? text : null;
+};
 
 const dateDaysBefore = (tradeDate: string, days: number): string => {
   const date = new Date(
@@ -119,7 +139,12 @@ const fetchPool = async (
     }
 
     const total = asInteger(data.tc);
-    return { total: total !== null && total >= 0 ? total : codes.size, codes };
+    return {
+      total: total !== null && total >= 0 ? total : codes.size,
+      codes,
+      // date 参数只是「不晚于」，真实日期以 qdate 为准
+      date: asTradeDate(data.qdate),
+    };
   } catch {
     return null;
   } finally {
@@ -127,22 +152,47 @@ const fetchPool = async (
   }
 };
 
-/** 往前找最近一个有涨停数据的交易日，用于算晋级率 */
+/**
+ * 往前找「昨日」的涨停池，用于算晋级率。
+ *
+ * 判定靠内容而不是请求日期：上游对没有数据的日期会回落到最近一个有数据的交易日，
+ * 只按请求日期判断会拿到与今日完全相同的一份池子（交集=全集 → 晋级率 100%）。
+ * 所以跳过所有与今日代码集合一致的候选，取第一份真正不同的。
+ */
 const findPreviousPool = async (
-  tradeDate: string,
+  todayDate: string,
+  todayCodes: Set<string>,
   fetchImpl: typeof fetch,
 ): Promise<{ date: string; snapshot: PoolSnapshot } | null> => {
   for (let daysBefore = 1; daysBefore <= MAX_LOOKBACK_DAYS; daysBefore += 1) {
-    const candidate = dateDaysBefore(tradeDate, daysBefore);
+    const candidate = dateDaysBefore(todayDate, daysBefore);
     if (isWeekend(candidate)) {
       continue;
     }
     const snapshot = await fetchPool(ZT_POOL_ENDPOINT, candidate, fetchImpl);
-    if (snapshot && snapshot.codes.size > 0) {
-      return { date: candidate, snapshot };
+    if (!snapshot || snapshot.codes.size === 0) {
+      continue;
     }
+    // 与今日同一份数据（上游回落），不是「另一天」
+    if (sameCodes(snapshot.codes, todayCodes)) {
+      continue;
+    }
+    return { date: candidate, snapshot };
   }
   return null;
+};
+
+/** 两份池子的代码集合是否完全一致 */
+const sameCodes = (left: Set<string>, right: Set<string>): boolean => {
+  if (left.size !== right.size) {
+    return false;
+  }
+  for (const code of left) {
+    if (!right.has(code)) {
+      return false;
+    }
+  }
+  return true;
 };
 
 const unavailable = (
@@ -235,12 +285,19 @@ export const fetchMarketBreadth = async (
     return unavailable(tradeDate, 'unavailable');
   }
 
-  const previous = await findPreviousPool(tradeDate, fetchImpl);
+  // 「今日」= 上游返回的最新交易日（请求日可能是休市/未出数的日子）
+  const todayDate = todayPool?.date ?? tradeDate;
+  const previous = await findPreviousPool(
+    todayDate,
+    todayPool?.codes ?? new Set<string>(),
+    fetchImpl,
+  );
 
   let promotionRate: number | null = null;
-  if (previous && previous.snapshot.total !== null && previous.snapshot.total > 0) {
+  // 今日池缺失时不能按 0 算：那会把「取不到数据」显示成 0% 晋级
+  if (todayPool !== null && previous && previous.snapshot.total !== null && previous.snapshot.total > 0) {
     let carried = 0;
-    for (const code of todayPool?.codes ?? []) {
+    for (const code of todayPool.codes) {
       if (previous.snapshot.codes.has(code)) {
         carried += 1;
       }
@@ -249,7 +306,7 @@ export const fetchMarketBreadth = async (
   }
 
   return {
-    tradeDate,
+    tradeDate: todayPool?.date ?? tradeDate,
     previousTradeDate: previous?.date ?? null,
     limitUpCount: todayPool?.total ?? null,
     brokenCount: brokenPool?.total ?? null,

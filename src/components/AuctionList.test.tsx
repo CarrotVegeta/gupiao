@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import type { AuctionResponse } from '../types';
+import type { AuctionResponse, QuoteMap } from '../types';
 import { AuctionList } from './AuctionList';
 
 const response: AuctionResponse = {
@@ -82,12 +82,53 @@ const response: AuctionResponse = {
   error: null,
 };
 
+/** 实时行情：只有 000001 / 000002 有，000003 缺失 */
+const quotes: QuoteMap = {
+  '000001': {
+    symbol: '000001',
+    name: '首板样本',
+    price: 10.53,
+    change: 0.33,
+    pct: 3.24,
+    turnover: 12.4,
+    volumeRatio: 1.8,
+    amount: 320_000_000,
+    preClose: 10.2,
+    updatedAt: '2026-08-19T02:10:00.000Z',
+    source: 'tencent',
+    status: 'fresh',
+  },
+  '000002': {
+    symbol: '000002',
+    name: '三板样本',
+    price: 9.51,
+    change: -0.29,
+    pct: -2.96,
+    turnover: 3.2,
+    volumeRatio: 0.9,
+    amount: 100_000_000,
+    preClose: 9.8,
+    updatedAt: '2026-08-19T02:10:00.000Z',
+    source: 'tencent',
+    status: 'fresh',
+  },
+};
+
+const renderList = (data: AuctionResponse = response, quoteMap: QuoteMap = quotes) =>
+  render(
+    <AuctionList data={data} quotes={quoteMap} isRefreshing={false} onRefresh={vi.fn()} />,
+  );
+
 describe('AuctionList', () => {
   it('marks auction results with probability and sorts by board count first', () => {
-    render(<AuctionList data={response} isRefreshing={false} onRefresh={vi.fn()} />);
+    renderList();
 
     expect(screen.getByRole('heading', { name: '竞价连板候选' })).toBeInTheDocument();
     expect(screen.getByText('固定快照：09:25')).toBeInTheDocument();
+    expect(screen.getByText('涨跌幅＝现价相对昨收（盘中实时）')).toBeInTheDocument();
+    expect(screen.getByText('9:15 前显示上一交易日竞价')).toBeInTheDocument();
+    // 9:15 前服务端会把竞价日回退到上一交易日，卡片照实显示返回的日期
+    expect(screen.getByText(/竞价日：2026-08-19 · 昨日：2026-08-18/)).toBeInTheDocument();
     expect(screen.getByText('合格 1')).toBeInTheDocument();
     expect(screen.getByText('数据不足 1')).toBeInTheDocument();
 
@@ -106,8 +147,45 @@ describe('AuctionList', () => {
     expect(rows[3]).toHaveTextContent('温和');
   });
 
+  it('shows the live change percent in its own column next to the auction gap', () => {
+    renderList();
+
+    const headers = screen.getAllByRole('columnheader').map((cell) => cell.textContent);
+    expect(headers.indexOf('涨跌幅')).toBe(headers.indexOf('竞价涨幅') + 1);
+
+    const first = screen.getByRole('row', { name: /首板样本/ });
+    const rise = within(first).getByText('+3.24%');
+    expect(rise).toHaveClass('value--rise');
+
+    const second = screen.getByRole('row', { name: /三板样本/ });
+    const fall = within(second).getByText('-2.96%');
+    expect(fall).toHaveClass('value--fall');
+  });
+
+  it('keeps the change column neutral when the quote is missing', () => {
+    renderList();
+
+    // 000003 没有行情，只能给「—」，且不能染成红/绿
+    const missing = screen.getByRole('row', { name: /二板样本/ });
+    const cell = within(missing).getByTitle('暂无行情');
+    expect(cell).toHaveTextContent('—');
+    expect(cell).toHaveClass('value--neutral');
+  });
+
+  it('marks a stale quote so the number is not mistaken for the live one', () => {
+    renderList(response, {
+      ...quotes,
+      '000001': { ...quotes['000001']!, status: 'stale' },
+    });
+
+    const cell = within(screen.getByRole('row', { name: /首板样本/ })).getByTitle(
+      '行情已过期，显示上一轮',
+    );
+    expect(cell).toHaveTextContent('+3.24%');
+  });
+
   it('wraps 研判依据 text in its own clamp box instead of clamping the table cell', () => {
-    render(<AuctionList data={response} isRefreshing={false} onRefresh={vi.fn()} />);
+    renderList();
 
     const cell = screen.getByRole('row', { name: /首板样本/ }).querySelector('.auction-list__reasons');
     expect(cell?.tagName).toBe('TD');
@@ -117,7 +195,7 @@ describe('AuctionList', () => {
 
   it('filters the table when a summary chip is clicked', async () => {
     const user = userEvent.setup();
-    render(<AuctionList data={response} isRefreshing={false} onRefresh={vi.fn()} />);
+    renderList();
 
     const rowCount = (): number => screen.getAllByRole('row').length;
     expect(rowCount()).toBe(4);
@@ -153,7 +231,7 @@ describe('AuctionList', () => {
         item.symbol === '000001' ? { ...item, sealedAtAuction: true } : item,
       ),
     };
-    render(<AuctionList data={withSealed} isRefreshing={false} onRefresh={vi.fn()} />);
+    renderList(withSealed);
 
     // 000001 竞价已封板、000003 数据不足，都不能算「可买」
     await user.click(screen.getByRole('button', { name: '只看可买 1' }));
@@ -174,7 +252,7 @@ describe('AuctionList', () => {
       ...response,
       items: response.items.filter((item) => item.result === 'qualified'),
     };
-    render(<AuctionList data={onlyQualified} isRefreshing={false} onRefresh={vi.fn()} />);
+    renderList(onlyQualified);
 
     await user.click(screen.getByRole('button', { name: '观察 0' }));
 
@@ -186,6 +264,7 @@ describe('AuctionList', () => {
     const { rerender } = render(
       <AuctionList
         data={{ ...response, status: 'stale', error: '竞价刷新失败' }}
+        quotes={quotes}
         isRefreshing={false}
         onRefresh={vi.fn()}
       />,
@@ -202,6 +281,7 @@ describe('AuctionList', () => {
           status: 'unavailable',
           error: '竞价上游数据获取失败',
         }}
+        quotes={{}}
         isRefreshing
         onRefresh={vi.fn()}
       />,

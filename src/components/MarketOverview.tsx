@@ -24,7 +24,7 @@ const getValueToneClass = (value: number | null | undefined): string => {
   return 'value--neutral';
 };
 
-const getMarketToneClass = (
+export const getMarketToneClass = (
   status: MarketIndex['status'],
   value: number | null | undefined,
 ): string => {
@@ -47,7 +47,7 @@ const getStatusText = (status: MarketIndex['status']): string | null => {
   return null;
 };
 
-const formatIndexValue = (value: number | null): string => {
+export const formatIndexValue = (value: number | null): string => {
   if (value === null || !Number.isFinite(value)) {
     return '—';
   }
@@ -81,7 +81,7 @@ const formatIndexAmount = (value: number | null): string => {
   return String(Math.round(value));
 };
 
-const formatSignedPercent = (value: number | null): string =>
+export const formatSignedPercent = (value: number | null): string =>
   value === null || !Number.isFinite(value)
     ? '—'
     : `${value >= 0 ? '+' : '-'}${formatPercent(Math.abs(value))}`;

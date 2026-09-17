@@ -4,6 +4,13 @@ import { SortableHeader } from './SortableHeader';
 import { formatLimitUpTag, type LimitUpInfoMap } from '../lib/limitUpInfo';
 import { formatPercent, formatPrice } from '../lib/quotes';
 import { useSortedRows, type SortValue } from '../lib/tableSort';
+import {
+  calculateWatchReturn,
+  formatWatchDate,
+  formatWatchDateTime,
+  formatWatchReturn,
+  watchDateSortValue,
+} from '../lib/watchlist';
 import type { Holding, QuoteMap } from '../types';
 
 type WatchlistSortKey =
@@ -13,7 +20,10 @@ type WatchlistSortKey =
   | 'change'
   | 'turnover'
   | 'volumeRatio'
-  | 'amount';
+  | 'amount'
+  | 'watchPrice'
+  | 'watchReturn'
+  | 'watchDate';
 
 type WatchlistProps = {
   holdings: Holding[];
@@ -44,6 +54,12 @@ const watchlistSortValues: Record<
     turnover: (holding, quotes) => quoteNumber(quotes, holding, (quote) => quote.turnover),
     volumeRatio: (holding, quotes) => quoteNumber(quotes, holding, (quote) => quote.volumeRatio),
     amount: (holding, quotes) => quoteNumber(quotes, holding, (quote) => quote.amount),
+    // 自选收益：只有「加入时记下了基准价」且现在有行情的行才有值，其余沉底
+    watchReturn: (holding, quotes) => calculateWatchReturn(holding, quotes[holding.symbol]),
+    // 自选日是 ISO 串，按字典序比就是时间序
+    watchDate: (holding) => watchDateSortValue(holding),
+    // 自选价：加入自选当时记下的基准价，缺的行沉底
+    watchPrice: (holding) => holding.watchPrice ?? null,
   };
 
 const getValueToneClass = (value: number | null | undefined): string => {
@@ -91,8 +107,7 @@ export const Watchlist = ({ holdings, quotes, onEdit, limitUpInfo = {} }: Watchl
     ),
   });
 
-  if (holdings.length === 0) {
-    return (
+  if (holdings.length === 0) {    return (
       <section className="card holding-list holding-list--empty">
         <p>当前范围暂无自选股票</p>
       </section>
@@ -121,6 +136,9 @@ export const Watchlist = ({ holdings, quotes, onEdit, limitUpInfo = {} }: Watchl
               {header('turnover', '换手')}
               {header('volumeRatio', '量比')}
               {header('amount', '成交额')}
+              {header('watchDate', '自选日')}
+              {header('watchPrice', '自选价')}
+              {header('watchReturn', '自选收益')}
             </tr>
           </thead>
           <tbody>
@@ -130,6 +148,13 @@ export const Watchlist = ({ holdings, quotes, onEdit, limitUpInfo = {} }: Watchl
               const isUp = pct !== null && pct > 0;
               /* 显示用行情名（拿不到行情时退回本地名），首字头像仍取本地名 */
               const displayName = quote?.name?.trim() || holding.name || holding.symbol;
+              /*
+               * 自选收益＝自选以来的涨跌幅，基准是「加入自选时记下的价」。
+               * 缺基准价（本功能上线前的旧记录、或加入时没行情）时是 null：
+               * 这时候显示「—」，不拿现价顶替（那会算出个假的 0%）。
+               */
+              const watchReturn = calculateWatchReturn(holding, quote);
+              const watchDateSource = holding.watchPriceAt ?? holding.createdAt;
 
               return (
                 <tr key={holding.id} className="quote-table__row">
@@ -169,6 +194,24 @@ export const Watchlist = ({ holdings, quotes, onEdit, limitUpInfo = {} }: Watchl
                   <td>{formatPercent(quote?.turnover ?? null)}</td>
                   <td>{formatRatio(quote?.volumeRatio ?? null)}</td>
                   <td>{formatAmount(quote?.amount ?? null)}</td>
+                  {/* 只到日；完整时刻（含秒）挂在悬停提示里，不占列宽 */}
+                  <td className="quote-table__watch-date" title={formatWatchDateTime(watchDateSource)}>
+                    {formatWatchDate(watchDateSource)}
+                  </td>
+                  {/* 自选收益的基准价（加入自选那一刻的价），和「自选收益」配成一组看 */}
+                  <td className="quote-table__watch-price">
+                    {formatPrice(holding.watchPrice ?? null)}
+                  </td>
+                  <td className="quote-table__watch-return">
+                    {watchReturn === null ? (
+                      '—'
+                    ) : (
+                      /* 带色百分比：涨红跌绿，和「涨跌幅」列同一套 value--rise/fall */
+                      <span className={`watch-pct ${getValueToneClass(watchReturn)}`}>
+                        {formatWatchReturn(watchReturn)}
+                      </span>
+                    )}
+                  </td>
                 </tr>
               );
             })}

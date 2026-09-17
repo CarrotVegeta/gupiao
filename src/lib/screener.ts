@@ -1,10 +1,17 @@
 import type {
+  CheckResult,
+  CheckState,
+  Evidence,
   Quote,
+  RelationState,
+  RoleTag,
+  ScanCoverage,
+  ScreenerDataStatus,
+  ThemeDetailResponseV2,
   ThemeItem,
   ThemeMetric,
-  ThemeStockItem,
-  ThemeStocksResponse,
-  ThemeStockRole,
+  ThemeRelation,
+  ThemeStockV2,
   ThemesResponse,
   TrendPick,
   TrendScanResponse,
@@ -16,29 +23,43 @@ const FORMAT_ERROR = '选股响应数据格式错误';
 
 /**
  * 回测结论，固定显示在形态扫描页头。
- * 来源：scripts/screener-trend-backtest.ts（114 个交易日 / 5532 只票）。
- * 这不是装饰文案——回测结论对不上实际用法时，页面就是在误导人。
+ * 2026-09-18 修正：不再用「已被回测否定 / 毒源」这类确定性表述，
+ * 改为审查报告第 8 节的受限结论——只说明本项目既有样本的观察结果与已知限制。
  */
 export const TREND_EVIDENCE = {
-  headline: '这套形态已被本项目回测否定，方向与直觉相反',
+  headline: '本项目既有样本中，原五条件组合未表现出收益优势',
   lines: [
     '全市场命中形态：次日开盘超额 −0.141%（t=−2.56），T+10 −1.440%（t=−3.28）',
     '主线板块 ∩ 形态：次日开盘 −0.162%（t=−2.60），T+10 −1.788%（t=−3.73）—— 加「主线」过滤反而更差',
-    '配对检验（加主线过滤）：T+1 −0.173%（t=−2.53）',
-    '归因：只加「MA5>MA10>MA20」这一步，主线池 T+10 超额从 +0.084% 崩到 −2.426%（t=−2.25）',
-    '唯一有正面作用的是「回调缩量」，但救不回整体',
+    '归因线索：只加「MA5>MA10>MA20」这一步，主线池 T+10 超额从 +0.084% 到 −2.426%（t=−2.25）',
+    '该研究存在历史归属、入场口径、样本重叠等限制，不代表所有趋势方法无效',
   ],
-  footer: '样本 2026-02-26 ~ 2026-09-16，114 个交易日，超额口径为「相对当日全市场等权」。本页只展示形态分布，不构成任何买入建议。',
+  footer:
+    '样本 2026-02-26 ~ 2026-09-16，114 个交易日，超额口径为「相对当日全市场等权」。页面用于形态与题材结构观察，不构成任何买入建议。',
 } as const;
 
 export const THEME_EVIDENCE =
-  '题材分类是结构展示：主线板块本身在回测里有微弱正超额（B 档 T+1 +0.059%，t=2.03），但样本外衰减且低于手续费，同样不构成买入建议。';
+  '题材分类是结构展示：主线板块本身在回测里有微弱正超额（B 档 T+1 +0.059%，t=2.03），但样本外衰减且低于手续费，同样不构成买入建议。静态概念归属不等于本轮题材驱动。';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
 const isStatus = (value: unknown): value is Quote['status'] =>
   value === 'fresh' || value === 'stale' || value === 'unavailable';
+
+/** v2 的四态数据状态：partial 是「有可用结果但有缺失」，不能被当成空列表 */
+const isDataStatus = (value: unknown): value is ScreenerDataStatus =>
+  value === 'fresh' || value === 'partial' || value === 'stale' || value === 'unavailable';
+
+const isCheckState = (value: unknown): value is CheckState =>
+  value === 'pass' || value === 'fail' || value === 'pending' || value === 'missing';
+
+const isRelationState = (value: unknown): value is RelationState =>
+  value === 'supported' ||
+  value === 'possible' ||
+  value === 'membership_only' ||
+  value === 'other_driver' ||
+  value === 'unknown';
 
 const isParseableDateTime = (value: unknown): value is string =>
   typeof value === 'string' && !Number.isNaN(new Date(value).getTime());
@@ -56,6 +77,9 @@ const isMetric = (value: unknown): value is ThemeMetric =>
   typeof value.hit === 'boolean' &&
   typeof value.value === 'string' &&
   typeof value.detail === 'string';
+
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === 'string');
 
 const isThemeItem = (value: unknown): value is ThemeItem =>
   isRecord(value) &&
@@ -75,9 +99,74 @@ const isThemeItem = (value: unknown): value is ThemeItem =>
   (value.leader === null || isRecord(value.leader)) &&
   Array.isArray(value.metrics) &&
   value.metrics.every(isMetric) &&
-  typeof value.score === 'number';
+  typeof value.score === 'number' &&
+  // v2 新增：分类依据与三个口径的家数（缺失必须是 null，不能是 0）
+  isStringArray(value.classificationReasons) &&
+  isNullableNumber(value.conceptLimitUpCount) &&
+  isNullableNumber(value.supportedLimitUpCount) &&
+  isNullableNumber(value.unresolvedLimitUpCount);
 
-const isThemeStockItem = (value: unknown): value is ThemeStockItem =>
+const isScanCoverage = (value: unknown): value is ScanCoverage =>
+  isRecord(value) &&
+  typeof value.total === 'number' &&
+  typeof value.attempted === 'number' &&
+  typeof value.succeeded === 'number' &&
+  typeof value.failed === 'number' &&
+  typeof value.unscanned === 'number' &&
+  value.attempted === value.succeeded + value.failed &&
+  value.total === value.attempted + value.unscanned;
+
+const isEvidence = (value: unknown): value is Evidence =>
+  isRecord(value) &&
+  typeof value.id === 'string' &&
+  typeof value.themeCode === 'string' &&
+  typeof value.symbol === 'string' &&
+  (value.sourceKind === 'limit_up_reason' ||
+    value.sourceKind === 'announcement' ||
+    value.sourceKind === 'event' ||
+    value.sourceKind === 'manual') &&
+  typeof value.sourceName === 'string' &&
+  (value.sourceUrl === null || typeof value.sourceUrl === 'string') &&
+  typeof value.text === 'string' &&
+  (value.publishedAt === null || typeof value.publishedAt === 'string') &&
+  typeof value.observedAt === 'string' &&
+  typeof value.validTradeDate === 'string' &&
+  (value.topicKey === null || typeof value.topicKey === 'string') &&
+  (value.match === 'exact' || value.match === 'ambiguous' || value.match === 'unrelated');
+
+const isRelation = (value: unknown): value is ThemeRelation =>
+  isRecord(value) &&
+  isRelationState(value.state) &&
+  isStringArray(value.evidenceIds) &&
+  isStringArray(value.reasons) &&
+  isStringArray(value.alternativeThemeCodes) &&
+  isStringArray(value.topicKeys) &&
+  typeof value.asOf === 'string';
+
+const isCheckResult = (value: unknown): value is CheckResult =>
+  isRecord(value) &&
+  typeof value.key === 'string' &&
+  isCheckState(value.state) &&
+  (value.value === null ||
+    typeof value.value === 'number' ||
+    typeof value.value === 'string' ||
+    typeof value.value === 'boolean') &&
+  typeof value.reason === 'string' &&
+  isStringArray(value.evidenceIds);
+
+const isRoleTag = (value: unknown): value is RoleTag =>
+  isRecord(value) &&
+  (value.role === 'leader' ||
+    value.role === 'turnover' ||
+    value.role === 'trend' ||
+    value.role === 'laggard') &&
+  (value.status === 'candidate' || value.status === 'confirmed') &&
+  isStringArray(value.reasons) &&
+  isStringArray(value.missingEvidence) &&
+  typeof value.assignedAt === 'string' &&
+  typeof value.ruleVersion === 'string';
+
+const isThemeStockV2 = (value: unknown): value is ThemeStockV2 =>
   isRecord(value) &&
   typeof value.symbol === 'string' &&
   /^\d{6}$/.test(value.symbol) &&
@@ -86,30 +175,21 @@ const isThemeStockItem = (value: unknown): value is ThemeStockItem =>
   isNullableNumber(value.price) &&
   isNullableNumber(value.pct) &&
   isNullableNumber(value.boardCount) &&
-  (value.firstSealTime === null || typeof value.firstSealTime === 'string') &&
-  (value.sealType === null || typeof value.sealType === 'string') &&
-  isNullableNumber(value.openCount) &&
-  isNullableNumber(value.sealAmount) &&
   isNullableNumber(value.turnoverRate) &&
   isNullableNumber(value.amount) &&
-  isNullableNumber(value.avgAmount3d) &&
-  isNullableNumber(value.avgAmount5d) &&
   isNullableNumber(value.floatMarketCap) &&
-  (value.reason === null || typeof value.reason === 'string') &&
-  (value.precise === null || typeof value.precise === 'boolean') &&
-  Array.isArray(value.hits) &&
-  Array.isArray(value.misses) &&
-  Array.isArray(value.risks) &&
-  isNullableNumber(value.ma5) &&
-  isNullableNumber(value.ma10) &&
-  isNullableNumber(value.ma20) &&
-  (value.maBull === null || typeof value.maBull === 'boolean') &&
-  isNullableNumber(value.distMa5) &&
-  isNullableNumber(value.distMa10) &&
-  isNullableNumber(value.stableDays10) &&
-  isNullableNumber(value.pct10) &&
-  isNullableNumber(value.pct20) &&
-  isNullableNumber(value.limitUpIn60d);
+  isRelation(value.relation) &&
+  Array.isArray(value.roles) &&
+  value.roles.every(isRoleTag) &&
+  isRecord(value.checks) &&
+  Object.values(value.checks).every(
+    (list) => Array.isArray(list) && list.every(isCheckResult),
+  ) &&
+  (value.metricsState === 'ready' ||
+    value.metricsState === 'missing' ||
+    value.metricsState === 'failed') &&
+  isTradeDate(value.metricsTradeDate) &&
+  typeof value.risksChecked === 'boolean';
 
 const isTrendPick = (value: unknown): value is TrendPick =>
   isRecord(value) &&
@@ -136,30 +216,38 @@ const isTrendPick = (value: unknown): value is TrendPick =>
 // ---------------------------------------------------------------------------
 
 export const unavailableThemes = (error: string | null = FORMAT_ERROR): ThemesResponse => ({
+  schemaVersion: 2,
   tradeDate: null,
   main: [],
   branch: [],
+  pending: [],
   fetchedAt: new Date().toISOString(),
   source: 'eastmoney+10jqka',
   status: 'unavailable',
+  warnings: [],
   error,
 });
 
 export const toThemesResponse = (payload: unknown): ThemesResponse => {
   if (
     !isRecord(payload) ||
+    payload.schemaVersion !== 2 ||
     !Array.isArray(payload.main) ||
     !payload.main.every(isThemeItem) ||
     !Array.isArray(payload.branch) ||
     !payload.branch.every(isThemeItem) ||
-    !isStatus(payload.status) ||
+    !Array.isArray(payload.pending) ||
+    !payload.pending.every(isThemeItem) ||
+    !isDataStatus(payload.status) ||
     !isTradeDate(payload.tradeDate) ||
     !isParseableDateTime(payload.fetchedAt) ||
+    !isStringArray(payload.warnings) ||
     !(typeof payload.error === 'string' || payload.error === null)
   ) {
     return unavailableThemes(FORMAT_ERROR);
   }
 
+  // fresh 不允许带 error；partial 允许（有可用结果 + 明确缺口）
   if (payload.status === 'fresh' && (payload.tradeDate === null || payload.error !== null)) {
     return unavailableThemes(FORMAT_ERROR);
   }
@@ -169,12 +257,15 @@ export const toThemesResponse = (payload: unknown): ThemesResponse => {
   }
 
   return {
+    schemaVersion: 2,
     tradeDate: payload.tradeDate,
     main: payload.main,
     branch: payload.branch,
+    pending: payload.pending,
     fetchedAt: payload.fetchedAt,
     source: 'eastmoney+10jqka',
     status: payload.status,
+    warnings: payload.warnings,
     error: payload.error,
   };
 };
@@ -183,7 +274,8 @@ export const fetchThemes = async (
   date?: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<ThemesResponse> => {
-  const url = typeof date === 'string' ? `${THEMES_ENDPOINT}?date=${encodeURIComponent(date)}` : THEMES_ENDPOINT;
+  const url =
+    typeof date === 'string' ? `${THEMES_ENDPOINT}?date=${encodeURIComponent(date)}` : THEMES_ENDPOINT;
   const response = await fetchImpl(url);
   if (!response.ok) throw new Error(`题材请求失败（${response.status}）`);
 
@@ -198,88 +290,109 @@ export const mergeThemes = (
   previous: ThemesResponse | null | undefined,
   response: ThemesResponse,
 ): ThemesResponse => {
-  if (response.status === 'fresh') return response;
+  if (response.status === 'fresh' || response.status === 'partial') return response;
   const usable =
     previous != null &&
     previous.tradeDate !== null &&
-    (previous.status === 'fresh' || previous.status === 'stale');
-  if (!usable) return { ...response, tradeDate: null, main: [], branch: [], status: 'unavailable' };
+    (previous.status === 'fresh' || previous.status === 'partial' || previous.status === 'stale');
+  if (!usable) {
+    return {
+      ...response,
+      tradeDate: null,
+      main: [],
+      branch: [],
+      pending: [],
+      status: 'unavailable',
+    };
+  }
   return { ...previous, status: 'stale', error: response.error };
 };
 
 // ---------------------------------------------------------------------------
-// 题材详情
+// 题材详情（v2：一张表 + 角色标签）
 // ---------------------------------------------------------------------------
 
-export const unavailableThemeStocks = (
-  role: ThemeStockRole,
+export const unavailableThemeDetail = (
   error: string | null = FORMAT_ERROR,
-): ThemeStocksResponse => ({
+): ThemeDetailResponseV2 => ({
+  schemaVersion: 2,
+  ruleVersion: 'unknown',
   tradeDate: null,
+  asOf: new Date().toISOString(),
   theme: null,
-  role,
   items: [],
-  scanned: 0,
-  fetchedAt: new Date().toISOString(),
-  source: 'eastmoney+10jqka+tencent',
+  evidence: [],
+  coverage: { total: 0, attempted: 0, succeeded: 0, failed: 0, unscanned: 0 },
   status: 'unavailable',
+  warnings: [],
   error,
 });
 
-export const toThemeStocksResponse = (
-  payload: unknown,
-  role: ThemeStockRole,
-): ThemeStocksResponse => {
+export const toThemeDetailResponse = (payload: unknown): ThemeDetailResponseV2 => {
   if (
     !isRecord(payload) ||
-    !Array.isArray(payload.items) ||
-    !payload.items.every(isThemeStockItem) ||
-    !isStatus(payload.status) ||
+    payload.schemaVersion !== 2 ||
+    typeof payload.ruleVersion !== 'string' ||
     !isTradeDate(payload.tradeDate) ||
-    !isParseableDateTime(payload.fetchedAt) ||
+    !isParseableDateTime(payload.asOf) ||
+    !Array.isArray(payload.items) ||
+    !payload.items.every(isThemeStockV2) ||
+    !Array.isArray(payload.evidence) ||
+    !payload.evidence.every(isEvidence) ||
+    !isScanCoverage(payload.coverage) ||
+    !isDataStatus(payload.status) ||
+    !isStringArray(payload.warnings) ||
     !(typeof payload.error === 'string' || payload.error === null) ||
-    !(payload.theme === null || isRecord(payload.theme)) ||
-    typeof payload.scanned !== 'number'
+    !(payload.theme === null || isRecord(payload.theme))
   ) {
-    return unavailableThemeStocks(role, FORMAT_ERROR);
+    return unavailableThemeDetail(FORMAT_ERROR);
+  }
+
+  if (payload.status === 'fresh' && (payload.tradeDate === null || payload.error !== null)) {
+    return unavailableThemeDetail(FORMAT_ERROR);
   }
 
   if (payload.status === 'unavailable') {
-    return unavailableThemeStocks(role, payload.error);
+    return { ...unavailableThemeDetail(payload.error), asOf: payload.asOf };
   }
 
-  const themeRecord = isRecord(payload.theme) ? payload.theme : null;
+  const theme = isRecord(payload.theme) ? payload.theme : null;
   return {
+    schemaVersion: 2,
+    ruleVersion: payload.ruleVersion,
     tradeDate: payload.tradeDate,
+    asOf: payload.asOf,
     theme:
-      themeRecord && typeof themeRecord.code === 'string' && typeof themeRecord.name === 'string'
-        ? { code: themeRecord.code, name: themeRecord.name }
+      theme && typeof theme.code === 'string' && typeof theme.name === 'string'
+        ? { code: theme.code, name: theme.name }
         : null,
-    role,
     items: payload.items,
-    scanned: payload.scanned,
-    fetchedAt: payload.fetchedAt,
-    source: 'eastmoney+10jqka+tencent',
+    evidence: payload.evidence,
+    coverage: payload.coverage,
     status: payload.status,
+    warnings: payload.warnings,
     error: payload.error,
   };
 };
 
-export const fetchThemeStocks = async (
+/** 题材详情请求：支持 AbortSignal，用于「最新请求保护」 */
+export const fetchThemeDetail = async (
   code: string,
-  role: ThemeStockRole,
   date?: string,
+  signal?: AbortSignal,
   fetchImpl: typeof fetch = fetch,
-): Promise<ThemeStocksResponse> => {
-  const params = new URLSearchParams({ role });
+): Promise<ThemeDetailResponseV2> => {
+  const params = new URLSearchParams();
   if (typeof date === 'string') params.set('date', date);
+  const query = params.toString();
   const response = await fetchImpl(
-    `${THEMES_ENDPOINT}/${encodeURIComponent(code)}/stocks?${params.toString()}`,
+    `${THEMES_ENDPOINT}/${encodeURIComponent(code)}/detail${query ? `?${query}` : ''}`,
+    signal ? { signal } : undefined,
   );
   if (!response.ok) throw new Error(`题材详情请求失败（${response.status}）`);
 
   try {
-    return toThemeStocksResponse(await response.json(), role);
+    return toThemeDetailResponse(await response.json());
   } catch {
     throw new Error(FORMAT_ERROR);
   }
@@ -289,13 +402,36 @@ export const fetchThemeStocks = async (
 // 趋势形态扫描
 // ---------------------------------------------------------------------------
 
-export const unavailableTrend = (error: string | null = FORMAT_ERROR): TrendScanResponse => ({
+/**
+ * 趋势扫描响应在基础契约之上带覆盖披露字段（coverage / matchedTotal / returnedCount /
+ * truncated / metricsTradeDate / quoteAsOf）。这些字段缺失时降级为「未披露」，
+ * 但不会因此把响应整体判为格式错误。
+ */
+export type TrendCoverage = {
+  total: number;
+  attempted: number;
+  succeeded: number;
+  failed: number;
+  unscanned: number;
+};
+
+export type TrendScanResponseV2 = TrendScanResponse & {
+  coverage: TrendCoverage | null;
+  matchedTotal: number | null;
+  returnedCount: number | null;
+  truncated: boolean;
+  metricsTradeDate: string | null;
+  quoteAsOf: string | null;
+};
+
+export const unavailableTrend = (error: string | null = FORMAT_ERROR): TrendScanResponseV2 => ({
   tradeDate: null,
   items: [],
   scanned: 0,
   candidates: 0,
   filters: {
-    themeScope: 'main',
+    // 板块范围已取消：趋势一律全市场
+    themeScope: 'all',
     maxMa5Dist: 4,
     maxPct: 20,
     pctWindow: 10,
@@ -309,9 +445,31 @@ export const unavailableTrend = (error: string | null = FORMAT_ERROR): TrendScan
   source: 'eastmoney+10jqka',
   status: 'unavailable',
   error,
+  coverage: null,
+  matchedTotal: null,
+  returnedCount: null,
+  truncated: false,
+  metricsTradeDate: null,
+  quoteAsOf: null,
 });
 
-export const toTrendScanResponse = (payload: unknown): TrendScanResponse => {
+const readCoverage = (value: unknown): TrendCoverage | null =>
+  isRecord(value) &&
+  typeof value.total === 'number' &&
+  typeof value.attempted === 'number' &&
+  typeof value.succeeded === 'number' &&
+  typeof value.failed === 'number' &&
+  typeof value.unscanned === 'number'
+    ? {
+        total: value.total,
+        attempted: value.attempted,
+        succeeded: value.succeeded,
+        failed: value.failed,
+        unscanned: value.unscanned,
+      }
+    : null;
+
+export const toTrendScanResponse = (payload: unknown): TrendScanResponseV2 => {
   if (
     !isRecord(payload) ||
     !Array.isArray(payload.items) ||
@@ -349,19 +507,27 @@ export const toTrendScanResponse = (payload: unknown): TrendScanResponse => {
     source: payload.status === 'fresh' ? 'eastmoney+10jqka' : 'eastmoney',
     status: payload.status,
     error: payload.error,
+    coverage: readCoverage(payload.coverage),
+    matchedTotal: isNullableNumber(payload.matchedTotal) ? payload.matchedTotal : null,
+    returnedCount: isNullableNumber(payload.returnedCount) ? payload.returnedCount : null,
+    truncated: payload.truncated === true,
+    metricsTradeDate:
+      typeof payload.metricsTradeDate === 'string' ? payload.metricsTradeDate : null,
+    quoteAsOf: typeof payload.quoteAsOf === 'string' ? payload.quoteAsOf : null,
   };
 };
 
 export const fetchTrendScan = async (
   filters: Partial<TrendScanResponse['filters']>,
   fetchImpl: typeof fetch = fetch,
-): Promise<TrendScanResponse> => {
+  signal?: AbortSignal,
+): Promise<TrendScanResponseV2> => {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) {
     if (value === undefined || value === null) continue;
     params.set(key, String(value));
   }
-  const response = await fetchImpl(`${TREND_ENDPOINT}?${params.toString()}`);
+  const response = await fetchImpl(`${TREND_ENDPOINT}?${params.toString()}`, signal ? { signal } : undefined);
   if (!response.ok) throw new Error(`形态扫描请求失败（${response.status}）`);
 
   try {

@@ -15,10 +15,15 @@
  *   主线 = 涨停家数 ≥5 且 8 项命中 ≥5
  *   支线 = 其余且涨停家数 ≥2
  * 因为「涨停家数」是必要条件——家数不到 5 只，其他项再好也不是主线。
+ *
+ * 上面这套 8 项凑分的 v1 口径**只保留为观察指标**（页面上仍逐项展示），
+ * 主线/支线/待确认的资格改由 `classifyThemeV2` 判定：只用明确的家数与持续性，
+ * 且数据缺失一律 pending，不用其它项把缺口补上。
  */
 import type {
   ThemeItem,
   ThemeKind,
+  ThemeKindV2,
   ThemeLeader,
   ThemeMetric,
   ThemeMetricKey,
@@ -365,5 +370,195 @@ export const toThemeItem = (input: ThemeClassifyInput): ThemeItem | null => {
     leader: classification.leader,
     metrics: classification.metrics,
     score: classification.score,
+    // 旧的 8 项凑分只作观察：v2 资格由 classifyThemeV2 覆盖
+    classificationReasons: [
+      `旧口径 8 项命中 ${classification.score}/8（仅观察，不决定主线资格）`,
+    ],
+    conceptLimitUpCount: classification.limitUpCount,
+    supportedLimitUpCount: null,
+    unresolvedLimitUpCount: null,
   };
+};
+
+/**
+ * 在旧口径 ThemeItem 的基础上写入 v2 分类结果。
+ * `kind` 保留旧枚举（pending 归到 branch），v2 的三分类以 `classificationReasons`
+ * 与总览的 pending 列表表达，避免为一个展示字段引入第二套结构。
+ */
+export const toThemeItemV2 = (
+  input: ThemeClassifyInput,
+  classification: ThemeClassificationV2,
+  counts: { concept: number | null; supported: number | null; unresolved: number | null },
+): ThemeItem | null => {
+  const legacy = toThemeItem(input);
+  if (legacy === null) return null;
+  return {
+    ...legacy,
+    kind: classification.kind === 'pending' ? 'branch' : classification.kind,
+    classificationReasons: classification.reasons,
+    conceptLimitUpCount: counts.concept,
+    supportedLimitUpCount: counts.supported,
+    unresolvedLimitUpCount: counts.unresolved,
+  };
+};
+
+// ---------------------------------------------------------------------------
+// v2：主线 / 支线 / 待确认
+// ---------------------------------------------------------------------------
+
+/** 主线资格：当日驱动有依据家数下限 */
+export const MAIN_SUPPORTED_TODAY_FLOOR = 5;
+/** 主线资格：前两个有效交易日各自的下限 */
+export const MAIN_SUPPORTED_PREVIOUS_FLOOR = 2;
+/** 支线资格：当日驱动有依据家数下限 */
+export const BRANCH_SUPPORTED_TODAY_FLOOR = 2;
+/** 概念活跃下限：只有当天概念涨停 ≥2 才进入列表（避免把全目录都显示为待确认） */
+export const CONCEPT_ACTIVE_FLOOR = 2;
+
+export type ThemeDayEvidence = {
+  /** YYYYMMDD */
+  date: string;
+  conceptCount: number | null;
+  supportedCount: number | null;
+  unresolvedCount: number | null;
+  /** 该日基础数据是否完整；不完整不能据此排除主线 */
+  complete: boolean;
+};
+
+export type ThemeClassificationV2 = {
+  kind: ThemeKindV2;
+  reasons: string[];
+  /** 今天没到活跃门槛（家数不足），但题材仍值得保留展示 */
+  belowActiveFloor: boolean;
+  /** 是否进入列表（当日概念活跃，或昨日已跟踪的题材） */
+  listed: boolean;
+};
+
+const formatCount = (value: number | null): string => (value === null ? '缺失' : `${value}`);
+
+/** YYYYMMDD 之间是否只差一个自然日（周末缺口也会被识别出来） */
+export const isNextCalendarDay = (older: string, newer: string): boolean => {
+  if (!/^\d{8}$/.test(older) || !/^\d{8}$/.test(newer)) return false;
+  const toTime = (value: string): number =>
+    Date.UTC(Number(value.slice(0, 4)), Number(value.slice(4, 6)) - 1, Number(value.slice(6, 8)));
+  return Math.round((toTime(newer) - toTime(older)) / 86_400_000) === 1;
+};
+
+/**
+ * v2 分类规则（v1 建议默认值，只用明确的家数与持续性）：
+ *   - 使用最近 3 个有效交易日（不是自然日），日期缺口不能跳过；
+ *   - 今天驱动有依据 ≥5 且前两日各 ≥2 → main；
+ *   - 数据不足以证明 main（不足 3 日、计数缺失，或未决成员可能补足）→ pending；
+ *   - 数据足以排除 main 且今天 ≥2 → branch；
+ *   - 其它 → pending；只有当日概念活跃或已跟踪的题材才进入列表。
+ *
+ * `daysNewestFirst[0]` 必须是当天。历史日的 supportedCount 目前只能给出概念口径下界时，
+ * 调用方应把 `complete` 置 false，函数会因此判 pending 而不是假装达标。
+ */
+export const classifyThemeV2 = (
+  daysNewestFirst: ThemeDayEvidence[],
+  options: { previouslyTracked?: boolean } = {},
+): ThemeClassificationV2 => {
+  const [today, ...previous] = daysNewestFirst;
+  const reasons: string[] = [];
+
+  if (!today) {
+    return {
+      kind: 'pending',
+      reasons: ['没有当日数据，无法分类'],
+      belowActiveFloor: true,
+      listed: options.previouslyTracked === true,
+    };
+  }
+
+  const todayConcept = today.conceptCount;
+  const todaySupported = today.supportedCount;
+  const todayUnresolved = today.unresolvedCount ?? 0;
+  const belowActiveFloor = todayConcept !== null && todayConcept < CONCEPT_ACTIVE_FLOOR;
+  const listed =
+    options.previouslyTracked === true ||
+    (todayConcept !== null && todayConcept >= CONCEPT_ACTIVE_FLOOR);
+
+  if (belowActiveFloor) {
+    reasons.push(
+      `今日概念涨停 ${formatCount(todayConcept)} 只，未达活跃门槛 ≥${CONCEPT_ACTIVE_FLOOR}（今日未达活跃门槛，不据此判断阶段）`,
+    );
+  }
+
+  const window = daysNewestFirst.slice(0, 3);
+  if (window.length < 3) {
+    reasons.push(`只有 ${window.length} 个有效交易日数据，不足 3 日（不足以证明主线）`);
+  }
+
+  const datesContinuous =
+    window.length === 3 &&
+    isNextCalendarDay(window[1].date, window[0].date) &&
+    isNextCalendarDay(window[2].date, window[1].date);
+  const countsKnown =
+    window.length === 3 &&
+    window.every((day) => day.supportedCount !== null && day.unresolvedCount !== null);
+  const countsComplete = window.length === 3 && window.every((day) => day.complete);
+
+  const mainTodayOk =
+    todaySupported !== null && todaySupported >= MAIN_SUPPORTED_TODAY_FLOOR;
+  const mainPreviousOk =
+    previous.length >= 2 &&
+    previous[0].supportedCount !== null &&
+    previous[1].supportedCount !== null &&
+    previous[0].supportedCount >= MAIN_SUPPORTED_PREVIOUS_FLOOR &&
+    previous[1].supportedCount >= MAIN_SUPPORTED_PREVIOUS_FLOOR;
+
+  if (datesContinuous && countsKnown && mainTodayOk && mainPreviousOk) {
+    reasons.push(
+      `最近 3 个交易日驱动有依据家数 ${window.map((day) => day.supportedCount).join('/')}，` +
+        `满足当日 ≥${MAIN_SUPPORTED_TODAY_FLOOR} 且前两日各 ≥${MAIN_SUPPORTED_PREVIOUS_FLOOR}`,
+    );
+    if (!countsComplete || todayUnresolved > 0) {
+      reasons.push('仍有未决 / 数据缺失成员，覆盖不足（不改变已达成的正面资格）');
+    }
+    return { kind: 'main', reasons, belowActiveFloor, listed: true };
+  }
+
+  // 还不能证明 main：证据不足，或未决成员有可能补足门槛
+  const missingData =
+    !datesContinuous || !countsKnown || window.some((day) => !day.complete);
+  const todayCouldReach =
+    todaySupported !== null && todaySupported + todayUnresolved >= MAIN_SUPPORTED_TODAY_FLOOR;
+
+  if (missingData || todayCouldReach) {
+    if (
+      todaySupported !== null &&
+      todaySupported + todayUnresolved >= MAIN_SUPPORTED_TODAY_FLOOR &&
+      todaySupported < MAIN_SUPPORTED_TODAY_FLOOR
+    ) {
+      reasons.push(
+        `当日驱动有依据 ${todaySupported} 只 + 未决 ${todayUnresolved} 只可能补足 ≥${MAIN_SUPPORTED_TODAY_FLOOR}，暂不能排除主线`,
+      );
+    }
+    for (const day of previous.slice(0, 2)) {
+      if (
+        day.supportedCount !== null &&
+        day.supportedCount < MAIN_SUPPORTED_PREVIOUS_FLOOR &&
+        day.supportedCount + (day.unresolvedCount ?? 0) >= MAIN_SUPPORTED_PREVIOUS_FLOOR
+      ) {
+        reasons.push(
+          `${day.date} 驱动有依据 ${day.supportedCount} 只 + 未决 ${day.unresolvedCount ?? 0} 只` +
+            `可能补足 ≥${MAIN_SUPPORTED_PREVIOUS_FLOOR}，暂不能排除主线`,
+        );
+      }
+    }
+    if (missingData) reasons.push('历史覆盖或计数缺失，暂不能证明也不能排除主线');
+    return { kind: 'pending', reasons, belowActiveFloor, listed };
+  }
+
+  if (todaySupported !== null && todaySupported >= BRANCH_SUPPORTED_TODAY_FLOOR) {
+    reasons.push(
+      `当日驱动有依据 ${todaySupported} 只（≥${BRANCH_SUPPORTED_TODAY_FLOOR}），` +
+        `样本足够排除主线要求（当日 ≥${MAIN_SUPPORTED_TODAY_FLOOR} 且前两日各 ≥${MAIN_SUPPORTED_PREVIOUS_FLOOR}）`,
+    );
+    return { kind: 'branch', reasons, belowActiveFloor, listed: true };
+  }
+
+  reasons.push('家数与持续性都不足以给出分支判断');
+  return { kind: 'pending', reasons, belowActiveFloor, listed };
 };

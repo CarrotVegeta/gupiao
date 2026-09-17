@@ -1,5 +1,6 @@
 import type { ThemeItem, ThemesResponse } from '../types';
 import { THEME_EVIDENCE } from '../lib/screener';
+import { WarningNotesPanel, WarningNotesToggle, useWarningNotes } from './WarningNotes';
 
 type ThemeBoardProps = {
   data: ThemesResponse;
@@ -16,9 +17,9 @@ const formatTradeDate = (value: string | null): string =>
     ? `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`
     : '—';
 
-/** 8 个指标的小圆点：命中填色，未命中空心，鼠标悬停看判定依据 */
+/** 8 个旧指标的小圆点：只作观察，不决定主线资格 */
 const MetricDots = ({ theme }: { theme: ThemeItem }) => (
-  <span className="theme-metrics" aria-label={`命中 ${theme.score} / 8 项指标`}>
+  <span className="theme-metrics" aria-label={`旧口径命中 ${theme.score} / 8 项指标（仅观察）`}>
     {theme.metrics.map((metric) => (
       <span
         key={metric.key}
@@ -29,6 +30,20 @@ const MetricDots = ({ theme }: { theme: ThemeItem }) => (
   </span>
 );
 
+const CountSummary = ({ theme }: { theme: ThemeItem }) => (
+  <span className="theme-card__counts">
+    <span title="概念成员涨停数（含仅概念归属）">
+      概念涨停 <b>{theme.conceptLimitUpCount ?? '—'}</b>
+    </span>
+    <span title="本轮驱动有依据的涨停数">
+      驱动有依据 <b>{theme.supportedLimitUpCount ?? '—'}</b>
+    </span>
+    <span title="有概念归属但本轮关联未确认">
+      待确认 <b>{theme.unresolvedLimitUpCount ?? '—'}</b>
+    </span>
+  </span>
+);
+
 const ThemeCard = ({
   theme,
   onSelect,
@@ -36,7 +51,7 @@ const ThemeCard = ({
 }: {
   theme: ThemeItem;
   onSelect: (theme: ThemeItem) => void;
-  tone: 'main' | 'branch';
+  tone: 'main' | 'branch' | 'pending';
 }) => (
   <button
     className={`theme-card theme-card--${tone}`}
@@ -50,31 +65,34 @@ const ThemeCard = ({
         {formatPct(theme.pct)}
       </span>
     </span>
+    <CountSummary theme={theme} />
     <span className="theme-card__stats">
-      <span>
-        涨停 <b>{theme.limitUpCount}</b> 只
-      </span>
       <span>
         最高 <b>{theme.maxBoardLabel ?? '—'}</b>
       </span>
       <span>
         持续 <b>{theme.durationDays}</b> 天
       </span>
-      <span>
-        评分 <b>{theme.score}/8</b>
+      <span title="旧 8 项口径的命中数，仅作观察">
+        旧口径 <b>{theme.score}/8</b>
       </span>
     </span>
+    {theme.classificationReasons.length > 0 ? (
+      <span className="theme-card__reason">{theme.classificationReasons.join('；')}</span>
+    ) : null}
     <span className="theme-card__foot">
       <MetricDots theme={theme} />
       <span className="theme-card__leader">
-        {theme.leader ? `龙头 ${theme.leader.name}` : '龙头 —'}
+        {theme.leader ? `高度标杆 ${theme.leader.name}` : '高度标杆 —'}
       </span>
     </span>
   </button>
 );
 
 export const ThemeBoard = ({ data, isRefreshing, onRefresh, onSelect }: ThemeBoardProps) => {
-  const hasData = data.main.length > 0 || data.branch.length > 0;
+  const hasData = data.main.length > 0 || data.branch.length > 0 || data.pending.length > 0;
+  /** 数据说明与限制的开关：按钮在标题行，正文面板在表头下面 */
+  const notes = useWarningNotes();
 
   return (
     <>
@@ -82,14 +100,27 @@ export const ThemeBoard = ({ data, isRefreshing, onRefresh, onSelect }: ThemeBoa
         <div className="overview__header">
           <div>
             <p className="eyebrow">主线题材</p>
-            <h2 id="theme-main-title">主线题材</h2>
+            <div className="theme-title-row">
+              <h2 id="theme-main-title">主线题材</h2>
+              {/* 按钮紧跟标题；正文面板在表头外面（见下方），展开不会挤动右侧刷新按钮 */}
+              <WarningNotesToggle
+                title="数据说明与限制"
+                count={data.warnings.length}
+                tooltip="题材家数 / 归属缺口与口径限制；覆盖不足的部分不做结论"
+                open={notes.open}
+                panelId={notes.panelId}
+                onToggle={notes.toggle}
+              />
+            </div>
           </div>
           <div className="overview__actions limit-up-list__actions">
             <p className="overview__meta">
-              交易日：<span>{formatTradeDate(data.tradeDate)}</span>
+              交易日：<span>{formatTradeDate(data.tradeDate)}</span> · 数据状态：
+              <span>{data.status}</span>
             </p>
             <p className="overview__meta">
-              主线：<span>{data.main.length} 个</span> · 支线：<span>{data.branch.length} 个</span>
+              主线：<span>{data.main.length} 个</span> · 支线：<span>{data.branch.length} 个</span> ·
+              待确认：<span>{data.pending.length} 个</span>
             </p>
             <button
               className="button button--secondary"
@@ -101,6 +132,22 @@ export const ThemeBoard = ({ data, isRefreshing, onRefresh, onSelect }: ThemeBoa
             </button>
           </div>
         </div>
+
+        {/* 数据说明与限制的正文：在表头外面，展开时把下面内容推下去，不动右侧刷新按钮 */}
+        <WarningNotesPanel panelId={notes.panelId} open={notes.open}>
+          {data.status === 'partial' ? (
+            <p className="warning-notes__headline">
+              题材数据部分可用：有家数或归属缺口，覆盖不足的部分不做结论。
+            </p>
+          ) : null}
+          {data.warnings.length > 0 ? (
+            <ul className="warning-notes__list">
+              {data.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          ) : null}
+        </WarningNotesPanel>
 
         <p className="status-note">{THEME_EVIDENCE}</p>
 
@@ -136,7 +183,7 @@ export const ThemeBoard = ({ data, isRefreshing, onRefresh, onSelect }: ThemeBoa
           <div className="overview__header">
             <div>
               <p className="eyebrow">支线题材</p>
-              <h2 id="theme-branch-title">支线题材（涨停 2~4 只）</h2>
+              <h2 id="theme-branch-title">支线题材</h2>
             </div>
             <p className="overview__meta">
               共 <span>{data.branch.length} 个</span>
@@ -145,6 +192,25 @@ export const ThemeBoard = ({ data, isRefreshing, onRefresh, onSelect }: ThemeBoa
           <div className="theme-branch-list">
             {data.branch.map((theme) => (
               <ThemeCard key={theme.code} theme={theme} onSelect={onSelect} tone="branch" />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {data.pending.length > 0 ? (
+        <section className="card" aria-labelledby="theme-pending-title">
+          <div className="overview__header">
+            <div>
+              <p className="eyebrow">待确认</p>
+              <h2 id="theme-pending-title">待确认题材</h2>
+            </div>
+            <p className="overview__meta">
+              共 <span>{data.pending.length} 个</span>（证据或覆盖不足，既不算主线也不自动降为支线）
+            </p>
+          </div>
+          <div className="theme-branch-list">
+            {data.pending.map((theme) => (
+              <ThemeCard key={theme.code} theme={theme} onSelect={onSelect} tone="pending" />
             ))}
           </div>
         </section>

@@ -68,6 +68,15 @@ const normalizeHolding = (value: unknown): Holding | null => {
     return null;
   }
 
+  /*
+   * 自选日/自选收益是后加的两列：老的本地记录没有这两个字段，补成 null 而不是判整份数据无效。
+   * 参考价和取价时刻必须成对：只解析出一个（数据被改坏）时整对丢掉，
+   * 免得「用今天的时刻去配一个很久以前的价」算出看着合理的错收益。
+   */
+  const watchPrice = isOptionalPositiveNumber(holding.watchPrice) ? holding.watchPrice : null;
+  const watchPriceAt = isString(holding.watchPriceAt) ? holding.watchPriceAt : null;
+  const hasWatchBaseline = watchPrice !== null && watchPriceAt !== null;
+
   return {
     id: holding.id,
     symbol,
@@ -78,6 +87,8 @@ const normalizeHolding = (value: unknown): Holding | null => {
     note: holding.note,
     createdAt: holding.createdAt,
     updatedAt: holding.updatedAt,
+    watchPrice: hasWatchBaseline ? watchPrice : null,
+    watchPriceAt: hasWatchBaseline ? watchPriceAt : null,
   };
 };
 

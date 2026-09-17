@@ -2,7 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { calculatePortfolioSummary, hasPositionDetails } from './lib/calculations';
 import { DragonTigerList } from './components/DragonTigerList';
 import { AuctionList } from './components/AuctionList';
-import { MarketOverview } from './components/MarketOverview';
+import {
+  MarketOverview,
+  formatIndexValue,
+  formatSignedPercent,
+  getMarketToneClass,
+} from './components/MarketOverview';
 import { PrimaryNav, type PrimaryNavPage } from './components/PrimaryNav';
 import { ScreenerPanel, type ScreenerTab } from './components/ScreenerPanel';
 import { fetchQuotes, mergeQuotes } from './lib/quotes';
@@ -21,7 +26,9 @@ import { WatchlistFilterBar, type WatchlistScope } from './components/WatchlistF
 import { fetchDragonTiger, mergeDragonTiger } from './lib/dragonTiger';
 import { fetchAuction, mergeAuction } from './lib/auction';
 import { fetchLimitUp, mergeLimitUp } from './lib/limitUp';
+import { fetchLimitUpLadder, mergeLimitUpLadder } from './lib/limitUpLadder';
 import { toLimitUpInfoMap } from './lib/limitUpInfo';
+import { currentQuotePrice, snapshotWatchPrices } from './lib/watchlist';
 import { fetchSprintLimitUp, mergeSprintLimitUp } from './lib/sprintLimitUp';
 import {
   createUnavailableMarketIndices,
@@ -35,9 +42,11 @@ import type {
   AuctionResponse,
   DragonTigerResponse,
   Holding,
+  LimitUpLadderResponse,
   LimitUpResponse,
   MarketIndex,
   Quote,
+  QuoteMap,
   QuotesResponse,
   SprintLimitUpResponse,
   StorageState,
@@ -70,6 +79,42 @@ const createId = (): string =>
   globalThis.crypto?.randomUUID?.() ?? `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 const unique = (symbols: string[]): string[] => Array.from(new Set(symbols));
+
+/**
+ * 给还没有参考价的自选行补记「自选收益」的基准价（加入自选当时的价格）。
+ * 有基准的行走进来也原样不变，所以反复调用是安全的。
+ * 返回这一轮真的记下几行的条数。
+ */
+const captureWatchPrices = (
+  state: StorageState,
+  quotes: QuoteMap,
+): { state: StorageState; captured: number } => {
+  const { holdings, captured } = snapshotWatchPrices(
+    state.holdings,
+    quotes,
+    new Date().toISOString(),
+  );
+
+  return captured === 0 ? { state, captured } : { state: { ...state, holdings }, captured };
+};
+
+/**
+ * 这一批股票里能当基准价用的行情：只有请求到的那几个代码参与，
+ * quotes 里其它股票（竞价栏、对比列）的旧价不能拿来当参考价。
+ */
+const pickQuotes = (quotes: QuoteMap, targets: string[]): QuoteMap => {
+  const picked: QuoteMap = {};
+
+  for (const symbol of targets) {
+    const quote = quotes[symbol];
+
+    if (quote !== undefined) {
+      picked[symbol] = quote;
+    }
+  }
+
+  return picked;
+};
 
 const normalizeDisplayName = (value: string | null | undefined): string | null => {
   if (typeof value !== 'string') {
@@ -108,6 +153,23 @@ const emptyLimitUpResponse = (): LimitUpResponse => ({
 const emptySprintLimitUpResponse = (): SprintLimitUpResponse => ({
   tradeDate: null,
   items: [],
+  fetchedAt: new Date().toISOString(),
+  source: 'eastmoney',
+  status: 'unavailable',
+  error: null,
+});
+
+const emptyLimitUpLadderResponse = (): LimitUpLadderResponse => ({
+  tradeDate: null,
+  previousTradeDate: null,
+  items: [],
+  ladder: [],
+  previousLadder: [],
+  comparison: [],
+  previousCount: 0,
+  carriedCount: 0,
+  promotionRate: null,
+  previousAvailable: false,
   fetchedAt: new Date().toISOString(),
   source: 'eastmoney',
   status: 'unavailable',
@@ -154,6 +216,14 @@ const buildSprintLimitUpUnavailableResponse = (
   error: '冲刺涨停刷新失败',
 });
 
+const buildLimitUpLadderUnavailableResponse = (
+  fetchedAt: string,
+): LimitUpLadderResponse => ({
+  ...emptyLimitUpLadderResponse(),
+  fetchedAt,
+  error: '连板天梯刷新失败',
+});
+
 const buildDragonTigerUnavailableResponse = (fetchedAt: string): DragonTigerResponse => ({
   tradeDate: null,
   items: [],
@@ -194,7 +264,13 @@ export default function App() {
   const [marketBreadth, setMarketBreadth] = useState<MarketBreadth | null>(null);
   const [isMarketRefreshing, setIsMarketRefreshing] = useState(false);
   const [limitUp, setLimitUp] = useState<LimitUpResponse>(emptyLimitUpResponse());
-  const [isLimitUpRefreshing, setIsLimitUpRefreshing] = useState(false);  const [sprintLimitUp, setSprintLimitUp] = useState<SprintLimitUpResponse>(
+  const [isLimitUpRefreshing, setIsLimitUpRefreshing] = useState(false);
+  // 连板天梯与今/昨对比共用一份响应：两个视图看的是同一份池子（见 types.ts 的契约说明）
+  const [limitUpLadder, setLimitUpLadder] = useState<LimitUpLadderResponse>(
+    emptyLimitUpLadderResponse(),
+  );
+  const [isLimitUpLadderRefreshing, setIsLimitUpLadderRefreshing] = useState(false);
+  const [sprintLimitUp, setSprintLimitUp] = useState<SprintLimitUpResponse>(
     emptySprintLimitUpResponse(),
   );
   const [isSprintLimitUpRefreshing, setIsSprintLimitUpRefreshing] = useState(false);
@@ -204,14 +280,33 @@ export default function App() {
   const [isDragonTigerRefreshing, setIsDragonTigerRefreshing] = useState(false);
   const [auction, setAuction] = useState<AuctionResponse>(emptyAuctionResponse());
   const [isAuctionRefreshing, setIsAuctionRefreshing] = useState(false);
+  /**
+   * 竞价列表的「涨跌幅」列要看盘中的现价，而竞价快照本身按 09:25 固定、
+   * 服务端还缓存 5 分钟：把现价塞进快照会让这一列最多滞后 5 分钟。
+   * 所以单独走行情接口，和持仓/自选用同一套 Quote 形状。
+   */
+  const [auctionQuotes, setAuctionQuotes] = useState<Record<string, Quote>>({});
+  /**
+   * 今/昨对比左列里「昨天涨停、今天没涨停」那批的今日行情：它们不在今日涨停池里，
+   * 池子那份 pct 是它们昨天封板当天那根，今天的涨跌幅只能从行情接口拿。
+   */
+  const [comparisonQuotes, setComparisonQuotes] = useState<Record<string, Quote>>({});
   const [refreshMessage, setRefreshMessage] = useState<string | null>(
     loadedState.recovered ? '本地数据已恢复为默认状态。' : null,
   );
+  /** 「已加入自选」这类成功提示：和失败的 warning 分开，几秒后自己消失 */
+  const [watchlistNotice, setWatchlistNotice] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>(null);
   const [isHoldingSubmitting, setIsHoldingSubmitting] = useState(false);
 
   const holdingSymbols = useMemo(
     () => unique(state.holdings.map((holding) => holding.symbol)),
+    [state.holdings],
+  );
+
+  /** 选股页行尾按钮要按代码判断「已在自选」，用集合查而不是每行扫一遍持仓 */
+  const watchlistSymbols = useMemo(
+    () => new Set(state.holdings.map((holding) => holding.symbol)),
     [state.holdings],
   );
 
@@ -291,6 +386,43 @@ export default function App() {
     }
   }, []);
 
+  /**
+   * 刷新行情时把行情并进 state，并顺手补记「自选收益」的基准价。
+   *
+   * 补记必须写在 setQuotes 的更新函数里，不能写成 `setQuotes(...); commit(读到的 quotes)`：
+   * 更新函数要等下一次渲染才执行，外面那行读到的还是空对象，等于什么都没记。
+   *
+   * 只给还缺参考价的行记（加入时没拿到行情、或本功能上线前的旧记录），
+   * 所以定时器每 10 秒走一遍也是安全的，不会把起点往后挪。
+   */
+  const mergeQuotesAndCaptureBaselines = useCallback(
+    (response: QuotesResponse, targets: string[]): void => {
+      setQuotes((current) => {
+        const merged = mergeQuotes(current, response);
+
+        setState((currentState) => {
+          const { state: next, captured } = captureWatchPrices(
+            currentState,
+            pickQuotes(merged, targets),
+          );
+
+          if (captured === 0) {
+            return currentState;
+          }
+
+          if (!saveState(localStorage, next)) {
+            return currentState;
+          }
+
+          return next;
+        });
+
+        return merged;
+      });
+    },
+    [],
+  );
+
   const refreshQuotes = useCallback(
     async (symbols: string[] = holdingSymbols): Promise<QuotesResponse | null> => {
       const targets = unique(symbols);
@@ -304,7 +436,7 @@ export default function App() {
       try {
         const response = await fetchQuotes(targets);
 
-        setQuotes((current) => mergeQuotes(current, response));
+        mergeQuotesAndCaptureBaselines(response, targets);
         setLastUpdated(response.fetchedAt);
         setRefreshMessage(
           response.errors.length > 0 ? '部分行情刷新失败，当前仍显示上一轮数据。' : null,
@@ -330,7 +462,63 @@ export default function App() {
         setIsRefreshing(false);
       }
     },
-    [holdingSymbols],
+    [holdingSymbols, mergeQuotesAndCaptureBaselines],
+  );
+
+  /**
+   * 选股列表行尾的「添加自选」：只建一条观察记录（不填开仓价 / 数量），
+   * 已经在自选里的就只提示一次，不重复写。
+   *
+   * 新记录先不带基准价：行情拿到手才知道「加入当时」的价格，
+   * 硬编一个（比如拿现价当基准）算出来永远是 0%，所以交给下面这次刷新的
+   * refreshQuotes 统一补记（它就是为缺基准价的行准备的）。
+   */
+  const handleAddToWatchlist = useCallback(
+    async ({ symbol, name }: { symbol: string; name: string }): Promise<void> => {
+      const target = symbol.trim();
+
+      if (!/^\d{6}$/.test(target)) {
+        setWatchlistNotice(null);
+        setRefreshMessage(`${name || symbol} 不是有效的 6 位股票代码，没能加入自选。`);
+        return;
+      }
+
+      if (state.holdings.some((holding) => holding.symbol === target)) {
+        setRefreshMessage(null);
+        setWatchlistNotice(`${name || target} 已经在自选列表里了。`);
+        return;
+      }
+
+      const timestamp = new Date().toISOString();
+      const displayName = normalizeDisplayName(name) ?? target;
+      const nextHoldings: Holding[] = [
+        ...state.holdings.map((holding) => ({ ...holding })),
+        {
+          id: createId(),
+          symbol: target,
+          name: displayName,
+          // 空 groupId 表示「未分组」：只在「全部」里出现，不擅自塞进用户建的分组
+          groupId: '',
+          openPrice: null,
+          quantity: null,
+          note: '',
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          watchPrice: null,
+          watchPriceAt: null,
+        },
+      ];
+
+      persistState({
+        groups: state.groups.map((group) => ({ ...group })),
+        holdings: nextHoldings,
+      });
+      setRefreshMessage(null);
+      setWatchlistNotice(`已把 ${displayName} 加入自选。`);
+      // 行情跟着一起刷：切到自选页就是有价的一行，而不是只有代码
+      await refreshQuotes(nextHoldings.map((holding) => holding.symbol));
+    },
+    [persistState, refreshQuotes, state.groups, state.holdings],
   );
 
   const refreshMarketOverview = useCallback(async (): Promise<void> => {
@@ -374,6 +562,24 @@ export default function App() {
       );
     } finally {
       setIsLimitUpRefreshing(false);
+    }
+  }, []);
+
+  const refreshLimitUpLadder = useCallback(async (): Promise<void> => {
+    setIsLimitUpLadderRefreshing(true);
+
+    try {
+      const response = await fetchLimitUpLadder(formatTradeDate());
+
+      setLimitUpLadder((current) => mergeLimitUpLadder(current, response));
+    } catch {
+      const fetchedAt = new Date().toISOString();
+
+      setLimitUpLadder((current) =>
+        mergeLimitUpLadder(current, buildLimitUpLadderUnavailableResponse(fetchedAt)),
+      );
+    } finally {
+      setIsLimitUpLadderRefreshing(false);
     }
   }, []);
 
@@ -427,6 +633,59 @@ export default function App() {
     }
   }, []);
 
+  /*
+   * 依赖用「代码串」而不是 items 数组：竞价每刷一次都会换出新数组，
+   * 但候选没变时不该再打一次行情。
+   */
+  const auctionSymbolKey = useMemo(
+    () => unique(auction.items.map((item) => item.symbol)).join(','),
+    [auction.items],
+  );
+
+  const refreshAuctionQuotes = useCallback(async (): Promise<void> => {
+    const symbols = auctionSymbolKey === '' ? [] : auctionSymbolKey.split(',');
+
+    if (symbols.length === 0) {
+      return;
+    }
+
+    try {
+      const response = await fetchQuotes(symbols);
+      setAuctionQuotes((current) => mergeQuotes(current, response));
+    } catch {
+      // 拉不到就保留上一轮：这一列宁可显示旧价，页脚也有「行情」时间可对照
+    }
+  }, [auctionSymbolKey]);
+
+  /*
+   * 依赖用「代码串」而不是 items 数组：对比每刷一次都会换出新数组，
+   * 但成分没变时不该再打一次行情。
+   */
+  const comparisonSymbolKey = useMemo(
+    () =>
+      unique(
+        limitUpLadder.comparison.flatMap((bucket) =>
+          [...bucket.carried, ...bucket.fallen].map((stock) => stock.symbol),
+        ),
+      ).join(','),
+    [limitUpLadder.comparison],
+  );
+
+  const refreshComparisonQuotes = useCallback(async (): Promise<void> => {
+    const symbols = comparisonSymbolKey === '' ? [] : comparisonSymbolKey.split(',');
+
+    if (symbols.length === 0) {
+      return;
+    }
+
+    try {
+      const response = await fetchQuotes(symbols);
+      setComparisonQuotes((current) => mergeQuotes(current, response));
+    } catch {
+      // 拉不到就保留上一轮；这一列没有行情时显示「—」，不会拿昨天的涨幅顶上
+    }
+  }, [comparisonSymbolKey]);
+
   const refreshVisibleData = useCallback((): void => {
     void refreshMarketOverview();
 
@@ -447,21 +706,39 @@ export default function App() {
     if (activePage === 'limit-up') {
       if (activeLimitUpTab === 'pool') {
         void refreshLimitUp();
-      } else {
+      } else if (activeLimitUpTab === 'sprint') {
         void refreshSprintLimitUp();
+      } else {
+        // 今/昨对比与连板天梯共用同一份响应，进任一页签都只刷这一个接口。
+        // 定时器里无条件刷（数据要跟着盘中变），进页面的首次加载在下面按 status 判断
+        void refreshLimitUpLadder();
+
+        // 对比左列里断板那批的涨幅要跟着盘中走：池子是一分钟一变的快照，行情另算一次
+        if (activeLimitUpTab === 'comparison') {
+          void refreshComparisonQuotes();
+        }
       }
     }
 
     if (activePage === 'dragon-tiger') {
       void refreshDragonTiger();
     }
+
+    // 竞价列表的「涨跌幅」是盘中实时值：10 秒跟着行情一起刷，
+    // 但竞价快照本身不重复拉（服务端 5 分钟缓存，09:25 结果也不会变）。
+    if (activePage === 'auction') {
+      void refreshAuctionQuotes();
+    }
   }, [
     activePage,
     activeLimitUpTab,
     holdingSymbols,
     limitUp.status,
+    refreshAuctionQuotes,
+    refreshComparisonQuotes,
     refreshDragonTiger,
     refreshLimitUp,
+    refreshLimitUpLadder,
     refreshMarketOverview,
     refreshQuotes,
     refreshSprintLimitUp,
@@ -527,10 +804,33 @@ export default function App() {
 
     if (activeLimitUpTab === 'pool') {
       void refreshLimitUp();
-    } else {
+    } else if (activeLimitUpTab === 'sprint') {
       void refreshSprintLimitUp();
+    } else if (limitUpLadder.status === 'unavailable' && !isLimitUpLadderRefreshing) {
+      // 两个视图共用同一份响应：已经拿到就不再因为切页签重拉（10 秒定时器照常刷）
+      void refreshLimitUpLadder();
     }
-  }, [activeLimitUpTab, activePage, refreshLimitUp, refreshSprintLimitUp]);
+  }, [
+    activeLimitUpTab,
+    activePage,
+    isLimitUpLadderRefreshing,
+    limitUpLadder.status,
+    refreshLimitUp,
+    refreshLimitUpLadder,
+    refreshSprintLimitUp,
+  ]);
+
+  /*
+   * 今/昨对比要拿断板那批的今日行情：进页签时先拉一次，
+   * 之后不管数据先到还是页签先到，comparisonSymbolKey 变了就会补一次。
+   */
+  useEffect(() => {
+    if (activePage !== 'limit-up' || activeLimitUpTab !== 'comparison') {
+      return;
+    }
+
+    void refreshComparisonQuotes();
+  }, [activeLimitUpTab, activePage, refreshComparisonQuotes]);
 
   // 自选/持仓页要靠涨停池给名称旁打「涨停 / N 连板」标识，进页面时拉一次
   useEffect(() => {
@@ -564,6 +864,15 @@ export default function App() {
     void refreshAuction();
   }, [activePage, refreshAuction]);
 
+  // 竞价快照到位（或换了一批候选）后补一次实时行情，进竞价页时也走这条
+  useEffect(() => {
+    if (activePage !== 'auction') {
+      return;
+    }
+
+    void refreshAuctionQuotes();
+  }, [activePage, refreshAuctionQuotes]);
+
   const closeModal = (): void => setModal(null);
 
   // 落地页右侧常驻竞价候选，首次进入自选页时拉一次
@@ -572,6 +881,17 @@ export default function App() {
       void refreshAuction();
     }
   }, [activePage, auction.status, isAuctionRefreshing, refreshAuction]);
+
+  // 成功提示不常驻：4 秒后自己收掉，免得和真正的失败提示一直并排挂着
+  useEffect(() => {
+    if (watchlistNotice === null) {
+      return;
+    }
+
+    const timerId = window.setTimeout(() => setWatchlistNotice(null), 4000);
+
+    return () => window.clearTimeout(timerId);
+  }, [watchlistNotice]);
 
   const deleteGroupById = (groupId: string): void => {
     commitState((current) => {
@@ -633,6 +953,9 @@ export default function App() {
         note: values.note,
         createdAt: timestamp,
         updatedAt: timestamp,
+        // 自选基准价在记这一条的同时抓：行情已经在手，不用等下一轮
+        watchPrice: currentQuotePrice(quotes[symbol]),
+        watchPriceAt: timestamp,
       };
       const nextState: StorageState = {
         groups: state.groups.map((group) => ({ ...group })),
@@ -666,11 +989,20 @@ export default function App() {
     }
 
     const symbol = values.symbol.trim();
+    const symbolChanged = symbol !== currentHolding.symbol;
     const nextName =
       symbol === currentHolding.symbol
         ? normalizeDisplayName(quotes[symbol]?.name) ?? currentHolding.name
         : normalizeDisplayName(quotes[symbol]?.name) ?? symbol;
     const timestamp = new Date().toISOString();
+    /*
+     * 自选基准价按「这条自选是什么时候加的」算，所以改备注/开仓价都保留它。
+     * 只有换成另一只股票时才重置：旧基准价是那只票的价格，套到新代码上会算出假收益。
+     * 重置后 watchPrice 为空，这一轮刷完行情由 captureWatchPrices 重新记。
+     */
+    const watchPriceSource = symbolChanged
+      ? { watchPrice: currentQuotePrice(quotes[symbol]), watchPriceAt: timestamp }
+      : {};
     const nextState: StorageState = {
       groups: state.groups.map((group) => ({ ...group })),
       holdings: state.holdings.map((holding) =>
@@ -684,6 +1016,7 @@ export default function App() {
               quantity: values.quantity,
               note: values.note,
               updatedAt: timestamp,
+              ...watchPriceSource,
             }
           : { ...holding },
       ),
@@ -876,11 +1209,13 @@ export default function App() {
 
   return (
     <>
-      {/* 稿子 F 的三团背景柔光，卡片玻璃靠它们透出冷暖倾向 */}
-      <div className="page-glow page-glow--g1" aria-hidden="true" />
-      <div className="page-glow page-glow--g2" aria-hidden="true" />
-      <div className="page-glow page-glow--g3" aria-hidden="true" />
-
+      {/*
+       * 背景（斜向渐变 + 左上冷蓝 / 右上暖粉 / 底部青绿三团柔光）统一由 body 绘制，
+       * 见 src/styles.css 的 body 规则。
+       * 这里原来有三个 .page-glow 节点（filter: blur(80px) 的独立圆），
+       * 它们各自栅格化出的矩形边界会和卡片边缘切出一条颜色突变，
+       * 所以改成整页一层背景，不再在 DOM 里单独画。
+       */}
       <div className="dashboard-shell">
         <PrimaryNav
           activePage={activePage}
@@ -913,11 +1248,20 @@ export default function App() {
               </section>
             ) : null}
 
-            <MarketOverview
-              indices={marketOverview}
-              turnover={marketTurnover}
-              breadth={marketBreadth}
-            />
+            {watchlistNotice ? (
+              <section className="banner banner--success" role="status">
+                {watchlistNotice}
+              </section>
+            ) : null}
+
+            {/* 选股页与涨停聚焦页都不重复展示大盘指数条：这两页看的是题材 / 涨停结构，指数另有专门入口 */}
+            {activePage === 'screener' || activePage === 'limit-up' ? null : (
+              <MarketOverview
+                indices={marketOverview}
+                turnover={marketTurnover}
+                breadth={marketBreadth}
+              />
+            )}
 
             {activePage === 'limit-up' ? (
               <LimitUpFocus
@@ -928,6 +1272,14 @@ export default function App() {
                 onRefreshPool={() => {
                   void refreshLimitUp();
                 }}
+                onAddToWatchlist={handleAddToWatchlist}
+                watchlistSymbols={watchlistSymbols}
+                ladderData={limitUpLadder}
+                isLadderRefreshing={isLimitUpLadderRefreshing}
+                onRefreshLadder={() => {
+                  void refreshLimitUpLadder();
+                }}
+                comparisonQuotes={comparisonQuotes}
                 sprintData={sprintLimitUp}
                 isSprintRefreshing={isSprintLimitUpRefreshing}
                 onRefreshSprint={() => {
@@ -937,9 +1289,11 @@ export default function App() {
             ) : activePage === 'auction' ? (
               <AuctionList
                 data={auction}
+                quotes={auctionQuotes}
                 isRefreshing={isAuctionRefreshing}
                 onRefresh={() => {
                   void refreshAuction();
+                  void refreshAuctionQuotes();
                 }}
               />
             ) : activePage === 'dragon-tiger' ? (
@@ -951,7 +1305,12 @@ export default function App() {
                 }}
               />
             ) : activePage === 'screener' ? (
-              <ScreenerPanel activeTab={activeScreenerTab} onTabChange={setActiveScreenerTab} />
+              <ScreenerPanel
+                activeTab={activeScreenerTab}
+                onTabChange={setActiveScreenerTab}
+                onAddToWatchlist={handleAddToWatchlist}
+                watchlistSymbols={watchlistSymbols}
+              />
             ) : activePage === 'holdings' ? (
               renderHoldingsPage()
             ) : (
@@ -961,25 +1320,62 @@ export default function App() {
         </div>
 
         <footer className="dashboard-footer">
-          <span>数据源 腾讯 / 东方财富</span>
-          <i className="dashboard-footer__sep" aria-hidden="true" />
-          <span>行情 {lastUpdated ? formatTime(lastUpdated) : '—'}</span>
-          <i className="dashboard-footer__sep" aria-hidden="true" />
-          <span>
-            竞价快照 {auction.tradeDate ? `${auction.tradeDate.slice(4, 6)}-${auction.tradeDate.slice(6, 8)} 09:25` : '09:25:00'}
-          </span>
+          {/* 大盘行情：和页面顶部同一份数据；涨跌幅用小色块，左上角开始排 */}
+          <div className="dashboard-footer__indices">
+            {marketOverview.map((index) => (
+              <span key={index.symbol} className="dashboard-footer__index">
+                <span className="dashboard-footer__index-name">{index.name}</span>
+                <b className="dashboard-footer__index-value">{formatIndexValue(index.price)}</b>
+                <span className={`dashboard-footer__pct ${getMarketToneClass(index.status, index.pct)}`}>
+                  {formatSignedPercent(index.pct)}
+                </span>
+              </span>
+            ))}
+          </div>
+
           {marketBreadth?.status === 'fresh' ? (
             <>
               <i className="dashboard-footer__sep" aria-hidden="true" />
-              <span>
-                涨停 {marketBreadth.limitUpCount ?? '—'} · 炸板{' '}
-                {marketBreadth.brokenCount ?? '—'} · 晋级率{' '}
-                {marketBreadth.promotionRate === null
-                  ? '—'
-                  : `${marketBreadth.promotionRate.toFixed(1)}%`}
-              </span>
+              <div className="dashboard-footer__stats">
+                <span className="dashboard-footer__stat">
+                  涨 <b className="value--rise">{marketBreadth.riseCount ?? '—'}</b>
+                </span>
+                <span className="dashboard-footer__stat">
+                  跌 <b className="value--fall">{marketBreadth.fallCount ?? '—'}</b>
+                </span>
+                <span className="dashboard-footer__stat">
+                  涨停 <b>{marketBreadth.limitUpCount ?? '—'}</b>
+                </span>
+                <span className="dashboard-footer__stat">
+                  炸板 <b>{marketBreadth.brokenCount ?? '—'}</b>
+                </span>
+                <span className="dashboard-footer__stat">
+                  晋级率{' '}
+                  <b>
+                    {marketBreadth.promotionRate === null
+                      ? '—'
+                      : `${marketBreadth.promotionRate.toFixed(1)}%`}
+                  </b>
+                </span>
+              </div>
             </>
           ) : null}
+
+          {/* 时间戳靠右：行情刷新时刻 + 竞价快照日期 */}
+          <div className="dashboard-footer__times">
+            <span>
+              行情 <b>{lastUpdated ? formatTime(lastUpdated) : '—'}</b>
+            </span>
+            <i className="dashboard-footer__sep" aria-hidden="true" />
+            <span>
+              竞价快照{' '}
+              <b>
+                {auction.tradeDate
+                  ? `${auction.tradeDate.slice(4, 6)}-${auction.tradeDate.slice(6, 8)} 09:25`
+                  : '09:25:00'}
+              </b>
+            </span>
+          </div>
         </footer>
       </div>
 
