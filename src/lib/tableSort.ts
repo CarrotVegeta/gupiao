@@ -7,8 +7,6 @@ export type SortState<K extends string> = { key: K; direction: SortDirection };
 /** 表头里能取到的值；null 表示没数据（缺行情、未填写），恒定排在最后 */
 export type SortValue = string | number | null;
 
-export const DEFAULT_SORT_HINT = '添加时间倒序';
-
 /** 点击表头时的方向轮换：第一次降序，第二次升序，第三次回到默认 */
 const cycleDirections: SortDirection[] = ['desc', 'asc', 'default'];
 
