@@ -28,9 +28,6 @@
   --shadow-sm:
     0 1px 3px rgba(20, 35, 70, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.7);
-  /* 内容区滚动条槽位宽度：Chrome 系由 ::-webkit-scrollbar 固定成这个值，
-     卡片右边线才能和顶栏/页脚严格对齐（见 .dashboard-layout 的负外边距） */
-  --scrollbar-gutter: 8px;
   /* 稿子 F：顶栏和指数条比内容卡片轻一档 */
   --shadow-bar:
     0 8px 24px rgba(20, 35, 70, 0.07),
@@ -175,8 +172,7 @@ textarea:focus-visible {
     /*
      * 内容宽度 = 100% - 44px（不再是 min(1440px, …)）：宽屏下内容跟着窗口铺满，
      * 不再在两侧留出大片空白。1440 及以下窗口宽度不受影响，仍然和 F 稿一致。
-     * 左右各加的 8px 内边距里，右边那 8px 专门给内容区滚动条当槽位，
-     * 这样卡片右边线才不会比顶栏/页脚窄一截。
+     * 滚动条已全站隐藏（见文件末尾），不再占宽度，所以左右内边距对称留 8px。
      */
     width: calc(100% - 28px);
     padding-right: 8px;
@@ -201,21 +197,6 @@ textarea:focus-visible {
     grid-auto-rows: max-content;
     overscroll-behavior: contain;
     padding-right: 0;
-    /*
-     * 永远预留滚动条宽度，卡片右边线不会随滚动条出现/消失而跳动。
-     * 注意别再写 scrollbar-width: thin —— 它会盖掉 ::-webkit-scrollbar 的宽度，
-     * Chrome 下 thin 是 10px，槽位就只有 8px，卡片又会比顶栏窄 2px。
-     */
-    scrollbar-gutter: stable;
-  }
-
-  .dashboard-main::-webkit-scrollbar {
-    width: var(--scrollbar-gutter);
-  }
-
-  .dashboard-main::-webkit-scrollbar-thumb {
-    border-radius: 4px;
-    background: rgba(17, 24, 39, 0.16);
   }
 }
 
@@ -2802,17 +2783,6 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
  * 只有窗口矮到连 min-height 兜底都放不下时，才退回内容区整列滚动。
  */
 @media (min-width: 1181px) and (min-height: 520px) {
-  /*
-   * 往右多占一个滚动条槽位（8px），正好落进 shell 的右内边距里，
-   * 于是卡片右边线和顶栏/页脚严格对齐。
-   * 必须写在文件末尾：.dashboard-layout 的基础规则（width:100%; margin:0）
-   * 在文件后半部分，写在前面会被它按源码顺序覆盖。
-   */
-  .dashboard-layout {
-    width: calc(100% + var(--scrollbar-gutter));
-    margin-right: calc(-1 * var(--scrollbar-gutter));
-  }
-
   .dashboard-main--fill {
     display: flex;
     flex-direction: column;
@@ -2945,19 +2915,26 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
   }
 }
 
-/*
- * Firefox 没有 ::-webkit-scrollbar，滚动条宽度不可控，
- * 就不做「槽位对齐」了，退回浏览器默认行为（滚动条出现时内容自然变窄）。
- */
-@supports not selector(::-webkit-scrollbar) {
-  .dashboard-layout {
-    width: 100%;
-    margin-right: 0;
-  }
+/* ---------------------------------------------------------------------------
+ * 滚动条：全站隐藏
+ *
+ * 只隐藏滚动条本身，滚动能力不变 —— 滚轮 / 触控板 / 键盘（PageUp、方向键）/
+ * JS 赋值 scrollTop 都照常。宽度设 0 而不是只把滑块涂透明：
+ * 槽位也不再占宽，卡片右边线因此天然和顶栏/页脚对齐，
+ * 不用再靠 .dashboard-layout 的负外边距去补偿滚动条宽度。
+ *
+ * 注意：这里不能改用 scrollbar-width: none —— 它会同时影响 Firefox 和
+ * Chrome 121+，而 Firefox 见下面的 @supports 兜底即可，保持两套分支互不干扰。
+ * ------------------------------------------------------------------------- */
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
 
-  .dashboard-main {
-    scrollbar-gutter: auto;
-    scrollbar-width: thin;
+/* Firefox 没有 ::-webkit-scrollbar，用 scrollbar-width: none 同样隐藏滚动条 */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: none;
   }
 }
 
