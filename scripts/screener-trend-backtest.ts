@@ -44,6 +44,8 @@ const PCT_WINDOW = 10;
 const MAX_PCT = 0.2;
 const WARMUP = 25;
 const MAX_HORIZON = 10;
+/** 槽位 0 = 次日开盘卖出，槽位 1..10 = T+1..T+10 收盘卖出 */
+const HORIZON_SLOTS = MAX_HORIZON + 1;
 
 // ---- 主线板块口径 ----
 const MAIN_MIN_LIMIT_UP = 5;
@@ -278,41 +280,64 @@ type PatternState = {
   pctWindow: number;
 };
 
-const matchPattern = (closes: number[], volumes: number[]): PatternState | null => {
-  if (closes.length < Math.max(MA_LONG, PCT_WINDOW + 1)) return null;
+type PatternEval = {
+  maBull: boolean;
+  stable: boolean;
+  distOk: boolean;
+  pctOk: boolean;
+  shrinkOk: boolean;
+  hit: boolean;
+  state: PatternState | null;
+};
+
+/** 不提前退出，把每个子条件都算出来，供「条件归因」使用 */
+const evaluatePattern = (closes: number[], volumes: number[]): PatternEval => {
+  const blank: PatternEval = {
+    maBull: false, stable: false, distOk: false, pctOk: false, shrinkOk: false, hit: false, state: null,
+  };
+  if (closes.length < Math.max(MA_LONG, PCT_WINDOW + 1)) return blank;
 
   const last = closes[closes.length - 1];
   const ma5 = mean(closes.slice(-MA_SHORT));
   const ma10 = mean(closes.slice(-MA_MID));
   const ma20 = mean(closes.slice(-MA_LONG));
-  if (!(ma5 > ma10 && ma10 > ma20)) return null;
+  const maBull = ma5 > ma10 && ma10 > ma20;
 
   const stableDays = countStableDays(closes);
-  if (stableDays < MIN_STABLE_DAYS) return null;
+  const stable = stableDays >= MIN_STABLE_DAYS;
 
   const distMa5 = last / ma5 - 1;
-  if (Math.abs(distMa5) > MAX_MA5_DIST) return null;
+  const distOk = Math.abs(distMa5) <= MAX_MA5_DIST;
 
   const base = closes[closes.length - 1 - PCT_WINDOW];
-  if (!(base > 0)) return null;
-  const pctWindow = last / base - 1;
-  if (pctWindow > MAX_PCT) return null;
+  const pctWindow = base > 0 ? last / base - 1 : null;
+  const pctOk = pctWindow !== null && pctWindow <= MAX_PCT;
 
   const previous5 = volumes.slice(-6, -1);
-  if (previous5.length < 5) return null;
-  const avgPrev5 = mean(previous5);
-  if (!(avgPrev5 > 0)) return null;
-  const shrink = volumes[volumes.length - 1] / avgPrev5;
-  if (!(shrink < 1)) return null;
+  const avgPrev5 = previous5.length === 5 ? mean(previous5) : 0;
+  const shrink = avgPrev5 > 0 ? volumes[volumes.length - 1] / avgPrev5 : null;
+  const shrinkOk = shrink !== null && shrink < 1;
+
+  const hit = maBull && stable && distOk && pctOk && shrinkOk;
 
   return {
-    ma5,
-    ma10,
-    ma20,
-    distMa5: round(distMa5 * 100, 2),
-    stableDays,
-    shrink: round(shrink, 4),
-    pctWindow: round(pctWindow * 100, 2),
+    maBull,
+    stable,
+    distOk,
+    pctOk,
+    shrinkOk,
+    hit,
+    state: hit
+      ? {
+          ma5,
+          ma10,
+          ma20,
+          distMa5: round(distMa5 * 100, 2),
+          stableDays,
+          shrink: round(shrink ?? 0, 4),
+          pctWindow: round((pctWindow ?? 0) * 100, 2),
+        }
+      : null,
   };
 };
 
@@ -322,9 +347,9 @@ const matchPattern = (closes: number[], volumes: number[]): PatternState | null 
 
 type Acc = { sum: Float64Array; count: Int32Array; win: Int32Array };
 const newAcc = (): Acc => ({
-  sum: new Float64Array(MAX_HORIZON),
-  count: new Int32Array(MAX_HORIZON),
-  win: new Int32Array(MAX_HORIZON),
+  sum: new Float64Array(HORIZON_SLOTS),
+  count: new Int32Array(HORIZON_SLOTS),
+  win: new Int32Array(HORIZON_SLOTS),
 });
 
 const add = (acc: Acc, horizon: number, value: number): void => {
@@ -450,6 +475,10 @@ const main = async (): Promise<void> => {
     'market-pattern',
     ...MAIN_VARIANTS.flatMap((v) => [`${v.key}-all`, `${v.key}-pattern`]),
     'branch-pattern',
+    'ab-ma',
+    'ab-ma-stable',
+    'ab-ma-stable-dist',
+    'ab-ma-stable-dist-pct',
   ];
 
   console.log('逐日回测…');
@@ -473,6 +502,7 @@ const main = async (): Promise<void> => {
     for (const key of GROUP_KEYS) perGroup.set(key, newAcc());
     const poolCount = new Map<string, number>();
     for (const variant of MAIN_VARIANTS) poolCount.set(variant.key, 0);
+    poolCount.set('branch', 0);
 
     for (const symbol of symbolBoards.keys()) {
       const list = bars.get(symbol);
@@ -483,7 +513,8 @@ const main = async (): Promise<void> => {
       const window = list.slice(index - 60, index + 1);
       const closes = window.map((bar) => bar.close);
       const volumes = window.map((bar) => bar.volume);
-      const state = matchPattern(closes, volumes);
+      const evaluated = evaluatePattern(closes, volumes);
+      const state = evaluated.state;
       const boards = symbolBoards.get(symbol) ?? [];
 
       const inVariant = new Map<string, boolean>();
@@ -493,28 +524,41 @@ const main = async (): Promise<void> => {
         if (hit) poolCount.set(variant.key, (poolCount.get(variant.key) ?? 0) + 1);
       }
       const inBranch = boards.some((board) => boardSets.get('branch')!.has(board));
+      if (inBranch) poolCount.set('branch', (poolCount.get('branch') ?? 0) + 1);
 
       const entry = list[index].close;
       if (!(entry > 0)) continue;
 
-      for (let k = 1; k <= MAX_HORIZON; k += 1) {
-        const value = (list[index + k].close / entry - 1) * 100;
-        add(perGroup.get('market-all')!, k - 1, value);
-        if (state) add(perGroup.get('market-pattern')!, k - 1, value);
+      for (let slot = 0; slot < HORIZON_SLOTS; slot += 1) {
+        // 槽位 0：买入 t 日收盘、次日开盘卖出；槽位 k：买入 t 日收盘、T+k 日收盘卖出
+        const raw = slot === 0 ? list[index + 1].open : list[index + slot].close;
+        if (!(raw > 0)) continue;
+        const value = (raw / entry - 1) * 100;
+        add(perGroup.get('market-all')!, slot, value);
+        if (state) add(perGroup.get('market-pattern')!, slot, value);
         for (const variant of MAIN_VARIANTS) {
-          if (inVariant.get(variant.key)) add(perGroup.get(`${variant.key}-all`)!, k - 1, value);
-          if (inVariant.get(variant.key) && state) add(perGroup.get(`${variant.key}-pattern`)!, k - 1, value);
+          if (inVariant.get(variant.key)) add(perGroup.get(`${variant.key}-all`)!, slot, value);
+          if (inVariant.get(variant.key) && state) add(perGroup.get(`${variant.key}-pattern`)!, slot, value);
         }
-        if (inBranch && state) add(perGroup.get('branch-pattern')!, k - 1, value);
+        if (inBranch && state) add(perGroup.get('branch-pattern')!, slot, value);
+        if (inVariant.get('A')) {
+          const e = evaluated;
+          if (e.maBull) add(perGroup.get('ab-ma')!, slot, value);
+          if (e.maBull && e.stable) add(perGroup.get('ab-ma-stable')!, slot, value);
+          if (e.maBull && e.stable && e.distOk)
+            add(perGroup.get('ab-ma-stable-dist')!, slot, value);
+          if (e.maBull && e.stable && e.distOk && e.pctOk)
+            add(perGroup.get('ab-ma-stable-dist-pct')!, slot, value);
+        }
       }
 
       if (state) patternStats.push(state);
     }
 
-    for (const variant of MAIN_VARIANTS) {
-      const list = variantPoolSize.get(variant.key) ?? [];
-      list.push(poolCount.get(variant.key) ?? 0);
-      variantPoolSize.set(variant.key, list);
+    for (const key of [...MAIN_VARIANTS.map((v) => v.key), 'branch']) {
+      const list = variantPoolSize.get(key) ?? [];
+      list.push(poolCount.get(key) ?? 0);
+      variantPoolSize.set(key, list);
     }
     daily.set(date, perGroup);
   }
@@ -529,7 +573,7 @@ const main = async (): Promise<void> => {
 
   const summarize = (key: string, segmentDates: string[]) => {
     const cells = [];
-    for (let k = 0; k < MAX_HORIZON; k += 1) {
+    for (let k = 0; k < HORIZON_SLOTS; k += 1) {
       const groupMeans: number[] = [];
       const marketMeans: number[] = [];
       let samples = 0;
@@ -548,7 +592,7 @@ const main = async (): Promise<void> => {
       const excess = groupMeans.map((value, i) => value - (marketMeans[i] ?? 0));
       const sd = stdev(excess);
       cells.push({
-        horizon: k + 1,
+        horizon: k,
         samples,
         days: groupMeans.length,
         absolute: round(mean(groupMeans), 4),
@@ -568,13 +612,18 @@ const main = async (): Promise<void> => {
       title: `③${v.key} 主线(${v.label}) · 命中趋势形态  ★`,
     })),
     { key: 'branch-pattern', title: '④ 支线板块(2~4家) · 命中趋势形态' },
+    { key: 'ab-ma', title: '⑤ 主线池A + 均线多头' },
+    { key: 'ab-ma-stable', title: '⑤ 主线池A + 均线多头 + 连续站稳5日线' },
+    { key: 'ab-ma-stable-dist', title: '⑤ 主线池A + 均线多头 + 站稳 + 距5日线≤4%' },
+    { key: 'ab-ma-stable-dist-pct', title: '⑤ 主线池A + 均线多头 + 站稳 + 距≤4% + 涨幅≤20%' },
   ];
 
   const report: Array<{ title: string; segments: Record<string, unknown> }> = [];
   const printCells = (cells: ReturnType<typeof summarize>): void => {
     for (const cell of cells) {
+      const label = cell.horizon === 0 ? '次日开' : `T+${String(cell.horizon).padStart(2)}`;
       console.log(
-        `    T+${String(cell.horizon).padStart(2)}  n=${String(cell.samples).padStart(7)}  ` +
+        `    ${label}  n=${String(cell.samples).padStart(7)}  ` +
           `超额 ${cell.excess.toFixed(3).padStart(7)}%  t=${String(cell.t ?? '—').padStart(6)}  ` +
           `绝对 ${cell.absolute.toFixed(3).padStart(7)}%  胜率 ${String(cell.winRate ?? '—').padStart(6)}%`,
       );
@@ -591,6 +640,61 @@ const main = async (): Promise<void> => {
       const found = report.find((item) => item.title === group.title);
       if (found) found.segments[segment.label] = cells;
       else report.push({ title: group.title, segments: { [segment.label]: cells } });
+    }
+  }
+
+  // ---------- 配对检验：加「主线板块」过滤到底有没有改善 ----------
+  const pairedTest = (groupKey: string, baseKey: string, segmentDates: string[], slot: number) => {
+    const diffs: number[] = [];
+    for (const date of segmentDates) {
+      const perGroup = daily.get(date);
+      if (!perGroup) continue;
+      const group = perGroup.get(groupKey);
+      const base = perGroup.get(baseKey);
+      if (!group || !base || group.count[slot] === 0 || base.count[slot] === 0) continue;
+      diffs.push(group.sum[slot] / group.count[slot] - base.sum[slot] / base.count[slot]);
+    }
+    if (diffs.length < 5) return null;
+    const sd = stdev(diffs);
+    return {
+      days: diffs.length,
+      mean: round(mean(diffs), 4),
+      t: sd > 0 ? round(mean(diffs) / (sd / Math.sqrt(diffs.length)), 2) : null,
+    };
+  };
+
+  const PAIRED_SLOTS = [0, 1, 3, 5, 10];
+  console.log('\n================ 配对检验：加「主线板块」过滤有没有改善 ================');
+  console.log('（每日取「主线∩形态」均值 − 「全市场∩形态」均值，再对这条差值序列做 t 检验）');
+  const pairedReport: Array<Record<string, unknown>> = [];
+  for (const segment of [
+    { label: '全段', dates: allDates },
+    { label: '验证段', dates: allDates.slice(splitIndex) },
+  ]) {
+    console.log(`\n${segment.label}`);
+    for (const variant of MAIN_VARIANTS) {
+      const parts: string[] = [];
+      for (const slot of PAIRED_SLOTS) {
+        const result = pairedTest(`${variant.key}-pattern`, 'market-pattern', segment.dates, slot);
+        const label = slot === 0 ? '次日开' : `T+${slot}`;
+        parts.push(
+          `${label} ${result ? `${result.mean >= 0 ? '+' : ''}${result.mean.toFixed(3)}%(t=${result.t ?? '—'})` : '—'}`,
+        );
+      }
+      console.log(`  ${variant.label}`);
+      console.log(`    形态组：${parts.join('  ')}`);
+
+      // 对照组：只看「主线」这层过滤（不看形态）
+      const allParts: string[] = [];
+      for (const slot of PAIRED_SLOTS) {
+        const result = pairedTest(`${variant.key}-all`, 'market-all', segment.dates, slot);
+        const label = slot === 0 ? '次日开' : `T+${slot}`;
+        allParts.push(
+          `${label} ${result ? `${result.mean >= 0 ? '+' : ''}${result.mean.toFixed(3)}%(t=${result.t ?? '—'})` : '—'}`,
+        );
+      }
+      console.log(`    仅板块：${allParts.join('  ')}`);
+      pairedReport.push({ segment: segment.label, variant: variant.label, patternVsMarket: parts, boardOnlyVsMarket: allParts });
     }
   }
 
@@ -643,6 +747,7 @@ const main = async (): Promise<void> => {
           MAIN_VARIANTS,
         },
         tradeDates: allDates.length,
+        paired: pairedReport,
         groups: report,
       },
       null,
