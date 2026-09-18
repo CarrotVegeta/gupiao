@@ -51,6 +51,46 @@ const themesPayload = {
   error: null,
 };
 
+/** 细分逻辑题材条目（TP: 前缀）：题材页主口径 */
+const topicItem = {
+  code: 'TP:光通信',
+  name: '光通信',
+  kind: 'main',
+  pct: 6.3,
+  limitUpCount: 5,
+  continuousCount: 1,
+  maxBoard: 2,
+  maxBoardLabel: '2 板',
+  durationDays: 3,
+  amount: null,
+  amountRatio: null,
+  catalysts: ['光通信', '光通信测试'],
+  leader: { symbol: '002161', name: '远望谷', boardCount: 2, highLabel: '2天2板' },
+  metrics: [
+    { key: 'amount', label: '成交额', hit: false, value: '—', detail: '题材口径下没有板块成交额来源' },
+  ],
+  score: 1,
+  classificationReasons: ['最近 3 个交易日带同一涨停逻辑的家数 5/2/2', '满足当日 ≥5 且前两日各 ≥2，判主线'],
+  conceptLimitUpCount: 5,
+  supportedLimitUpCount: null,
+  unresolvedLimitUpCount: null,
+  source: 'topic',
+};
+
+const topicsPayload = {
+  schemaVersion: 2,
+  scope: 'topic',
+  tradeDate: '20260918',
+  main: [topicItem],
+  branch: [],
+  pending: [],
+  fetchedAt: '2026-09-18T08:00:00.000Z',
+  source: 'eastmoney+10jqka',
+  status: 'fresh',
+  warnings: ['题材口径：细分逻辑 = 涨停原因标签'],
+  error: null,
+};
+
 const stockItem = {
   symbol: '605058',
   name: '澳弘电子',
@@ -344,8 +384,25 @@ describe('toTrendScanResponse', () => {
     expect(result.metricsTradeDate).toBe('20260917');
   });
 
-  it('老版本服务端没有覆盖字段时降级为「未披露」而不是整体判坏', () => {
-    const { coverage: _coverage, matchedTotal: _matched, truncated: _truncated, ...rest } = payload;
+  it('扫描深度：老响应没有 scanLimit 时按默认 260 回显，0 表示全部', () => {
+    // 老服务端不带 scanLimit：降级成默认快速档，不显示成「全部」
+    expect(toTrendScanResponse(payload).filters.scanLimit).toBe(260);
+    expect(
+      toTrendScanResponse({ ...payload, filters: { ...payload.filters, scanLimit: 0 } }).filters
+        .scanLimit,
+    ).toBe(0);
+    expect(
+      toTrendScanResponse({ ...payload, filters: { ...payload.filters, scanLimit: 1000 } }).filters
+        .scanLimit,
+    ).toBe(1000);
+    // 非法值（负数）回落到默认档，不把「-1」当深度用
+    expect(
+      toTrendScanResponse({ ...payload, filters: { ...payload.filters, scanLimit: -1 } }).filters
+        .scanLimit,
+    ).toBe(260);
+  });
+
+  it('老版本服务端没有覆盖字段时降级为「未披露」而不是整体判坏', () => {    const { coverage: _coverage, matchedTotal: _matched, truncated: _truncated, ...rest } = payload;
     void _coverage;
     void _matched;
     void _truncated;
@@ -453,5 +510,48 @@ describe('请求函数', () => {
     const blank = unavailableThemeDetail('加载中');
     expect(blank.status).toBe('unavailable');
     expect(blank.coverage.total).toBe(0);
+  });
+});
+
+describe('细分逻辑题材（TP: 口径）', () => {
+  it('接受 TP: 前缀的题材条目，并保留 scope', () => {
+    const result = toThemesResponse(topicsPayload);
+    expect(result.status).toBe('fresh');
+    expect(result.scope).toBe('topic');
+    expect(result.main).toHaveLength(1);
+    expect(result.main[0].code).toBe('TP:光通信');
+    expect(result.main[0].source).toBe('topic');
+  });
+
+  it('拒绝既不是 BK 代码也不是 TP: 前缀的条目', () => {
+    const bad = {
+      ...topicsPayload,
+      main: [{ ...topicItem, code: 'XX:光通信' }],
+    };
+    expect(toThemesResponse(bad).status).toBe('unavailable');
+  });
+
+  it('题材详情请求打到 /api/topics/:key/detail（中文 key 要编码）', async () => {
+    const calls: string[] = [];
+    const impl = (async (input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return new Response(JSON.stringify({ schemaVersion: 2 }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await fetchThemeDetail('TP:光通信', '20260918', undefined, impl);
+    expect(calls[0]).toBe(`/api/topics/${encodeURIComponent('光通信')}/detail?date=20260918`);
+  });
+
+  it('板块口径仍然打到 /api/themes/:code/detail', async () => {
+    const calls: string[] = [];
+    const impl = (async (input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return new Response(JSON.stringify({ schemaVersion: 2 }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await fetchThemeDetail('BK0900', undefined, undefined, impl);
+    expect(calls[0]).toBe('/api/themes/BK0900/detail');
+  });
+
+  it('缺省 scope 的旧板块响应按 board 处理', () => {
+    expect(toThemesResponse(themesPayload).scope).toBe('board');
   });
 });

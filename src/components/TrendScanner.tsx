@@ -25,6 +25,23 @@ const FORMAT_ERROR = '形态扫描响应数据格式错误';
 /** 与服务端 server/screener/trend.ts 的 MAX_SCAN / MAX_ITEMS 对应，只用于界面文案 */
 const MAX_SCAN = 260;
 const MAX_ROWS = 120;
+/** 拉日K上限：0 = 全部（服务端不截断），与服务端 SCAN_ALL 对应 */
+const SCAN_ALL = 0;
+
+/** 「拉日K上限」档位：决定实际扫描深度，候选范围本身一律是全市场 */
+const SCAN_LIMIT_OPTIONS: Array<{ value: number; label: string }> = [
+  { value: MAX_SCAN, label: `${MAX_SCAN} 只（快速，默认）` },
+  { value: 1000, label: '1000 只' },
+  { value: SCAN_ALL, label: '全部（全市场，约 30~60 秒）' },
+];
+
+const scanLimitLabel = (limit: number): string =>
+  limit <= SCAN_ALL ? '全部' : `前 ${limit} 只`;
+
+const scanLimitFrom = (value: unknown): number => {
+  const next = Number(value);
+  return SCAN_LIMIT_OPTIONS.some((option) => option.value === next) ? next : MAX_SCAN;
+};
 
 /** 研究结论正文面板的 id：标题行上的按钮用 aria-controls 指过来 */
 const RESEARCH_PANEL_ID = 'trend-research-panel';
@@ -40,6 +57,8 @@ const DEFAULT_FILTERS: TrendFilters = {
   minScore: 5,
   mainOnly: false,
   excludeSt: false,
+  // 默认快速扫描 260 只；改成 0 就是全市场拉日K
+  scanLimit: MAX_SCAN,
 };
 
 /** 缩量列：表头用短标签（长口径写进 title，否则这一列会被撑到数据宽度的两三倍） */
@@ -204,6 +223,7 @@ const parseTrendScanView = (payload: unknown): TrendScanView | null => {
       minScore: Number(rawFilters.minScore ?? DEFAULT_FILTERS.minScore),
       mainOnly: rawFilters.mainOnly === true,
       excludeSt: rawFilters.excludeSt === true,
+      scanLimit: scanLimitFrom(rawFilters.scanLimit ?? DEFAULT_FILTERS.scanLimit),
     },
     fetchedAt: isDateTime(payload.fetchedAt) ? payload.fetchedAt : new Date().toISOString(),
     source: 'eastmoney',
@@ -254,6 +274,8 @@ type TrendDraft = {
   minScore: number;
   mainOnly: boolean;
   excludeSt: boolean;
+  /** 拉日K上限：只从固定档位里选，所以没有字段级校验 */
+  scanLimit: number;
 };
 
 type DraftNumberField = 'maxMa5Dist' | 'maxPct' | 'minStableDays' | 'minAmountYi';
@@ -279,6 +301,7 @@ const draftFrom = (filters: TrendFilters): TrendDraft => ({
   minScore: filters.minScore,
   mainOnly: filters.mainOnly,
   excludeSt: filters.excludeSt,
+  scanLimit: scanLimitFrom(filters.scanLimit),
 });
 
 const validateDraft = (
@@ -321,6 +344,7 @@ const validateDraft = (
       minScore: draft.minScore,
       mainOnly: draft.mainOnly,
       excludeSt: draft.excludeSt,
+      scanLimit: scanLimitFrom(draft.scanLimit),
     },
     errors,
   };
@@ -338,6 +362,7 @@ const filtersKey = (filters: TrendFilters): string =>
     filters.minScore,
     filters.mainOnly,
     filters.excludeSt,
+    filters.scanLimit,
   ].join('|');
 
 // ---------------------------------------------------------------------------
@@ -542,7 +567,7 @@ export const TrendScanner = ({
           <span className="trend-settings__summary-text">
             条件与扫描范围：{applied.minScore}/5 档 · 偏离 ≤{applied.maxMa5Dist}% · 近{applied.pctWindow}
             日涨幅 ≤{applied.maxPct}% · 站稳 {applied.minStableDays} 日 · 5日均额 ≥{applied.minAmountYi} 亿
-            · 全市场
+            · 全市场 · 拉日K {scanLimitLabel(applied.scanLimit)}
           </span>
           <span className="trend-settings__summary-note">
             {coverage === null
@@ -565,10 +590,28 @@ export const TrendScanner = ({
               applyDraft();
             }}
           >
-            {/* 板块范围筛选已取消：趋势一律全市场扫描 */}
+            {/* 候选范围固定全市场（旧的「仅主线题材」已取消）；深度由下面的「拉日K上限」决定 */}
             <p className="trend-filters__scope" role="note">
-              扫描范围：<b>全市场</b>（已取消「仅主线题材」筛选）
+              候选范围：<b>全市场</b>（已取消「仅主线题材」筛选，这里改不动）；下面「拉日K上限」
+              决定实际扫描深度
             </p>
+
+            <label className="trend-filters__field">
+              <span>拉日K上限</span>
+              <select
+                value={draft.scanLimit}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  setDraft((previous) => ({ ...previous, scanLimit: value }));
+                }}
+              >
+                {SCAN_LIMIT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
 
             <label className="trend-filters__field">
               <span>{FIELD_RULES.maxMa5Dist.label}</span>
@@ -726,8 +769,17 @@ export const TrendScanner = ({
           <p className="status-note">
             生效条件：{applied.minScore}/5 档 · 距 5 日线绝对偏离 ≤{applied.maxMa5Dist}% · 近{' '}
             {applied.pctWindow} 日涨幅 ≤{applied.maxPct}% · 连续站稳 {applied.minStableDays} 日 · 近5日均额 ≥
-            {applied.minAmountYi} 亿 · 全市场（改动输入后点「应用」才生效；「重新扫描」用这组已生效条件）
+            {applied.minAmountYi} 亿 · 全市场 · 拉日K {scanLimitLabel(applied.scanLimit)}
+            （改动输入后点「应用」才生效；「重新扫描」用这组已生效条件）
           </p>
+
+          {applied.scanLimit <= SCAN_ALL ? (
+            <p className="status-note" role="note">
+              当前是「全部」扫描：一次请求要把全市场候选（约 5900 只）的日K都拉完，首次实测约 36 秒，
+              期间页面会停在「扫描中…」，请不要重复点「应用 / 重新扫描」。日K 缓存 10 分钟，
+              期间再扫（包括点「重新扫描」）只补没拉到的部分。
+            </p>
+          ) : null}
 
           {currentFailure === null && current !== null && current.status !== 'unavailable' ? (
             <div className="trend-coverage" role="note">
@@ -741,8 +793,16 @@ export const TrendScanner = ({
                   </p>
                   {coverage.unscanned > 0 ? (
                     <p className="status-note">
-                      这是快速扫描：按当日成交额优先取前 {MAX_SCAN} 只拉日K，还有 {coverage.unscanned}{' '}
-                      只未扫描，不代表全市场筛选完成。
+                      本次只拉了 {applied.scanLimit > SCAN_ALL ? applied.scanLimit : coverage.attempted}{' '}
+                      只日K（按当日成交额从高到低取），还有 {coverage.unscanned} 只未扫描，
+                      不代表全市场筛选完成；把「拉日K上限」改成「全部」可以覆盖全市场。
+                    </p>
+                  ) : null}
+                  {coverage.failed > 0 ? (
+                    <p className="status-note">
+                      失败 {coverage.failed} 只是「上游没给可用日K」，不是被条件筛掉：以 43 / 83 开头的老
+                      北交所代码段实测无日K，另外还有上市不足 20 根、停牌与退市的票；它们不参与形态判定，
+                      也不算进命中数。
                     </p>
                   ) : null}
                   {hiddenRows !== null && hiddenRows > 0 ? (

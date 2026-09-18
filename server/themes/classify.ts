@@ -406,22 +406,42 @@ export const toThemeItemV2 = (
 // v2：主线 / 支线 / 待确认
 // ---------------------------------------------------------------------------
 
-/** 主线资格：当日驱动有依据家数下限 */
-export const MAIN_SUPPORTED_TODAY_FLOOR = 5;
-/** 主线资格：前两个有效交易日各自的下限 */
-export const MAIN_SUPPORTED_PREVIOUS_FLOOR = 2;
-/** 支线资格：当日驱动有依据家数下限 */
-export const BRANCH_SUPPORTED_TODAY_FLOOR = 2;
+/**
+ * 主线资格：当日**概念成员涨停**家数下限。
+ *
+ * 2026-09-18 口径调整：资格从「驱动有依据」改回**概念家数**（市场口径），
+ * 因为驱动口径要求涨停原因命中该板块的细分逻辑，而样本里领涨题材的驱动词
+ * （AI算力 / 业绩增长 / 高端PCB…）大多是跨板块通用词，密度远不足以支撑资格判定，
+ * 结果是主线长期为空。驱动有依据现在只作**参考标注**（quality，不参与资格）。
+ */
+export const MAIN_CONCEPT_TODAY_FLOOR = 5;
+/** 主线资格：前两个有效交易日各自的概念家数下限 */
+export const MAIN_CONCEPT_PREVIOUS_FLOOR = 2;
+/** 支线资格：当日概念家数下限 */
+export const BRANCH_CONCEPT_TODAY_FLOOR = 2;
 /** 概念活跃下限：只有当天概念涨停 ≥2 才进入列表（避免把全目录都显示为待确认） */
 export const CONCEPT_ACTIVE_FLOOR = 2;
+/**
+ * 主线名额：当日概念家数排名前 N 名才算主线。
+ *
+ * 只靠绝对家数门槛会让主线发胖——25 个交易日实测平均 12.7 个 / 天（区间 1~31），
+ * 因为宽板块（华为概念 742 只、人工智能 730 只）天生容易凑够 5 家，而每只涨停股
+ * 的精纯归属中位数就有 6 个板块，「19 个主线」去重后其实只有 68 只股票。
+ * 「主线」是相对概念（今天最强的那几个方向），所以加名额：过阈值后再取排名前 N。
+ */
+export const MAIN_QUOTA = 3;
 
 export type ThemeDayEvidence = {
   /** YYYYMMDD */
   date: string;
   conceptCount: number | null;
+  /** 当日概念成员里「本轮驱动有依据」的家数；只作参考标注，不参与资格判定 */
   supportedCount: number | null;
   unresolvedCount: number | null;
-  /** 该日基础数据是否完整；不完整不能据此排除主线 */
+  /**
+   * 该日**家数口径**的基础数据是否完整（涨停池可取到）。
+   * 驱动证据取不到只影响 supported 标注，不再据此判 pending。
+   */
   complete: boolean;
 };
 
@@ -445,19 +465,85 @@ export const isNextCalendarDay = (older: string, newer: string): boolean => {
 };
 
 /**
- * v2 分类规则（v1 建议默认值，只用明确的家数与持续性）：
- *   - 使用最近 3 个有效交易日（不是自然日），日期缺口不能跳过；
- *   - 今天驱动有依据 ≥5 且前两日各 ≥2 → main；
- *   - 数据不足以证明 main（不足 3 日、计数缺失，或未决成员可能补足）→ pending；
- *   - 数据足以排除 main 且今天 ≥2 → branch；
+ * 两个日期是否为**交易日历上相邻**的两个交易日。
+ *
+ * 为什么不用 `isNextCalendarDay`：交易日历天然会跨周末与节假日
+ * （周五 → 周一相差 3 个自然日），按自然日判相邻会把**正常的周末**当成
+ * 「历史数据缺口」，于是周一、周二的题材永远拿不到主线资格。
+ * 缺数据这件事已经由 `countsKnown` / `complete` 单独判断，这里只判「日历上是否相邻」。
+ *
+ * 没给 `tradingDates`（如纯函数单测）时退化为自然日口径。
+ */
+export const isAdjacentTradingDay = (
+  older: string,
+  newer: string,
+  tradingDates?: string[],
+): boolean => {
+  if (!tradingDates || tradingDates.length < 2) return isNextCalendarDay(older, newer);
+  const olderIndex = tradingDates.indexOf(older);
+  const newerIndex = tradingDates.indexOf(newer);
+  return olderIndex >= 0 && newerIndex >= 0 && newerIndex - olderIndex === 1;
+};
+
+/**
+ * 「驱动有依据」的参考标注：只把数字写进理由，**不参与**资格判定。
+ * 资格口径是概念家数（市场口径）；驱动口径要求涨停原因命中该板块细分逻辑，
+ * 密度不足以支撑资格，但能提示「这波涨停里有多少是走该题材自己的逻辑」。
+ */
+const pushQualityNote = (
+  reasons: string[],
+  supported: number | null,
+  unresolved: number,
+): void => {
+  if (supported === null) {
+    reasons.push('当日「驱动有依据」家数缺失（仅作参考，不影响资格）');
+    return;
+  }
+  if (supported === 0) {
+    reasons.push(
+      `当日 ${unresolved} 只概念涨停里没有一只的涨停原因命中该板块细分逻辑（驱动口径仅作参考）`,
+    );
+    return;
+  }
+  reasons.push(
+    `参考：当日 ${supported} 只有明确驱动依据、${unresolved} 只仅有概念归属（不参与资格判定）`,
+  );
+};
+
+/**
+ * v2 分类规则：**资格只看概念家数（市场口径）+ 持续性**，驱动口径只作参考标注。
+ *   - 使用最近 3 个有效交易日（按交易日历判相邻，跨周末/节假日算连续）；
+ *   - 当日概念成员涨停 ≥5 且前两日各 ≥2、当日家数排名在前 `MAIN_QUOTA` 名内、
+ *     且不是宽口径属性板块（`mainEligible !== false`）→ main；
+ *   - 家数数据不足（不足 3 日 / 计数缺失 / 交易日历有缺口）→ pending，
+ *     不拿缺口当「不达标」；
+ *   - 数据足以排除 main 且当日 ≥2 → branch；
  *   - 其它 → pending；只有当日概念活跃或已跟踪的题材才进入列表。
  *
- * `daysNewestFirst[0]` 必须是当天。历史日的 supportedCount 目前只能给出概念口径下界时，
- * 调用方应把 `complete` 置 false，函数会因此判 pending 而不是假装达标。
+ * `daysNewestFirst[0]` 必须是当天。
+ *
+ * `options.tradingDates` 是观察窗口的交易日历（从旧到新）。给了它就按**日历相邻**
+ * 判断连续性（跨周末 / 节假日算连续）；不给则退化为自然日口径。
  */
 export const classifyThemeV2 = (
   daysNewestFirst: ThemeDayEvidence[],
-  options: { previouslyTracked?: boolean } = {},
+  options: {
+    previouslyTracked?: boolean;
+    tradingDates?: string[];
+    /**
+     * 该板块**当日概念家数**的全市场排名（1 = 家数最多）。
+     * 调用方负责用同一份排名喂给列表与详情，否则会出现「列表说支线、详情说主线」。
+     * 不给就不设名额（单板块纯函数单测）。
+     */
+    mainRank?: number;
+    /** 名额上限，默认 `MAIN_QUOTA` */
+    mainQuota?: number;
+    /**
+     * 是否有资格进主线。宽口径属性板块（成员上千）传 false：
+     * 家数天然偏大，让它占名额会把真正的紧凑题材挤出主线，而它本身只作观察。
+     */
+    mainEligible?: boolean;
+  } = {},
 ): ThemeClassificationV2 => {
   const [today, ...previous] = daysNewestFirst;
   const reasons: string[] = [];
@@ -492,70 +578,75 @@ export const classifyThemeV2 = (
 
   const datesContinuous =
     window.length === 3 &&
-    isNextCalendarDay(window[1].date, window[0].date) &&
-    isNextCalendarDay(window[2].date, window[1].date);
+    isAdjacentTradingDay(window[1].date, window[0].date, options.tradingDates) &&
+    isAdjacentTradingDay(window[2].date, window[1].date, options.tradingDates);
+  // 家数口径只依赖「概念成员涨停」，所以「可用」看 conceptCount 是否取到
   const countsKnown =
-    window.length === 3 &&
-    window.every((day) => day.supportedCount !== null && day.unresolvedCount !== null);
+    window.length === 3 && window.every((day) => day.conceptCount !== null);
   const countsComplete = window.length === 3 && window.every((day) => day.complete);
 
   const mainTodayOk =
-    todaySupported !== null && todaySupported >= MAIN_SUPPORTED_TODAY_FLOOR;
+    todayConcept !== null && todayConcept >= MAIN_CONCEPT_TODAY_FLOOR;
   const mainPreviousOk =
     previous.length >= 2 &&
-    previous[0].supportedCount !== null &&
-    previous[1].supportedCount !== null &&
-    previous[0].supportedCount >= MAIN_SUPPORTED_PREVIOUS_FLOOR &&
-    previous[1].supportedCount >= MAIN_SUPPORTED_PREVIOUS_FLOOR;
+    previous[0].conceptCount !== null &&
+    previous[1].conceptCount !== null &&
+    previous[0].conceptCount >= MAIN_CONCEPT_PREVIOUS_FLOOR &&
+    previous[1].conceptCount >= MAIN_CONCEPT_PREVIOUS_FLOOR;
 
   if (datesContinuous && countsKnown && mainTodayOk && mainPreviousOk) {
     reasons.push(
-      `最近 3 个交易日驱动有依据家数 ${window.map((day) => day.supportedCount).join('/')}，` +
-        `满足当日 ≥${MAIN_SUPPORTED_TODAY_FLOOR} 且前两日各 ≥${MAIN_SUPPORTED_PREVIOUS_FLOOR}`,
+      `最近 3 个交易日概念成员涨停 ${window.map((day) => day.conceptCount).join('/')}，` +
+        `满足当日 ≥${MAIN_CONCEPT_TODAY_FLOOR} 且前两日各 ≥${MAIN_CONCEPT_PREVIOUS_FLOOR}`,
     );
-    if (!countsComplete || todayUnresolved > 0) {
-      reasons.push('仍有未决 / 数据缺失成员，覆盖不足（不改变已达成的正面资格）');
+    if (options.mainEligible === false) {
+      reasons.push('宽口径属性板块（成员规模过大，仅作观察），不占主线名额，归支线');
+      pushQualityNote(reasons, todaySupported, todayUnresolved);
+      return { kind: 'branch', reasons, belowActiveFloor, listed: true };
     }
+    const quota = options.mainQuota ?? MAIN_QUOTA;
+    const quotaExceeded =
+      options.mainRank !== undefined && options.mainRank > quota;
+    if (quotaExceeded) {
+      reasons.push(
+        `当日概念家数全市场排名第 ${options.mainRank}，超出主线名额（前 ${quota}），归支线` +
+          `（家数达标但已不是当日最强方向）`,
+      );
+      pushQualityNote(reasons, todaySupported, todayUnresolved);
+      return { kind: 'branch', reasons, belowActiveFloor, listed: true };
+    }
+    if (options.mainRank !== undefined) {
+      reasons.push(`当日概念家数全市场排名第 ${options.mainRank}（主线名额前 ${quota}）`);
+    }
+    if (!countsComplete) {
+      reasons.push('部分交易日家数基础数据不完整（不改变已达成的正面资格）');
+    }
+    pushQualityNote(reasons, todaySupported, todayUnresolved);
     return { kind: 'main', reasons, belowActiveFloor, listed: true };
   }
 
-  // 还不能证明 main：证据不足，或未决成员有可能补足门槛
+  // 还不能证明 main：家数数据不足时只能 pending（不能拿缺口当「不达标」）
   const missingData =
     !datesContinuous || !countsKnown || window.some((day) => !day.complete);
-  const todayCouldReach =
-    todaySupported !== null && todaySupported + todayUnresolved >= MAIN_SUPPORTED_TODAY_FLOOR;
 
-  if (missingData || todayCouldReach) {
-    if (
-      todaySupported !== null &&
-      todaySupported + todayUnresolved >= MAIN_SUPPORTED_TODAY_FLOOR &&
-      todaySupported < MAIN_SUPPORTED_TODAY_FLOOR
-    ) {
-      reasons.push(
-        `当日驱动有依据 ${todaySupported} 只 + 未决 ${todayUnresolved} 只可能补足 ≥${MAIN_SUPPORTED_TODAY_FLOOR}，暂不能排除主线`,
-      );
-    }
+  if (missingData) {
     for (const day of previous.slice(0, 2)) {
-      if (
-        day.supportedCount !== null &&
-        day.supportedCount < MAIN_SUPPORTED_PREVIOUS_FLOOR &&
-        day.supportedCount + (day.unresolvedCount ?? 0) >= MAIN_SUPPORTED_PREVIOUS_FLOOR
-      ) {
-        reasons.push(
-          `${day.date} 驱动有依据 ${day.supportedCount} 只 + 未决 ${day.unresolvedCount ?? 0} 只` +
-            `可能补足 ≥${MAIN_SUPPORTED_PREVIOUS_FLOOR}，暂不能排除主线`,
-        );
+      if (day.conceptCount === null) {
+        reasons.push(`${day.date} 家数缺失，暂不能证明也不能排除主线`);
       }
     }
-    if (missingData) reasons.push('历史覆盖或计数缺失，暂不能证明也不能排除主线');
+    if (!datesContinuous) reasons.push('历史覆盖有缺口，暂不能证明也不能排除主线');
+    else if (countsKnown) reasons.push('家数基础数据不完整，暂不能证明也不能排除主线');
+    pushQualityNote(reasons, todaySupported, todayUnresolved);
     return { kind: 'pending', reasons, belowActiveFloor, listed };
   }
 
-  if (todaySupported !== null && todaySupported >= BRANCH_SUPPORTED_TODAY_FLOOR) {
+  if (todayConcept !== null && todayConcept >= BRANCH_CONCEPT_TODAY_FLOOR) {
     reasons.push(
-      `当日驱动有依据 ${todaySupported} 只（≥${BRANCH_SUPPORTED_TODAY_FLOOR}），` +
-        `样本足够排除主线要求（当日 ≥${MAIN_SUPPORTED_TODAY_FLOOR} 且前两日各 ≥${MAIN_SUPPORTED_PREVIOUS_FLOOR}）`,
+      `当日概念成员涨停 ${todayConcept} 只（≥${BRANCH_CONCEPT_TODAY_FLOOR}），` +
+        `样本足够排除主线要求（当日 ≥${MAIN_CONCEPT_TODAY_FLOOR} 且前两日各 ≥${MAIN_CONCEPT_PREVIOUS_FLOOR}）`,
     );
+    pushQualityNote(reasons, todaySupported, todayUnresolved);
     return { kind: 'branch', reasons, belowActiveFloor, listed: true };
   }
 

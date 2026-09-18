@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TrendScanner } from './TrendScanner';
@@ -220,9 +220,11 @@ describe('TrendScanner', () => {
     expect(screen.queryByRole('combobox', { name: '板块范围' })).not.toBeInTheDocument();
     expect(screen.queryByRole('option', { name: '仅主线题材' })).not.toBeInTheDocument();
     expect(screen.queryByRole('option', { name: '全市场（对照）' })).not.toBeInTheDocument();
-    // 「扫描范围」与「生效条件」在折叠的条件区里
+    // 「候选范围」与「生效条件」在折叠的条件区里；拉日K深度是另一档（默认 260 只）
     const settings = document.querySelector('.trend-settings');
-    expect(settings?.textContent).toContain('扫描范围：全市场');
+    expect(settings?.textContent).toContain('候选范围：全市场');
+    expect(settings?.textContent).toContain('拉日K上限');
+    expect(settings?.textContent).toContain('拉日K 前 260 只');
     expect(settings?.textContent).toContain('生效条件：');
     expect(settings?.textContent).toContain('全市场');
 
@@ -303,6 +305,47 @@ describe('TrendScanner', () => {
     expect(coverageText()).toContain('未扫描 1 只');
     expect(coverageText()).toContain('不代表全市场筛选完成');
   });
+
+  it('「拉日K上限」默认 260；选「全部」应用后按 scanLimit=0 请求并改写覆盖说明', async () => {
+    const fetchImpl = installFetch((url) =>
+      url.includes('scanLimit=0')
+        ? trendPayload({
+            candidates: 5917,
+            scanned: 5917,
+            filters: baseFilters({ scanLimit: 0 }),
+            coverage: { total: 5917, attempted: 5917, succeeded: 5900, failed: 17, unscanned: 0 },
+          })
+        : trendPayload(),
+    );
+    const user = userEvent.setup();
+    render(
+      <TrendScanner onAddToWatchlist={vi.fn()} watchlistSymbols={new Set<string>()} />,
+    );
+    await screen.findByText('高澜股份');
+
+    // 首次加载就是默认的 260 只快速档
+    expect(String(fetchImpl.mock.calls[0][0])).toContain('scanLimit=260');
+
+    // 条件区整体折叠，先展开才能操作表单
+    await user.click(document.querySelector('.trend-settings__summary') as Element);
+
+    const select = screen.getByRole('combobox', { name: /拉日K上限/ });
+    // 「全部」这一档就在下拉里，不需要改代码
+    expect(within(select).getByRole('option', { name: /全部/ })).toBeInTheDocument();
+    await user.selectOptions(select, '0');
+    await user.click(screen.getByRole('button', { name: '应用' }));
+
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+    expect(String(fetchImpl.mock.calls[1][0])).toContain('scanLimit=0');
+
+    // 全市场覆盖：未扫描为 0，不再提示「未扫描」
+    await waitFor(() => expect(coverageText()).toContain('未扫描 0 只'));
+    expect(coverageText()).not.toContain('把「拉日K上限」改成「全部」');
+    // 并把「全部扫描」的耗时预期写在页面上
+    expect(document.body.textContent).toContain('当前是「全部」扫描');
+    // 折叠态摘要也跟着改了
+    expect(document.querySelector('.trend-settings__summary')?.textContent).toContain('拉日K 全部');
+  }, 20000);
 
   it('命中超过 120 行时说明还有多少条未显示', async () => {
     installFetch(() =>

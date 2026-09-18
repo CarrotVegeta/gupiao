@@ -35,6 +35,9 @@ import { resolveThemeRelation } from './attribution.js';
 import {
   classifyThemeV2,
   CONCEPT_ACTIVE_FLOOR,
+  MAIN_CONCEPT_PREVIOUS_FLOOR,
+  MAIN_CONCEPT_TODAY_FLOOR,
+  MAIN_QUOTA,
   DURATION_DAILY_FLOOR,
   toThemeItemV2,
   type ThemeClassifyInput,
@@ -74,13 +77,24 @@ const MAX_ITEMS = 60;
 export const THEME_HISTORY_DAYS = 3;
 /**
  * 板块规模上限：纯正成员数超过这个规模的「板块」是宽口径属性题材
- * （如「央国企改革」1444 只），不是主线。用东财快照的涨跌家数之和做运行时代理，
- * 与回测脚本里 `MAX_BOARD_SIZE = 800` 对齐。
+ * （如「融资融券」3769 只、「深股通」1822 只），不是主线。用东财快照的涨跌家数之和做运行时代理。
+ *
+ * 2026-09-18：上限从 800 放宽到 1500。800 会把当日涨停家数最多的「央国企改革」
+ * （宽度 1380、21 只涨停）整块剔除，而它确实是当天的市场题材；放宽后它回到列表，
+ * 但会被标注为宽口径（见 `BROAD_BOARD_SIZE`），不当成紧凑题材展示。
+ * 仍能挡住融资融券 / 深股通 / 沪股通 / 机构重仓这类统计属性板块的漏网。
  */
-export const THEME_MAX_BOARD_SIZE = 800;
+export const THEME_MAX_BOARD_SIZE = 1500;
+/** 超过这个宽度就标注「宽口径」：允许进列表，但要在界面说明它不是紧凑题材 */
+export const BROAD_BOARD_SIZE = 800;
 
-/** 规则版本：缓存键必须带它，规则变化时旧缓存自动失效 */
-export const THEME_RULE_VERSION = `${ROLE_RULE_VERSION}+classify-v2`;
+/**
+ * 规则版本：缓存键必须带它，规则变化时旧缓存自动失效。
+ * classify-v2.3（2026-09-18）：主线 / 支线资格改为**概念家数**（市场口径）+ **当日家数前 3 名额**，
+ * 驱动有依据降为参考标注；宽口径板块不占名额；跨度按交易日历判相邻；
+ * 宽度上限 800→1500（超过 800 标宽口径）。
+ */
+export const THEME_RULE_VERSION = `${ROLE_RULE_VERSION}+classify-v2.3`;
 
 const MARKET_INDEX_SYMBOLS = { shanghai: '000001', shenzhen: '399001' } as const;
 
@@ -531,7 +545,11 @@ export type BoardDayCounts = {
   supportedCount: number | null;
   unresolvedCount: number | null;
   supportedSymbols: Set<string>;
-  /** 该日基础数据是否完整；不完整就不能据此排除主线 */
+  /**
+   * 该日**家数口径**的基础数据是否完整（涨停池可取到）。
+   * 2026-09-18：不再把 `evidenceFetchFailed` 算进来——资格已改为概念家数口径，
+   * 驱动证据取不到只影响 supported 标注，不该把题材判成待确认。
+   */
   complete: boolean;
   evidence: Evidence[];
 };
@@ -614,7 +632,7 @@ export const computeBoardDayCounts = (
     }
 
     const unresolvedCount = Math.max(0, symbols.size - supportedSymbols.size);
-    const complete = day.error === null && !context.evidenceFetchFailed;
+    const complete = day.error === null;
     byDate.set(date, {
       date,
       conceptCount: symbols.size,
@@ -634,6 +652,45 @@ export const computeBoardDayCounts = (
   }
 
   return { days, byDate };
+};
+
+/**
+ * 主线名额排名：按**当日概念家数**降序，返回 `板块代码 → 名次（1 起）`。
+ *
+ * 列表（buildThemes）与详情（buildThemeDetail）都必须用这一份排名，
+ * 否则同一个板块会出现「列表说支线、详情说主线」。
+ * 并列打破顺序是确定性的：当日家数 → 前两日家数之和 → 板块宽度（更紧凑优先）→ 代码。
+ * 这里只做计数，不构建证据，所以两边各算一次也不贵。
+ */
+export const computeMainRanking = (context: SharedContext): Map<string, number> => {
+  const previousDates = context.windowDates.slice(0, -1);
+  const countOnDate = (boardCode: string, date: string): number => {
+    const day = context.poolsByDate.get(date);
+    if (!day || day.error) return 0;
+    return countBoardSymbolsForDay(boardCode, day, dayThemes(date, context))?.size ?? 0;
+  };
+  const breadthOf = (boardCode: string): number => {
+    const snapshot = context.catalog.get(boardCode);
+    return (snapshot?.upCount ?? 0) + (snapshot?.downCount ?? 0);
+  };
+
+  const scored = [...context.conceptLimitUpByBoard.entries()]
+    // 宽口径属性板块不参与排名：它们不占主线名额，排名只统计紧凑题材
+    .filter(([code]) => breadthOf(code) <= BROAD_BOARD_SIZE)
+    .map(([code, symbols]) => ({
+      code,
+      today: symbols.size,
+      previous: previousDates.reduce((sum, date) => sum + countOnDate(code, date), 0),
+      breadth: breadthOf(code),
+    }));
+  scored.sort(
+    (a, b) =>
+      b.today - a.today ||
+      b.previous - a.previous ||
+      a.breadth - b.breadth ||
+      a.code.localeCompare(b.code),
+  );
+  return new Map(scored.map((row, index) => [row.code, index + 1]));
 };
 
 /** 候选板块：当日概念活跃，或此前有家数（已跟踪）的题材 */
@@ -658,6 +715,7 @@ export const buildThemes = async (
   const fetchedAt = new Date().toISOString();
   const empty: ThemesResponse = {
     schemaVersion: 2,
+    scope: 'board',
     tradeDate,
     main: [],
     branch: [],
@@ -675,6 +733,9 @@ export const buildThemes = async (
     const main: ThemeItem[] = [];
     const branch: ThemeItem[] = [];
     const pending: ThemeItem[] = [];
+    const broadBoards: string[] = [];
+    const broadCodes = new Set<string>();
+    const mainRanking = computeMainRanking(context);
 
     for (const [code, conceptSymbols] of context.conceptLimitUpByBoard) {
       const snapshot = context.catalog.get(code);
@@ -687,6 +748,9 @@ export const buildThemes = async (
 
       const classification = classifyThemeV2(days, {
         previouslyTracked: days.slice(1).some((day) => (day.conceptCount ?? 0) > 0),
+        tradingDates: context.windowDates,
+        mainRank: mainRanking.get(code),
+        mainEligible: breadth <= BROAD_BOARD_SIZE,
       });
       if (!classification.listed) continue;
 
@@ -731,6 +795,16 @@ export const buildThemes = async (
       });
       if (!item) continue;
 
+      // 宽口径板块（成员 > BROAD_BOARD_SIZE）允许进列表，但要说明它不是紧凑题材
+      if (breadth > BROAD_BOARD_SIZE) {
+        item.classificationReasons = [
+          ...item.classificationReasons,
+          `该板块为宽口径属性题材（成员宽度 ${breadth} > ${BROAD_BOARD_SIZE}），家数口径偏大，仅作观察`,
+        ];
+        broadBoards.push(snapshot.name);
+        broadCodes.add(code);
+      }
+
       if (classification.kind === 'main') main.push(item);
       else if (classification.kind === 'branch') branch.push(item);
       else pending.push(item);
@@ -738,12 +812,25 @@ export const buildThemes = async (
 
     const poolFailed = context.errors.length > 0;
     if (poolFailed) warnings.push('部分上游请求失败，家数与覆盖可能不完整');
+    // 口径说明：主线不是「家数达标」而是「当日最强的前几名」，页面必须写清楚
+    warnings.push(
+      `主线口径：当日概念家数前 ${MAIN_QUOTA} 名，且当日 ≥${MAIN_CONCEPT_TODAY_FLOOR}、` +
+        `前两日各 ≥${MAIN_CONCEPT_PREVIOUS_FLOOR}；家数达标但排在名额外的方向归入支线；` +
+        `宽口径属性板块（成员 > ${BROAD_BOARD_SIZE}）不占名额`,
+    );
+    if (broadBoards.length > 0) {
+      warnings.push(
+        `以下题材是宽口径属性板块（成员 > ${BROAD_BOARD_SIZE}），家数偏大、不做紧凑题材解读：` +
+          `${broadBoards.slice(0, 5).join('、')}${broadBoards.length > 5 ? ` 等 ${broadBoards.length} 个` : ''}`,
+      );
+    }
     if ([...main, ...branch, ...pending].some((item) => item.conceptLimitUpCount === null)) {
       warnings.push('部分题材缺少当日概念家数（数据缺失，不按 0 处理）');
     }
     if ([...main, ...branch, ...pending].some((item) => item.supportedLimitUpCount === 0)) {
       warnings.push(
-        '部分题材当日「驱动有依据」为 0：静态概念归属不能单独确认本轮驱动，家数按概念口径展示',
+        '部分题材当日「驱动有依据」为 0：涨停原因未命中该板块细分逻辑；' +
+          '主线 / 支线按概念家数（市场口径）判定，驱动口径仅作参考',
       );
     }
 
@@ -756,8 +843,9 @@ export const buildThemes = async (
 
     const body: ThemesResponse = {
       schemaVersion: 2,
+      scope: 'board',
       tradeDate,
-      main: sortMain(main),
+      main: sortMain(main, broadCodes),
       branch: sortBranch(branch),
       pending: sortBranch(pending),
       fetchedAt,
@@ -779,11 +867,17 @@ export const buildThemes = async (
   }
 };
 
-const sortMain = (items: ThemeItem[]): ThemeItem[] =>
+/**
+ * 主线资格是概念家数口径，所以排序以概念家数为主、驱动有依据作次级排序。
+ * **宽口径属性板块排到最后**：它们的家数天然偏大（央国企改革 21 家），
+ * 摆在最前面会让人以为那就是今天的题材，与「仅作观察」的标注自相矛盾。
+ */
+const sortMain = (items: ThemeItem[], broadCodes: Set<string>): ThemeItem[] =>
   [...items].sort(
     (a, b) =>
-      (b.supportedLimitUpCount ?? 0) - (a.supportedLimitUpCount ?? 0) ||
-      (b.conceptLimitUpCount ?? 0) - (a.conceptLimitUpCount ?? 0),
+      Number(broadCodes.has(a.code)) - Number(broadCodes.has(b.code)) ||
+      (b.conceptLimitUpCount ?? 0) - (a.conceptLimitUpCount ?? 0) ||
+      (b.supportedLimitUpCount ?? 0) - (a.supportedLimitUpCount ?? 0),
   );
 
 const sortBranch = (items: ThemeItem[]): ThemeItem[] =>
@@ -881,8 +975,13 @@ export const buildThemeDetail = async (
 
     const { days, byDate } = computeBoardDayCounts(boardCode, context);
     const todayCounts = byDate.get(context.poolDate);
+    const detailBreadth = (snapshot.upCount ?? 0) + (snapshot.downCount ?? 0);
     const classification = classifyThemeV2(days, {
       previouslyTracked: days.slice(1).some((day) => (day.conceptCount ?? 0) > 0),
+      tradingDates: context.windowDates,
+      // 与列表同一份排名 / 同一份资格：详情页不能给出与列表冲突的主线 / 支线结论
+      mainRank: computeMainRanking(context).get(boardCode),
+      mainEligible: detailBreadth <= BROAD_BOARD_SIZE,
     });
 
     const members = await fetchBoardMembers(boardCode, fetchImpl);
@@ -898,6 +997,11 @@ export const buildThemeDetail = async (
       `分类：${classification.kind === 'main' ? '主线' : classification.kind === 'branch' ? '支线' : '待确认'}`,
       ...classification.reasons.map((reason) => `分类依据：${reason}`),
     ];
+    if (detailBreadth > BROAD_BOARD_SIZE) {
+      warnings.push(
+        `该板块是宽口径属性题材（成员宽度 ${detailBreadth} > ${BROAD_BOARD_SIZE}），家数偏大、不做紧凑题材解读`,
+      );
+    }
 
     // 板块日K（相对涨幅 / 抗跌性 / 补涨滞后度）
     const tonghuashunCode =

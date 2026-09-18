@@ -408,8 +408,12 @@ export const ThemeDetail = ({
           {/* 「← 返回题材列表」按钮已去掉：切回「题材」标签页即可回到列表，不用两个入口 */}
           <div className="theme-title-row">
             <h2 id="theme-detail-title">
-              {data.theme?.name ?? theme.name} · 概念成员涨停{' '}
-              {theme.conceptLimitUpCount ?? theme.limitUpCount} 只
+              {data.theme?.name ?? theme.name}
+              {theme.source === 'topic' ? ' · 细分逻辑题材 ' : ' · 概念成员涨停 '}
+              {theme.source === 'topic'
+                ? theme.limitUpCount
+                : (theme.conceptLimitUpCount ?? theme.limitUpCount)}{' '}
+              只
             </h2>
             {/*
               警示按钮紧跟在标题后面；正文面板渲染在表头外面（下面），
@@ -430,15 +434,31 @@ export const ThemeDetail = ({
           </p>
         </div>
         <div className="overview__actions limit-up-list__actions">
+          {theme.source === 'topic' ? (
+            <p className="overview__meta">
+              涨停 <span>{theme.limitUpCount}</span> 家 · 连板{' '}
+              <span>{theme.continuousCount}</span> 只 · 最高{' '}
+              <span>{theme.maxBoardLabel ?? '—'}</span> · 持续{' '}
+              <span>{theme.durationDays}</span> 天
+            </p>
+          ) : (
+            <p className="overview__meta">
+              概念成员涨停（资格口径）：<span>{theme.conceptLimitUpCount ?? '—'}</span> · 驱动有依据（参考）：
+              <span>{theme.supportedLimitUpCount ?? '—'}</span> · 待确认：
+              <span>{theme.unresolvedLimitUpCount ?? '—'}</span>
+            </p>
+          )}
           <p className="overview__meta">
-            概念成员涨停：<span>{theme.conceptLimitUpCount ?? '—'}</span> · 驱动有依据：
-            <span>{theme.supportedLimitUpCount ?? '—'}</span> · 待确认：
-            <span>{theme.unresolvedLimitUpCount ?? '—'}</span>
-          </p>
-          <p className="overview__meta">
-            覆盖：总成员 <span>{data.coverage.total}</span> · 已计算{' '}
-            <span>{data.coverage.succeeded}</span> · 失败 <span>{data.coverage.failed}</span> ·
-            未扫描 <span>{data.coverage.unscanned}</span>
+            {theme.source === 'topic' ? '成员：' : '覆盖：总成员 '}
+            <span>{data.coverage.total}</span>
+            {theme.source === 'topic' ? (
+              ' 只（题材成员 = 当日涨停原因含该逻辑的股票）'
+            ) : (
+              <>
+                {' '}· 已计算 <span>{data.coverage.succeeded}</span> · 失败{' '}
+                <span>{data.coverage.failed}</span> · 未扫描 <span>{data.coverage.unscanned}</span>
+              </>
+            )}
           </p>
           <button
             className="button button--secondary"

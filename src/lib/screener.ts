@@ -39,7 +39,12 @@ export const TREND_EVIDENCE = {
 } as const;
 
 export const THEME_EVIDENCE =
-  '题材分类是结构展示：主线板块本身在回测里有微弱正超额（B 档 T+1 +0.059%，t=2.03），但样本外衰减且低于手续费，同样不构成买入建议。静态概念归属不等于本轮题材驱动。';
+  '题材口径（2026-09-18 起）：题材单位是**涨停原因里的细分逻辑**（如「光通信」「先进封装」），' +
+  '不是东财宽概念板块——宽概念的家数等于子题材并集，按家数排名必然选出「华为概念 / 人工智能」这种凑数的宽概念。' +
+  '家数与持续性都按各日自己的涨停原因统计，没有「用当前成分股回算历史」的前视偏差；' +
+  'K线形态 / 角色标签 / 风险核验尚未在题材口径接入，按缺失披露。' +
+  '另外，原板块口径的「主线」回测只有微弱正超额（B 档 T+1 +0.059%，t=2.03）、样本外衰减且低于手续费，' +
+  '细分逻辑口径本身尚未回测。以上都只是结构展示，不构成买入建议。';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -84,7 +89,9 @@ const isStringArray = (value: unknown): value is string[] =>
 const isThemeItem = (value: unknown): value is ThemeItem =>
   isRecord(value) &&
   typeof value.code === 'string' &&
-  /^BK\d{4}$/.test(value.code) &&
+  // 板块口径是 BK 代码；细分逻辑口径是 TP: + 涨停原因标签
+  /^(BK\d{4}|TP:.+)$/.test(value.code) &&
+  (value.source === undefined || value.source === 'board' || value.source === 'topic') &&
   typeof value.name === 'string' &&
   (value.kind === 'main' || value.kind === 'branch') &&
   isNullableNumber(value.pct) &&
@@ -217,6 +224,7 @@ const isTrendPick = (value: unknown): value is TrendPick =>
 
 export const unavailableThemes = (error: string | null = FORMAT_ERROR): ThemesResponse => ({
   schemaVersion: 2,
+  scope: 'topic',
   tradeDate: null,
   main: [],
   branch: [],
@@ -242,7 +250,8 @@ export const toThemesResponse = (payload: unknown): ThemesResponse => {
     !isTradeDate(payload.tradeDate) ||
     !isParseableDateTime(payload.fetchedAt) ||
     !isStringArray(payload.warnings) ||
-    !(typeof payload.error === 'string' || payload.error === null)
+    !(typeof payload.error === 'string' || payload.error === null) ||
+    !(payload.scope === undefined || payload.scope === 'board' || payload.scope === 'topic')
   ) {
     return unavailableThemes(FORMAT_ERROR);
   }
@@ -258,6 +267,8 @@ export const toThemesResponse = (payload: unknown): ThemesResponse => {
 
   return {
     schemaVersion: 2,
+    // 缺省按 board 处理：没有 scope 的响应都是题材页切到 TP 口径之前的旧板块快照
+    scope: payload.scope === 'topic' ? 'topic' : 'board',
     tradeDate: payload.tradeDate,
     main: payload.main,
     branch: payload.branch,
@@ -385,8 +396,12 @@ export const fetchThemeDetail = async (
   const params = new URLSearchParams();
   if (typeof date === 'string') params.set('date', date);
   const query = params.toString();
+  // 细分逻辑题材走 /api/topics/:key/detail；板块口径走 /api/themes/:code/detail
+  const endpoint = code.startsWith('TP:')
+    ? `/api/topics/${encodeURIComponent(code.slice(3))}/detail`
+    : `${THEMES_ENDPOINT}/${encodeURIComponent(code)}/detail`;
   const response = await fetchImpl(
-    `${THEMES_ENDPOINT}/${encodeURIComponent(code)}/detail${query ? `?${query}` : ''}`,
+    `${endpoint}${query ? `?${query}` : ''}`,
     signal ? { signal } : undefined,
   );
   if (!response.ok) throw new Error(`题材详情请求失败（${response.status}）`);
@@ -424,6 +439,17 @@ export type TrendScanResponseV2 = TrendScanResponse & {
   quoteAsOf: string | null;
 };
 
+/** 拉日K上限：默认 260 只快速扫描，0 表示全市场不截断（与服务端 SCAN_ALL 对应） */
+export const DEFAULT_TREND_SCAN_LIMIT = 260;
+const TREND_SCAN_ALL = 0;
+
+/** 读服务端回显的 scanLimit：只接受非负有限数，其它一律回落到默认档 */
+const readScanLimit = (value: unknown): number => {
+  const next = Number(value);
+  if (!Number.isFinite(next) || next < TREND_SCAN_ALL) return DEFAULT_TREND_SCAN_LIMIT;
+  return Math.round(next);
+};
+
 export const unavailableTrend = (error: string | null = FORMAT_ERROR): TrendScanResponseV2 => ({
   tradeDate: null,
   items: [],
@@ -440,6 +466,8 @@ export const unavailableTrend = (error: string | null = FORMAT_ERROR): TrendScan
     minScore: 5,
     mainOnly: false,
     excludeSt: false,
+    // 与服务端 DEFAULT_FILTERS 一致：默认 260 只快速扫描（0 = 全市场）
+    scanLimit: DEFAULT_TREND_SCAN_LIMIT,
   },
   fetchedAt: new Date().toISOString(),
   source: 'eastmoney+10jqka',
@@ -502,6 +530,7 @@ export const toTrendScanResponse = (payload: unknown): TrendScanResponseV2 => {
       minScore: Number(payload.filters.minScore ?? 5),
       mainOnly: payload.filters.mainOnly === true,
       excludeSt: payload.filters.excludeSt === true,
+      scanLimit: readScanLimit(payload.filters.scanLimit ?? DEFAULT_TREND_SCAN_LIMIT),
     },
     fetchedAt: payload.fetchedAt,
     source: payload.status === 'fresh' ? 'eastmoney+10jqka' : 'eastmoney',

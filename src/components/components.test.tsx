@@ -257,7 +257,8 @@ describe('Task 6 dashboard components', () => {
     expect(onSubmit).toHaveBeenCalledWith({
       symbol: '600519',
       name: '贵州茅台',
-      groupId: 'long-term',
+      // 没有显式选分组：默认「不分组」，不落到第一个分组上
+      groupId: '',
       openPrice: null,
       quantity: null,
       note: '',
@@ -298,7 +299,8 @@ describe('Task 6 dashboard components', () => {
     expect(onSubmit).toHaveBeenCalledWith({
       symbol: '600519',
       name: '600519',
-      groupId: 'long-term',
+      // 没选分组就是「不分组」，不预选第一个分组
+      groupId: '',
       openPrice: null,
       quantity: null,
       note: '',
@@ -330,6 +332,8 @@ describe('Task 6 dashboard components', () => {
     expect(screen.queryByRole('option', { name: '全部持仓' })).not.toBeInTheDocument();
     expect(screen.getByRole('option', { name: '不分组' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: '未分组' })).not.toBeInTheDocument();
+    // 有分组摆在那也不预选：默认停在「不分组」
+    expect(screen.getByLabelText('分组')).toHaveValue('');
 
     await user.type(screen.getByLabelText('股票代码'), ' 600519 ');
     await user.selectOptions(screen.getByLabelText('分组'), '长期持仓');
@@ -779,6 +783,45 @@ describe('Task 6 dashboard components', () => {
     expect(screen.queryByRole('complementary', { name: '持仓分组' })).not.toBeInTheDocument();
   });
 
+  it('把分时图列插在「股票」和「最新价」之间', () => {
+    render(<HoldingList holdings={[holding()]} quotes={{ '600519': quote() }} onEdit={vi.fn()} />);
+
+    const headers = screen.getAllByRole('columnheader').map((cell) => cell.textContent);
+    expect(headers.slice(0, 3)).toEqual(['股票', '分时图', '最新价']);
+  });
+
+  it('有分时数据时画分时图，没有时显示占位符', () => {
+    const minuteSeries = {
+      '600519': {
+        symbol: '600519',
+        preClose: 10,
+        points: [9.8, 10.1, 10.4],
+        times: ['0930', '0931', '0932'],
+      },
+    };
+
+    const { container, unmount } = render(
+      <HoldingList
+        holdings={[holding()]}
+        quotes={{ '600519': quote() }}
+        minuteSeries={minuteSeries}
+        onEdit={vi.fn()}
+      />,
+    );
+
+    // 末点 10.4 高于昨收 10 → 走高染色，且有昨收基准虚线
+    expect(container.querySelector('.minute-chart--rise')).not.toBeNull();
+    expect(container.querySelector('.minute-chart__baseline')).not.toBeNull();
+    expect(container.querySelector('.minute-chart polyline')).not.toBeNull();
+
+    unmount();
+    const without = render(
+      <HoldingList holdings={[holding()]} quotes={{ '600519': quote() }} onEdit={vi.fn()} />,
+    );
+    expect(without.container.querySelector('.minute-chart--empty')?.textContent).toBe('—');
+    expect(without.container.querySelector('polyline')).toBeNull();
+  });
+
   it('renders the note as a red tag next to the holding name, not a 备注 line', () => {
     const { container } = render(
       <HoldingList
@@ -924,6 +967,13 @@ describe('Task 6 dashboard components', () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: 'h-1', symbol: '600519' }));
   });
 
+  it('把分时图列插在「股票」和「最新价」之间', () => {
+    render(<Watchlist holdings={[holding()]} quotes={{ '600519': quote() }} onEdit={vi.fn()} />);
+
+    const headers = screen.getAllByRole('columnheader').map((cell) => cell.textContent);
+    expect(headers.slice(0, 3)).toEqual(['股票', '分时图', '最新价']);
+  });
+
   it('renders watchlist cards without position fields', () => {
     render(
       <Watchlist
@@ -986,6 +1036,137 @@ describe('Task 6 dashboard components', () => {
     // 第二行：没有基准价就如实显示「—」，不拿现价顶替成 +0.00%
     expect(rows[2]).not.toHaveTextContent('+0.00%');
     expect(within(rows[2]).getAllByText('—').length).toBeGreaterThan(0);
+  });
+
+  it('给自选列表的涨跌幅分档、换手与量比挂档位词，自选收益不加底色块', () => {
+    render(
+      <Watchlist
+        holdings={[
+          holding({
+            id: 'h-1',
+            symbol: '001216',
+            name: '华瓷股份',
+            watchPrice: 18,
+            watchPriceAt: '2026-09-16T02:00:00.000Z',
+          }),
+          holding({
+            id: 'h-2',
+            symbol: '000001',
+            name: '平安银行',
+            watchPrice: 12.5,
+            watchPriceAt: '2026-09-16T02:00:00.000Z',
+          }),
+          holding({
+            id: 'h-3',
+            symbol: '600519',
+            name: '贵州茅台',
+            watchPrice: 12,
+            watchPriceAt: '2026-09-16T02:00:00.000Z',
+          }),
+        ]}
+        quotes={{
+          '001216': quote({
+            symbol: '001216',
+            name: '华瓷股份',
+            price: 19.88,
+            change: 1.81,
+            pct: 10.02,
+            turnover: 18.3,
+            volumeRatio: 3.05,
+            preClose: 18.07,
+          }),
+          '000001': quote({
+            symbol: '000001',
+            name: '平安银行',
+            price: 11.5,
+            change: -0.08,
+            pct: -0.68,
+            turnover: 0.62,
+            volumeRatio: 0.79,
+            preClose: 11.58,
+          }),
+          // 现价 = 自选价：自选收益 +0.00%，不该被分档
+          '600519': quote({ symbol: '600519', name: '贵州茅台', price: 12, pct: 0 }),
+        }}
+        onEdit={vi.fn()}
+      />,
+    );
+
+    // 涨停档：红底白字（类名在这里，颜色在 styles.css）
+    expect(screen.getByText('+10.02%')).toHaveClass(
+      'value-tier',
+      'value-tier--limit',
+      'value-tier--pad',
+    );
+    // 自选收益 (19.88 − 18) / 18 = +10.44%：不加底色块，保持原来的红绿文字色
+    expect(screen.getByText('+10.44%')).not.toHaveClass('value-tier');
+    // 小跌档只有文字颜色，不加底
+    expect(screen.getByText('−0.68%')).toHaveClass('value-tier', 'value-tier--down');
+    expect(screen.getByText('−0.68%')).not.toHaveClass('value-tier--pad');
+    // 恰好 0 的涨跌幅，和本来就不分档的自选收益，都保持界面原样
+    const zeros = screen.getAllByText('+0.00%');
+    expect(zeros).toHaveLength(2);
+    for (const zero of zeros) {
+      expect(zero).not.toHaveClass('value-tier');
+    }
+
+    // 换手/量比：值下面挂档位词，单元格自己当定位参考
+    const words = Array.from(document.querySelectorAll('.value-word')).map((el) => [
+      el.textContent,
+      el.className,
+    ]);
+    expect(words).toEqual([
+      ['过热', 'value-word value-word--rise'],
+      ['大幅放量', 'value-word value-word--rise'],
+      ['冷清', 'value-word value-word--dim'],
+      ['缩量', 'value-word value-word--fall'],
+      ['正常', 'value-word value-word--ink'],
+      ['平量', 'value-word value-word--ink'],
+    ]);
+    expect(document.querySelectorAll('.value-word-host')).toHaveLength(6);
+  });
+
+  it('给持仓列表的涨跌幅、持仓收益分档，并给换手挂档位词', () => {
+    render(
+      <HoldingList
+        holdings={[
+          holding({ id: 'h-1', symbol: '600127', name: '金健米业', openPrice: 12.5, quantity: 2000 }),
+          holding({ id: 'h-2', symbol: '000001', name: '平安银行', openPrice: 11.6, quantity: 100 }),
+        ]}
+        quotes={{
+          '600127': quote({
+            symbol: '600127',
+            name: '金健米业',
+            price: 14.32,
+            change: 1.3,
+            pct: 9.98,
+            turnover: 47.06,
+            preClose: 13.02,
+          }),
+          '000001': quote({
+            symbol: '000001',
+            name: '平安银行',
+            price: 11.5,
+            change: -0.08,
+            pct: -0.68,
+            turnover: 2.49,
+            preClose: 11.58,
+          }),
+        }}
+        onEdit={vi.fn()}
+      />,
+    );
+
+    // 涨跌幅用的是自带内边距的 .quote-row__chg，加档位色但不再垫一层
+    const limit = screen.getByText('+9.98%').closest('.quote-row__chg');
+    expect(limit).toHaveClass('value-tier', 'value-tier--limit');
+    expect(limit).not.toHaveClass('value-tier--pad');
+    // 持仓收益 +14.56%：档位底色包住数字
+    const profit = screen.getByText('+3,640.00（+14.56%）');
+    expect(profit).toHaveClass('value-tier', 'value-tier--limit', 'value-tier--pad');
+
+    const words = Array.from(document.querySelectorAll('.value-word')).map((el) => el.textContent);
+    expect(words).toEqual(['过热', '正常']);
   });
 
   it('sorts the watchlist by 自选价, keeping rows without a baseline at the bottom', async () => {
@@ -1426,7 +1607,10 @@ section[aria-labelledby='limit-up-list-title'] tbody th {
     expect(screen.queryByText('行情已过期')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '编辑 平安银行' })).toBeInTheDocument();
     expect(screen.getByText('−1.64%')).toHaveClass('value--fall');
-    expect(screen.getByText('+200.00（+20.00%）')).toHaveClass('value--rise');
+    // 涨跌色留在 <p> 上，数字外面再包一层档位底色（+20% 属涨停档）
+    const profit = screen.getByText('+200.00（+20.00%）');
+    expect(profit.closest('.holding-card__profit')).toHaveClass('value--rise');
+    expect(profit).toHaveClass('value-tier', 'value-tier--limit', 'value-tier--pad');
   });
 
   it('shows the runtime quote name, change amount, and percent', () => {

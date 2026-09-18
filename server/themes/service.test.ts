@@ -32,6 +32,8 @@ type Fixture = {
   klineFailures: Set<string>;
   /** 风险接口整体失败 */
   riskFails: boolean;
+  /** 板块宽度（东财快照的涨跌家数之和），用于验证宽口径上限 */
+  breadth: number;
   /** 概念归属里额外标注的题材（默认只有本题材） */
   extraThemes: Record<string, Array<{ code: string; name: string }>>;
   /** F10 归属请求失败 */
@@ -44,6 +46,7 @@ const baseFixture = (): Fixture => ({
   members: {},
   klineFailures: new Set(),
   riskFails: false,
+  breadth: 40,
   extraThemes: {},
   f10Fails: false,
 });
@@ -147,7 +150,7 @@ const indexKlineJsonp = (dates: string[]): string =>
     },
   });
 
-const boardCatalogPayload = () => ({
+const boardCatalogPayload = (breadth: number) => ({
   data: {
     diff: Array.from({ length: 100 }, (_, index) => ({
       f12: `BK${String(900 + index).padStart(4, '0')}`,
@@ -155,8 +158,8 @@ const boardCatalogPayload = () => ({
       f3: 2.5,
       f6: 4.7e11,
       f8: 1.2,
-      f104: 30,
-      f105: 10,
+      f104: breadth,
+      f105: 0,
       f128: '澳弘电子',
       f140: '605058',
     })),
@@ -195,7 +198,7 @@ const installFetch = (fixture: Fixture) => {
         return jsonResponse({ data: { diff } });
       }
       const page = Number(params.get('pn') ?? 1);
-      return jsonResponse(page === 1 ? boardCatalogPayload() : { data: { diff: [] } });
+      return jsonResponse(page === 1 ? boardCatalogPayload(fixture.breadth) : { data: { diff: [] } });
     }
 
     // 东财 F10 概念归属
@@ -301,22 +304,45 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('buildThemes（分类与口径拆分）', () => {
-  it('五日涨停但驱动证据未配置精确映射时，题材是待确认而不是假装主线', async () => {
+  it('概念家数达标即主线；驱动有依据为 0 只作参考标注', async () => {
+    // 注意：夹具的涨停原因是 'PCB'，而 'PCB' 已经在 topicAliases 里配给了 BK0877，
+    // 所以本题材（BK0900）的 supported 为 0 —— 这同时验证两件事：
+    //   1. 同一个词配在别的板块上不会串到本题材；
+    //   2. 驱动口径不参与资格，概念家数 5/2/2 该判主线就判主线。
     const fixture = mainFixture();
     const body = await buildThemes(TRADE_DATE, installFetch(fixture));
 
     expect(body.schemaVersion).toBe(2);
     expect(body.tradeDate).toBe(TRADE_DATE);
-    expect(body.main).toHaveLength(0);
-    // 概念口径 5 只，但一轮没有可确认的精确驱动证据 → supported 为 0、unresolved 为 5
-    expect(body.pending).toHaveLength(1);
-    const item = body.pending[0];
+    expect(body.main).toHaveLength(1);
+    expect(body.branch).toHaveLength(0);
+    const item = body.main[0];
     expect(item.code).toBe(BOARD);
     expect(item.conceptLimitUpCount).toBe(5);
     expect(item.supportedLimitUpCount).toBe(0);
     expect(item.unresolvedLimitUpCount).toBe(5);
-    expect(item.classificationReasons.join(' ')).toContain('未决');
-    expect(body.warnings.join(' ')).toContain('静态概念归属不能单独确认本轮驱动');
+    expect(item.classificationReasons.join(' ')).toContain('概念成员涨停 5/2/2');
+    expect(item.classificationReasons.join(' ')).toContain('没有一只的涨停原因命中');
+    expect(body.warnings.join(' ')).toContain('驱动口径仅作参考');
+  });
+
+  it('宽口径板块（成员 1380）不再被上限剔除，但要标注为宽口径', async () => {
+    const fixture = mainFixture();
+    fixture.breadth = 1380;
+    const body = await buildThemes(TRADE_DATE, installFetch(fixture));
+
+    const all = [...body.main, ...body.branch, ...body.pending];
+    expect(all.map((item) => item.code)).toContain(BOARD);
+    expect(all[0].classificationReasons.join(' ')).toContain('宽口径');
+    expect(body.warnings.join(' ')).toContain('宽口径属性板块');
+  });
+
+  it('超过上限的统计属性板块（成员 1600）仍然整块剔除', async () => {
+    const fixture = mainFixture();
+    fixture.breadth = 1600;
+    const body = await buildThemes(TRADE_DATE, installFetch(fixture));
+
+    expect([...body.main, ...body.branch, ...body.pending]).toHaveLength(0);
   });
 
   it('请求日涨停池还没产生（开盘前）时退回最近有数据的交易日，并明说观察日', async () => {

@@ -30,19 +30,28 @@ const MetricDots = ({ theme }: { theme: ThemeItem }) => (
   </span>
 );
 
-const CountSummary = ({ theme }: { theme: ThemeItem }) => (
-  <span className="theme-card__counts">
-    <span title="概念成员涨停数（含仅概念归属）">
-      概念涨停 <b>{theme.conceptLimitUpCount ?? '—'}</b>
+const CountSummary = ({ theme }: { theme: ThemeItem }) =>
+  theme.source === 'topic' ? (
+    <span className="theme-card__counts">
+      <span title="当日涨停原因含该逻辑的涨停股数">涨停 <b>{theme.limitUpCount}</b> 家</span>
+      <span title="其中连板（≥2 板）的家数">连板 <b>{theme.continuousCount}</b> 只</span>
+      <span title="同一逻辑的写法（同一只票同一标签只算一次）">
+        写法 <b>{theme.catalysts.length}</b> 种
+      </span>
     </span>
-    <span title="本轮驱动有依据的涨停数">
-      驱动有依据 <b>{theme.supportedLimitUpCount ?? '—'}</b>
+  ) : (
+    <span className="theme-card__counts">
+      <span title="概念成员涨停数（含仅概念归属）">
+        概念涨停 <b>{theme.conceptLimitUpCount ?? '—'}</b>
+      </span>
+      <span title="本轮驱动有依据的涨停数（参考口径，不决定主线 / 支线）">
+        驱动有依据 <b>{theme.supportedLimitUpCount ?? '—'}</b>
+      </span>
+      <span title="有概念归属但本轮关联未确认">
+        待确认 <b>{theme.unresolvedLimitUpCount ?? '—'}</b>
+      </span>
     </span>
-    <span title="有概念归属但本轮关联未确认">
-      待确认 <b>{theme.unresolvedLimitUpCount ?? '—'}</b>
-    </span>
-  </span>
-);
+  );
 
 const ThemeCard = ({
   theme,
@@ -61,7 +70,10 @@ const ThemeCard = ({
   >
     <span className="theme-card__head">
       <span className="theme-card__name">{theme.name}</span>
-      <span className={`theme-card__pct${(theme.pct ?? 0) >= 0 ? ' is-up' : ' is-down'}`}>
+      <span
+        className={`theme-card__pct${(theme.pct ?? 0) >= 0 ? ' is-up' : ' is-down'}`}
+        title={theme.source === 'topic' ? '成员当日平均涨幅（题材没有板块涨幅）' : '板块涨跌幅'}
+      >
         {formatPct(theme.pct)}
       </span>
     </span>
@@ -73,8 +85,8 @@ const ThemeCard = ({
       <span>
         持续 <b>{theme.durationDays}</b> 天
       </span>
-      <span title="旧 8 项口径的命中数，仅作观察">
-        旧口径 <b>{theme.score}/8</b>
+      <span title="8 项指标里当前可判断且命中的数量（题材口径下成交额 / 市场影响力不可用）">
+        {theme.source === 'topic' ? '指标' : '旧口径'} <b>{theme.score}/8</b>
       </span>
     </span>
     {theme.classificationReasons.length > 0 ? (
@@ -99,7 +111,9 @@ export const ThemeBoard = ({ data, isRefreshing, onRefresh, onSelect }: ThemeBoa
       <section className="card" aria-labelledby="theme-main-title">
         <div className="overview__header">
           <div>
-            <p className="eyebrow">主线题材</p>
+            <p className="eyebrow">
+              {data.scope === 'topic' ? '主线题材 · 当日 ≥5 家且前两日各 ≥2' : '主线题材 · 当日概念家数前 3'}
+            </p>
             <div className="theme-title-row">
               <h2 id="theme-main-title">主线题材</h2>
               {/* 按钮紧跟标题；正文面板在表头外面（见下方），展开不会挤动右侧刷新按钮 */}

@@ -15,7 +15,6 @@ export type HoldingFormValues = {
 type HoldingFormProps = {
   groups: StockGroup[];
   initialHolding?: Holding;
-  defaultGroupId?: string;
   isSubmitting?: boolean;
   onSearch?: (query: string) => Promise<StockSearchResult[]>;
   onSubmit: (values: HoldingFormValues) => void;
@@ -48,7 +47,6 @@ const suggestionOptionId = (index: number): string => `${SUGGESTION_LIST_ID}-opt
 export const HoldingForm = ({
   groups,
   initialHolding,
-  defaultGroupId,
   isSubmitting = false,
   onSearch = emptySearch,
   onSubmit,
@@ -56,12 +54,12 @@ export const HoldingForm = ({
   onDelete,
 }: HoldingFormProps) => {
   const assignableGroups = getAssignableGroups(groups);
-  // 分组可以为空（未分配），所以不再强制回落到某个分组
-  const initialGroupId =
-    initialHolding?.groupId ??
-    assignableGroups.find((group) => group.id === defaultGroupId)?.id ??
-    assignableGroups[0]?.id ??
-    '';
+  /*
+   * 新增时分组默认「不分组」：和「添加自选」那条路径同一个口径 —— 不擅自把票塞进用户建的分组，
+   * 也不因为当前筛选停在某个分组就顺手带过去（要带过去用户自己选一下）。
+   * 编辑已有记录时才用记录自己的分组。
+   */
+  const initialGroupId = initialHolding?.groupId ?? '';
 
   const [symbol, setSymbol] = useState(initialHolding?.symbol ?? '');
   const [stockName, setStockName] = useState(initialHolding?.name ?? '');
