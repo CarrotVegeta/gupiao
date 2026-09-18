@@ -290,6 +290,14 @@ textarea:focus-visible {
 
 .dashboard-main {
   display: grid;
+  /*
+   * 显式写 minmax(0, 1fr)：栅格子项默认 min-width: auto（= min-content），
+   * 选股页那张 min-width 101.5385rem 的宽表会把卡片、进而把整个页面顶宽 ——
+   * 在 <1181px（没有填充模式）的窗口里整页横向滚，表格自己的 __table-wrap 反而
+   * 因为被撑到同样宽而滚不动（2026-09-18 小屏显示不全的第二个来源）。
+   * 下限设 0 之后卡片跟着窗口收缩，横向溢出交给表格容器的 overflow: auto。
+   */
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.2308rem;
   min-width: 0;
   background: transparent;
@@ -3392,13 +3400,20 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
     overflow: hidden;
   }
 
-  /* 连板天梯是纵向堆叠的方块，溢出的是整块内容而不是表体，所以自己纵向滚 */
-  .limit-up-ladder {
+  /*
+   * 连板天梯：卡片头（刷新按钮 / 交易日 / 最高板）和统计条固定，档位列表自己纵向滚。
+   *
+   * 选择器必须写成 `#limit-up-focus-panel > .card.limit-up-ladder`：
+   * 天梯卡片同时也是上面的 `#limit-up-focus-panel > .card`（选择器权重 1,1,0），
+   * 那条规则给卡片设了 overflow: hidden。只写 `.limit-up-ladder`（0,1,0）压不过它，
+   * 卡片就被裁成滚不动的方块 —— 1 板 48 只永远只能看到最前面的 24 只，
+   * 后面的内容既滚不到也点不到（2026-09-18 用户反馈的「小屏显示不全」）。
+   */
+  #limit-up-focus-panel > .card.limit-up-ladder {
     display: flex;
     flex-direction: column;
     min-height: 0;
-    overflow: hidden auto;
-    overscroll-behavior: contain;
+    overflow: hidden;
   }
 
   /* 天梯里的统计条和档位方块按内容高度，不参与伸缩 */
@@ -3407,10 +3422,14 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
     flex: 0 0 auto;
   }
 
+  /* 列表体是唯一的纵向滚动区域（和涨停池 / 今昨对比的「卡片头固定、表体滚动」一致） */
   .limit-up-ladder__list {
     display: flex;
     flex-direction: column;
-    flex: 0 0 auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .panel-card > .holding-list {

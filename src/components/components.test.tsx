@@ -1337,6 +1337,45 @@ section[aria-labelledby='limit-up-list-title'] tbody th {
     );
   });
 
+  /*
+   * 布局回归：定高窗口（≥1181×520 的填充模式）里「卡片被裁成滚不动」的两个坑。
+   * 这两条只能靠 CSS 文本断言守住 —— jsdom 不做层叠和布局计算，
+   * 把选择器「顺手简化」回去时没有任何渲染测试会失败。
+   */
+  it('keeps the ladder scrollable in fill mode instead of clipping the rest of the tiers', () => {
+    const styles = stylesInDesignPx();
+
+    // 天梯卡片同时命中 `#limit-up-focus-panel > .card`（权重 1,1,0，设了 overflow: hidden），
+    // 所以「卡片头固定 + 列表自己滚」的规则必须带同样的 id 前缀才压得住。
+    // 少了它，1 板 48 只只会渲染出前面一半，剩下的既滚不到也点不到。
+    expect(styles).toContain(`  #limit-up-focus-panel > .card.limit-up-ladder {`);
+    expect(styles).toContain(
+      `  .limit-up-ladder__list {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }`,
+    );
+    // 统计条按内容高度留在卡片头上，不跟着列表滚
+    expect(styles).toContain(
+      `  .limit-up-ladder__stats,
+  .limit-up-ladder__group {
+    flex: 0 0 auto;
+  }`,
+    );
+  });
+
+  it('lets the card grid shrink below the wide screener table so the page never scrolls sideways', () => {
+    const styles = stylesInDesignPx();
+
+    // 栅格子项默认 min-width: auto（= min-content），选股页 101.5385rem 的宽表会把卡片和
+    // 整个 <body> 一起顶宽：窗口窄于 1181px 时整页横向滚，表格自己的容器反而滚不动。
+    expect(styles).toMatch(/\.dashboard-main \{[^}]*grid-template-columns: minmax\(0, 1fr\);/);
+  });
+
   it('marks a holding without position details as an observation item', () => {
     render(
       <HoldingList
