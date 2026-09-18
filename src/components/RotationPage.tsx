@@ -160,16 +160,15 @@ const EmotionCard = ({
 /**
  * 右栏的板块成分股卡片：宽屏下点开板块时，它**顶掉**「市场情绪」。
  *
- * 单独抽出来是为了让「收起」按钮和标题在一处，`PlateStockList` 只管列表本身。
+ * 没有「收起」按钮：收起 = 再点一次左栏那个板块行（左栏那一行同时是展开/收起开关，
+ * 保留两个开关容易让人以为状态不一致）。已展开的行在左栏有高亮 + ▾ 标记。
  */
 const PlateStockPanel = ({
   plateCode,
   plateName,
-  onClose,
 }: {
   plateCode: string;
   plateName: string;
-  onClose: () => void;
 }) => (
   <section className="card plate-detail" aria-labelledby="plate-detail-title">
     <div className="overview__header">
@@ -180,11 +179,7 @@ const PlateStockPanel = ({
           <span className="theme-card__badge">当前快照</span>
         </div>
       </div>
-      <div className="overview__actions">
-        <button className="button button--secondary button--compact" type="button" onClick={onClose}>
-          收起
-        </button>
-      </div>
+      <p className="overview__meta">再点左侧该板块可收起</p>
     </div>
     <PlateStockList plateCode={plateCode} variant="panel" />
   </section>
@@ -236,11 +231,7 @@ export const RotationPage = ({ onSummary }: RotationPageProps) => {
       </div>
       <div className="rotation-page__column">
         {expandedPlate !== null ? (
-          <PlateStockPanel
-            plateCode={expandedPlate.code}
-            plateName={expandedPlate.name}
-            onClose={() => setExpandedPlate(null)}
-          />
+          <PlateStockPanel plateCode={expandedPlate.code} plateName={expandedPlate.name} />
         ) : (
           <EmotionCard
             emotion={emotion}

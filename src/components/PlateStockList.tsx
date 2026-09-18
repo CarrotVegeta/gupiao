@@ -126,6 +126,18 @@ const TruncatedDesc = ({ text }: { text: string }) => {
 };
 
 /**
+ * 筛选口径：**只要沪深主板 + 创业板**。
+ *
+ * 也就是排除这两类：
+ *   - 北交所（`920xxx` / `8xxxxx` / `4xxxxx`）：30cm 一档，涨跌幅与沪深不可比
+ *   - **科创板（`688xxx` / `689xxx`）：20cm 一档，同样不可比**，按用户口径一并排除
+ *
+ * 用户指出过：`688` 是科创板，放在「仅沪深主板+创业板」里是错的口径。
+ */
+const isMainBoardOrChiNext = (exchange: 'SH' | 'SZ' | 'BJ', symbol: string): boolean =>
+  exchange !== 'BJ' && !/^(688|689)/.test(symbol);
+
+/**
  * 板块成分股列表。
  *
  * 两种用法：
@@ -143,11 +155,10 @@ export const PlateStockList = ({
   const [onlyCore, setOnlyCore] = useState(false);
   const [onlyLimitUp, setOnlyLimitUp] = useState(false);
   /**
-   * 只看沪深主板 + 创业板（排除北交所与科创板？—— 不排科创板）。
+   * 只看沪深主板 + 创业板。**默认开启**（用户口径）。
    *
-   * 口径就是**排除北交所**：北交所（`920xxx` / `8xxxxx` / `4xxxxx`）涨跌幅是 30cm 一档，
-   * 和沪深主板/创业板放在一张表里比涨跌幅没有可比性。
-   * **默认开启**（用户口径）：一打开看的就是可比的沪深票，需要看北交所时点掉即可。
+   * 排除北交所（30cm）与科创板（20cm）——这两档的涨跌幅和主板/创业板放一张表里
+   * 比没有可比性。需要看全部时点掉即可。
    */
   const [onlyMainBoard, setOnlyMainBoard] = useState(true);
 
@@ -188,13 +199,13 @@ export const PlateStockList = ({
         (stock) =>
           (!onlyCore || stock.isCore) &&
           (!onlyLimitUp || (stock.pct ?? 0) >= 9.8) &&
-          (!onlyMainBoard || stock.exchange !== 'BJ'),
+          (!onlyMainBoard || isMainBoardOrChiNext(stock.exchange, stock.symbol)),
       ),
     [stocks, onlyCore, onlyLimitUp, onlyMainBoard],
   );
-  /** 北交所只数：仅沪深开关上标出来，让人知道排除了多少 */
-  const beijingCount = useMemo(
-    () => stocks.filter((stock) => stock.exchange === 'BJ').length,
+  /** 被该开关排除的只数（北交所 + 科创板），标在按钮上让人知道排掉了多少 */
+  const excludedCount = useMemo(
+    () => stocks.filter((stock) => !isMainBoardOrChiNext(stock.exchange, stock.symbol)).length,
     [stocks],
   );
 
@@ -242,9 +253,9 @@ export const PlateStockList = ({
             type="button"
             aria-pressed={onlyMainBoard}
             title={
-              beijingCount > 0
-                ? `排除北交所 ${beijingCount} 只（30cm 涨跌幅，与沪深主板/创业板不可直接比较）。默认开启`
-                : '该板块没有北交所成分股（此开关无影响）'
+              excludedCount > 0
+                ? `排除北交所（30cm）与科创板 688/689（20cm）共 ${excludedCount} 只，只留沪深主板与创业板。默认开启`
+                : '该板块没有北交所/科创板成分股（此开关无影响）'
             }
             onClick={(event) => {
               event.stopPropagation();
@@ -252,7 +263,9 @@ export const PlateStockList = ({
             }}
           >
             仅沪深主板+创业板
-            {beijingCount > 0 ? <span className="plate-stocks__filter-hint">{beijingCount}</span> : null}
+            {excludedCount > 0 ? (
+              <span className="plate-stocks__filter-hint">{excludedCount}</span>
+            ) : null}
           </button>
         </div>
       </div>
