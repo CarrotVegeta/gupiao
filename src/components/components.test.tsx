@@ -122,6 +122,18 @@ const marketIndicesFixture = (): MarketIndex[] => [
   },
 ];
 
+/**
+ * styles.css 里的长度单位已统一改成 rem（根字号 clamp 自适应，见文件顶部的说明），
+ * 但下面那些样式断言表达的是「稿子 F 在 1440px 基准下的数值」，用 px 写才对得上设计稿。
+ * 这里按 13px 基准把 rem 还原回 px（保留 2 位小数，误差 < 0.005px），
+ * 让断言继续用设计稿上的原始数字，同时不再随单位变化而失效。
+ */
+const stylesInDesignPx = (): string =>
+  readFileSync('src/styles.css', 'utf8').replace(
+    /(-?\d*\.?\d+)rem\b/g,
+    (_match, rem: string) => `${Number((Number(rem) * 13).toFixed(2))}px`,
+  );
+
 const limitUpResponseFixture = (overrides: Partial<LimitUpResponse> = {}): LimitUpResponse => ({
   tradeDate: '20260819',
   items: [
@@ -1248,7 +1260,7 @@ describe('Task 6 dashboard components', () => {
       </>,
     );
 
-    const styles = readFileSync('src/styles.css', 'utf8');
+    const styles = stylesInDesignPx();
 
     // F 的表格没有「操作」列：只有「股票」列（名称/代码按钮）可点即编辑
     expect(screen.queryByRole('columnheader', { name: '操作' })).not.toBeInTheDocument();

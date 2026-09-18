@@ -25,9 +25,9 @@
    * 采样的是卡片“外面”的底色，会在四条边糊出一圈和卡片不一致的色块，
    * 卡片之间的竖缝、卡片底部那条水平分界就是这么来的。
    */
-  --blur-lg: saturate(160%) blur(18px);
-  --blur-md: saturate(160%) blur(14px);
-  --blur-sm: saturate(150%) blur(10px);
+  --blur-lg: saturate(160%) blur(1.3846rem);
+  --blur-md: saturate(160%) blur(1.0769rem);
+  --blur-sm: saturate(150%) blur(0.7692rem);
   /*
    * 阴影：饱和度很低但带蓝，两张卡片并排时中间的 14px 缝会被两条阴影叠在一起，
    * 颜色明显深于页面背景，看起来像一条灰蓝色竖条。所以把扩散收到 10px、
@@ -53,13 +53,13 @@
   --success: #14663a;
   --success-border: rgba(14, 159, 82, 0.3);
   --success-surface: rgba(236, 253, 243, 0.76);
-  --radius-lg: 16px;
-  --radius-md: 12px;
-  --radius-sm: 10px;
-  --space-1: 8px;
-  --space-2: 12px;
-  --space-3: 16px;
-  --space-4: 24px;
+  --radius-lg: 1.2308rem;
+  --radius-md: 0.9231rem;
+  --radius-sm: 0.7692rem;
+  --space-1: 0.6154rem;
+  --space-2: 0.9231rem;
+  --space-3: 1.2308rem;
+  --space-4: 1.8462rem;
   /* 不显式指定中文字体：交给 system-ui 按字符挑，避免生僻字回落成异常字距 */
   --font-sans:
     -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
@@ -69,7 +69,26 @@
   font-family: var(--font-sans);
   line-height: 1.45;
   font-weight: 400;
-  font-size: 13px;
+  /*
+   * 全站缩放基准。除发丝线 / 阴影 / 变换 / 媒体断点外，本文件其余长度全部是 rem，
+   * 所以这一个值就决定了整站密度 —— 相当于把「浏览器缩放」内置进了样式表。
+   *
+   * 起因：以前这里是常量 13px，而 ≥1181px 的 .dashboard-shell 又是 width: calc(100% - 28px)。
+   * 于是在 2560×1440 这类屏幕上，只有卡片之间的留白在长大，字一直停在 11~13px，
+   * 整页看起来「什么都很小」。
+   *
+   * 取值的两个锚点（线性插值，两端都被 clamp 挡住）：
+   *   1440px 视口 → 13px   与改造前完全一致，≤1440px 的任何视口都不会有任何视觉变化
+   *   2560px 视口 → 18px   约等于 138% 缩放，正好把 2K 屏上「偏小」的观感补回来
+   *   上限 19px            ≈2784px 视口触顶，避免 4K 下字大到挤掉表格列
+   *
+   * 想整体调大 / 调小，只改 0.44643vw 这一个系数即可：
+   *   系数变大 → 大屏长得更快；系数设为 0 → 全站退回固定的 13px。
+   *
+   * 注：vw 是视口宽度，和 100% 的差别只在于滚动条是否占宽。本站已全站隐藏滚动条
+   * （见文件末尾），两者相等，所以这里用 vw 不会和 .dashboard-shell 的 100% 打架。
+   */
+  font-size: clamp(13px, calc(6.5714px + 0.44643vw), 19px);
   color: var(--text-primary);
   background: var(--bg-canvas);
 }
@@ -87,7 +106,7 @@
 
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 24.6154rem;
   min-height: 100vh;
   color: var(--text-primary);
   /*
@@ -152,13 +171,13 @@ textarea:focus-visible {
 .dashboard-shell {
   position: relative;
   z-index: 1;
-  width: min(1440px, calc(100% - 44px));
+  width: min(110.7692rem, calc(100% - 3.3846rem));
   min-height: 100vh;
   margin: 0 auto;
-  padding: 16px 0 22px;
+  padding: 1.2308rem 0 1.6923rem;
   display: grid;
   grid-template-rows: auto 1fr auto;
-  gap: 14px;
+  gap: 1.0769rem;
 }
 
 /*
@@ -173,9 +192,9 @@ textarea:focus-visible {
      * 不再在两侧留出大片空白。1440 及以下窗口宽度不受影响，仍然和 F 稿一致。
      * 滚动条已全站隐藏（见文件末尾），不再占宽度，所以左右内边距对称留 8px。
      */
-    width: calc(100% - 28px);
-    padding-right: 8px;
-    padding-left: 8px;
+    width: calc(100% - 2.1538rem);
+    padding-right: 0.6154rem;
+    padding-left: 0.6154rem;
     height: 100vh;
     min-height: 0;
     overflow: hidden;
@@ -202,9 +221,9 @@ textarea:focus-visible {
 .app-topbar {
   display: flex;
   align-items: center;
-  gap: 16px;
-  height: 54px;
-  padding: 0 18px;
+  gap: 1.2308rem;
+  height: 4.1538rem;
+  padding: 0 1.3846rem;
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   /* 和 .card 同一个理由去掉 backdrop-filter，靠 0.76 的表面不透明度撑住顶栏 */
@@ -215,22 +234,22 @@ textarea:focus-visible {
 .app-topbar__brand {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 0.6923rem;
   margin: 0;
   font-weight: 750;
-  font-size: 15px;
-  letter-spacing: -0.2px;
+  font-size: 1.1538rem;
+  letter-spacing: -0.0154rem;
   color: var(--text-primary);
   white-space: nowrap;
 }
 
 .app-topbar__mark {
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.6154rem;
   display: grid;
   place-items: center;
-  font-size: 13px;
+  font-size: 1rem;
   font-weight: 700;
   color: #fff;
   background: linear-gradient(135deg, #3b6ff5, #6e9bff);
@@ -239,11 +258,11 @@ textarea:focus-visible {
 
 .app-topbar nav.card[aria-label='一级导航'] {
   position: static;
-  margin-left: 4px;
-  padding: 3px;
+  margin-left: 0.3077rem;
+  padding: 0.2308rem;
   background: rgba(17, 24, 39, 0.05);
   border: 0;
-  border-radius: 11px;
+  border-radius: 0.8462rem;
   box-shadow: none;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
@@ -252,7 +271,7 @@ textarea:focus-visible {
 .app-topbar nav.card[aria-label='一级导航'] .group-sidebar__list {
   display: flex;
   justify-content: flex-start;
-  gap: 2px;
+  gap: 0.1538rem;
 }
 
 .app-topbar nav.card[aria-label='一级导航'] .group-sidebar__item {
@@ -265,13 +284,13 @@ textarea:focus-visible {
   padding: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
+  gap: 1.2308rem;
   align-items: start;
 }
 
 .dashboard-main {
   display: grid;
-  gap: 16px;
+  gap: 1.2308rem;
   min-width: 0;
   background: transparent;
 }
@@ -286,10 +305,10 @@ nav.card[aria-label='一级导航'] .group-sidebar__list {
 }
 
 nav.card[aria-label='一级导航'] .group-sidebar__select {
-  padding: 6px 14px;
+  padding: 0.4615rem 1.0769rem;
   background: transparent;
   border: 0;
-  border-radius: 9px;
+  border-radius: 0.6923rem;
   font-weight: 550;
   color: var(--text-secondary);
   /*
@@ -350,12 +369,12 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 }
 
 .card {
-  padding: 18px;
+  padding: 1.3846rem;
 }
 
 .dialog-card {
-  padding: 20px;
-  max-width: 720px;
+  padding: 1.5385rem;
+  max-width: 55.3846rem;
 }
 
 /* 弹窗右上角的关闭按钮：图标按钮，别抢标题的视觉重心 */
@@ -363,11 +382,11 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  width: 30px;
-  height: 30px;
-  margin: -4px -4px 0 0;
+  width: 2.3077rem;
+  height: 2.3077rem;
+  margin: -0.3077rem -0.3077rem 0 0;
   padding: 0;
-  border-radius: 9px;
+  border-radius: 0.6923rem;
   color: var(--text-tertiary);
 }
 
@@ -382,13 +401,13 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 }
 
 .dialog-card__danger {
-  margin-top: 16px;
-  padding-top: 16px;
+  margin-top: 1.2308rem;
+  padding-top: 1.2308rem;
   border-top: 1px solid #e4b6b8;
 }
 
 .dialog-card__body {
- margin: 0 0 16px;
+ margin: 0 0 1.2308rem;
   color: var(--text-secondary);
 }
 
@@ -396,12 +415,12 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 .group-manager__header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.6154rem;
 }
 
 .group-manager__list {
   display: grid;
-  gap: 8px;
+  gap: 0.6154rem;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -411,18 +430,18 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 0.9231rem;
   flex-wrap: wrap;
-  padding: 10px 12px;
+  padding: 0.7692rem 0.9231rem;
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: 0.9231rem;
   background: var(--bg-muted);
 }
 
 .group-manager__info {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 0.6154rem;
   min-width: 0;
 }
 
@@ -439,7 +458,7 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 .group-manager__actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.4615rem;
   flex-wrap: wrap;
 }
 
@@ -450,14 +469,14 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 
 .eyebrow {
   opacity: 0.72;
- margin: 0 0 2px;
+ margin: 0 0 0.1538rem;
   color: var(--text-secondary);
   font-size: 0.8rem;
 }
 
 .button,
 .icon-button {
-  border-radius: 10px;
+  border-radius: 0.7692rem;
   border: 1px solid transparent;
   font-weight: 600;
   transition:
@@ -469,7 +488,7 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 }
 
 .button {
-  padding: 8px 14px;
+  padding: 0.6154rem 1.0769rem;
   background: var(--accent-primary);
   color: #fff;
   box-shadow: 0 4px 12px rgba(59, 111, 245, 0.28);
@@ -522,7 +541,7 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 }
 
 .icon-button {
-  padding: 4px 10px;
+  padding: 0.3077rem 0.7692rem;
   background: transparent;
   color: var(--text-secondary);
   font-weight: 500;
@@ -549,13 +568,13 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 .holdings-panel__header {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
+  gap: 1.2308rem;
   align-items: flex-start;
 }
 
 .holdings-panel__actions {
   display: flex;
-  gap: 8px;
+  gap: 0.6154rem;
   align-items: center;
 }
 
@@ -569,7 +588,7 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 .overview__actions {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0.7692rem;
   align-items: flex-end;
 }
 
@@ -577,7 +596,7 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   flex-direction: row;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 0.9231rem;
 }
 
 .overview__meta {
@@ -587,13 +606,13 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 
 .overview {
   display: grid;
-  gap: 16px;
+  gap: 1.2308rem;
 }
 
 .overview__hero {
   display: flex;
   justify-content: flex-start;
-  gap: 16px;
+  gap: 1.2308rem;
   align-items: center;
   margin: 0;
 }
@@ -608,16 +627,16 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 .overview__status-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0.4615rem;
   align-items: flex-end;
 }
 
 .status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  border-radius: 999px;
+  gap: 0.4615rem;
+  padding: 0.2308rem 0.7692rem;
+  border-radius: 76.8462rem;
   border: 1px solid var(--border-color);
   background: var(--bg-muted);
   color: var(--text-secondary);
@@ -633,7 +652,7 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 .overview__metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  gap: 0.6154rem;
  margin: 0;
 }
 
@@ -652,9 +671,9 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 .market-overview__header {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
+  gap: 1.2308rem;
   align-items: center;
-  padding-bottom: 10px;
+  padding-bottom: 0.7692rem;
 }
 
 .market-overview__title {
@@ -665,7 +684,7 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 0.7692rem;
 }
 
 .market-overview__heading-row h2 {
@@ -677,9 +696,9 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 .market-overview__live {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 9px;
-  border-radius: 999px;
+  gap: 0.4615rem;
+  padding: 0.3077rem 0.6923rem;
+  border-radius: 76.8462rem;
   background: rgba(34, 197, 94, 0.14);
   color: var(--fall);
   font-size: 0.75rem;
@@ -687,15 +706,15 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 }
 
 .market-overview__live::before {
-  width: 6px;
-  height: 6px;
+  width: 0.4615rem;
+  height: 0.4615rem;
   border-radius: 50%;
   background: currentColor;
   content: '';
 }
 
 .market-overview__description {
- margin: 4px 0 0;
+ margin: 0.3077rem 0 0;
   color: var(--text-secondary);
   font-size: 0.85rem;
 }
@@ -704,14 +723,14 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 10px;
+  gap: 0.7692rem;
   flex-shrink: 0;
 }
 
 .market-overview__updated {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.4615rem;
  margin: 0;
   color: var(--text-secondary);
   font-size: 0.8rem;
@@ -728,7 +747,7 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   gap: 0;
   margin: 0;
   border: 1px solid var(--glass-border);
-  border-radius: 14px;
+  border-radius: 1.0769rem;
   overflow: hidden;
   background: var(--bg-surface);
   -webkit-backdrop-filter: var(--blur-lg);
@@ -738,7 +757,7 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 
 .market-index-card {
   min-width: 0;
-  padding: 13px 18px;
+  padding: 1rem 1.3846rem;
   border: 0;
   border-right: 1px solid var(--border-color);
   border-radius: 0;
@@ -755,7 +774,7 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 .market-breadth__item {
   display: inline-flex;
   align-items: baseline;
-  gap: 4px;
+  gap: 0.3077rem;
   color: var(--text-tertiary);
   font-weight: 500;
 }
@@ -793,13 +812,13 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 0.6154rem;
 }
 
 .market-index-card__topline dt {
   overflow: hidden;
   color: var(--text-tertiary);
-  font-size: 11.5px;
+  font-size: 0.8846rem;
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -819,23 +838,23 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   display: flex;
   align-items: baseline;
   /* 稿子 F：标题下 6px、涨跌行上 5px */
-  margin: 6px 0 5px;
+  margin: 0.4615rem 0 0.3846rem;
 }
 
 
 .market-index-card__price strong {
   color: var(--text-primary);
-  font-size: 21px;
+  font-size: 1.6154rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.6px;
+  letter-spacing: -0.0462rem;
 }
 
 .market-index-card__changes {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 12px;
+  gap: 0.7692rem;
+  font-size: 0.9231rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -850,11 +869,11 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 
 .metric-card {
   display: grid;
-  gap: 4px;
+  gap: 0.3077rem;
   align-content: start;
   min-height: 100%;
-  padding: 12px 14px;
-  border-radius: 14px;
+  padding: 0.9231rem 1.0769rem;
+  border-radius: 1.0769rem;
   border: 1px solid var(--border-color);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.3), transparent 60%),
@@ -866,7 +885,7 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 
 .metric-card dt {
   color: var(--text-secondary);
-  margin-bottom: 2px;
+  margin-bottom: 0.1538rem;
 }
 
 .metric-card dd {
@@ -877,20 +896,20 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 
 .group-sidebar__list {
   list-style: none;
- margin: 12px 0 0;
+ margin: 0.9231rem 0 0;
   padding: 0;
   display: grid;
-  gap: 8px;
+  gap: 0.6154rem;
 }
 
 .group-sidebar {
-  padding: 11px 16px 12px;
+  padding: 0.8462rem 1.2308rem 0.9231rem;
 }
 
 .group-sidebar .group-sidebar__list {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 0.6154rem;
 }
 
 .group-sidebar__header h2 {
@@ -899,17 +918,17 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 }
 
 .group-sidebar .group-sidebar__list {
-  margin: 9px 0 0;
+  margin: 0.6923rem 0 0;
 }
 
 .group-sidebar__select {
-  padding: 6px 12px;
-  font-size: 12.5px;
+  padding: 0.4615rem 0.9231rem;
+  font-size: 0.9615rem;
 }
 
 .group-sidebar__item {
   display: flex;
-  gap: 6px;
+  gap: 0.4615rem;
   align-items: center;
 }
 
@@ -917,10 +936,10 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 10px;
+  gap: 0.7692rem;
   width: auto;
-  padding: 8px 12px;
-  border-radius: 999px;
+  padding: 0.6154rem 0.9231rem;
+  border-radius: 76.8462rem;
   border: 1px solid var(--border-color);
   background: var(--bg-surface);
   color: var(--text-primary);
@@ -949,14 +968,14 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 .group-sidebar__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 0.6154rem;
 }
 
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px 14px;
-  margin-top: 18px;
+  gap: 1.2308rem 1.0769rem;
+  margin-top: 1.3846rem;
 }
 
 .field {
@@ -964,7 +983,7 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   /* 关键：内部行按内容高度排，不再被行高拉伸。
    * 否则「股票代码」多一行提示，就会把同一行的「分组」下拉顶下去、并且拉高变形。 */
   align-content: start;
-  gap: 7px;
+  gap: 0.5385rem;
   min-width: 0;
 }
 
@@ -977,22 +996,22 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 10px;
-  min-height: 18px;
+  gap: 0.7692rem;
+  min-height: 1.3846rem;
 }
 
 .field__label {
   color: var(--text-primary);
-  font-size: 12.5px;
+  font-size: 0.9615rem;
   font-weight: 600;
 }
 
 .input {
   width: 100%;
   /* 固定高度：input / select 原生行高不一样，写死才能让同一行的控件严格对齐 */
-  height: 38px;
-  padding: 0 12px;
-  border-radius: 10px;
+  height: 2.9231rem;
+  padding: 0 0.9231rem;
+  border-radius: 0.7692rem;
   border: 1px solid var(--border-color);
   background: var(--bg-muted);
   color: var(--text-primary);
@@ -1038,10 +1057,10 @@ select.input:open::picker-icon {
 select.input::picker(select) {
   appearance: base-select;
   /* 顶部留出和输入框的间距（原生下拉是紧贴着的） */
-  margin-top: 6px;
-  padding: 6px;
+  margin-top: 0.4615rem;
+  padding: 0.4615rem;
   border: 1px solid var(--glass-border);
-  border-radius: 14px;
+  border-radius: 1.0769rem;
   background: var(--glass-strong);
   box-shadow: var(--shadow-soft);
   -webkit-backdrop-filter: var(--blur-lg);
@@ -1051,11 +1070,11 @@ select.input::picker(select) {
 select.input option {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 9px;
+  gap: 0.6154rem;
+  padding: 0.6154rem 0.7692rem;
+  border-radius: 0.6923rem;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 1rem;
 }
 
 select.input option:hover,
@@ -1076,22 +1095,22 @@ select.input option::checkmark {
 
 .input--textarea {
   height: auto;
-  min-height: 84px;
-  padding: 9px 12px;
+  min-height: 6.4615rem;
+  padding: 0.6923rem 0.9231rem;
   resize: vertical;
   line-height: 1.5;
 }
 
 .field__hint {
   color: var(--text-tertiary);
-  font-size: 11.5px;
+  font-size: 0.8846rem;
   font-weight: 400;
   white-space: nowrap;
 }
 
 .field__error {
   color: var(--danger);
-  font-size: 11.5px;
+  font-size: 0.8846rem;
   font-weight: 500;
 }
 
@@ -1106,14 +1125,14 @@ select.input option::checkmark {
   left: 0;
   right: 0;
   display: grid;
-  gap: 4px;
-  padding: 6px;
+  gap: 0.3077rem;
+  padding: 0.4615rem;
   /* 候选最多占 4 行半，别把下面的「开仓价 / 持有数量」整片盖住 */
-  max-height: 236px;
+  max-height: 18.1538rem;
   overflow-y: auto;
   overscroll-behavior: contain;
   border: 1px solid var(--glass-border);
-  border-radius: 14px;
+  border-radius: 1.0769rem;
   background: var(--glass-strong);
   box-shadow: var(--shadow-soft);
   -webkit-backdrop-filter: var(--blur-lg);
@@ -1123,11 +1142,11 @@ select.input option::checkmark {
 .stock-search-result {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: 0.9231rem;
   width: 100%;
-  padding: 10px 12px;
+  padding: 0.7692rem 0.9231rem;
   border: 0;
-  border-radius: 10px;
+  border-radius: 0.7692rem;
   background: transparent;
   color: var(--text-primary);
   text-align: left;
@@ -1155,7 +1174,7 @@ select.input option::checkmark {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 0.9231rem;
 }
 
 .dialog-backdrop {
@@ -1163,22 +1182,22 @@ select.input option::checkmark {
   inset: 0;
   z-index: 20;
   overflow: auto;
-  padding: 24px 16px;
+  padding: 1.8462rem 1.2308rem;
   background: rgba(22, 35, 59, 0.28);
-  -webkit-backdrop-filter: saturate(140%) blur(12px);
-  backdrop-filter: saturate(140%) blur(12px);
+  -webkit-backdrop-filter: saturate(140%) blur(0.9231rem);
+  backdrop-filter: saturate(140%) blur(0.9231rem);
 }
 
 .dialog-stack {
-  width: min(720px, 100%);
+  width: min(55.3846rem, 100%);
  margin: 0 auto;
   display: grid;
-  gap: 16px;
+  gap: 1.2308rem;
 }
 
 .banner {
-  padding: 9px 14px;
-  border-radius: 10px;
+  padding: 0.6923rem 1.0769rem;
+  border-radius: 0.7692rem;
   border: 1px solid var(--border-color);
   -webkit-backdrop-filter: var(--blur-sm);
   backdrop-filter: var(--blur-sm);
@@ -1199,7 +1218,7 @@ select.input option::checkmark {
 
 .empty-state {
   display: grid;
-  gap: 8px;
+  gap: 0.6154rem;
   justify-items: start;
 }
 
@@ -1215,17 +1234,17 @@ select.input option::checkmark {
 }
 
 .empty-state--subtle {
-  padding: 12px 0;
+  padding: 0.9231rem 0;
 }
 
 .holdings-panel {
   display: grid;
-  gap: 12px;
+  gap: 0.9231rem;
 }
 
 section[aria-labelledby='limit-up-list-title'] {
   display: grid;
-  gap: 14px;
+  gap: 1.0769rem;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -1239,7 +1258,7 @@ section[aria-labelledby='limit-up-list-title'] .banner {
 }
 
 section[aria-labelledby='limit-up-list-title'] .empty-state {
-  min-height: 144px;
+  min-height: 11.0769rem;
   justify-items: center;
   align-content: center;
   text-align: center;
@@ -1247,17 +1266,17 @@ section[aria-labelledby='limit-up-list-title'] .empty-state {
 
 section[aria-labelledby='limit-up-list-title'] table {
   width: 100%;
-  min-width: 960px;
+  min-width: 73.8462rem;
   border-collapse: collapse;
   border-spacing: 0;
 }
 
 section[aria-labelledby='limit-up-list-title'] thead th {
-  height: 32px;
-  padding: 0 12px;
+  height: 2.4615rem;
+  padding: 0 0.9231rem;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: 0.8462rem;
   font-weight: 600;
   text-align: right;
   white-space: nowrap;
@@ -1265,11 +1284,11 @@ section[aria-labelledby='limit-up-list-title'] thead th {
 
 section[aria-labelledby='limit-up-list-title'] tbody th,
 section[aria-labelledby='limit-up-list-title'] tbody td {
-  height: 43px;
-  padding: 0 12px;
+  height: 3.3077rem;
+  padding: 0 0.9231rem;
   border-bottom: 1px solid var(--border-color);
   background: transparent;
-  font-size: 13px;
+  font-size: 1rem;
   text-align: right;
   vertical-align: middle;
 }
@@ -1280,18 +1299,18 @@ section[aria-labelledby='limit-up-list-title'] tbody tr:last-child td {
 }
 
 section[aria-labelledby='limit-up-list-title'] tbody th {
-  min-width: 140px;
+  min-width: 10.7692rem;
   font-size: 1rem;
 }
 
 section[aria-labelledby='limit-up-list-title'] thead th:first-child,
 section[aria-labelledby='limit-up-list-title'] tbody th {
-  padding-left: 6px;
+  padding-left: 0.4615rem;
   text-align: left;
 }
 
 section[aria-labelledby='limit-up-list-title'] tbody th div {
-  margin-top: 4px;
+  margin-top: 0.3077rem;
   color: var(--text-secondary);
   font-size: 0.9rem;
   font-weight: 500;
@@ -1312,8 +1331,8 @@ section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
 section[aria-labelledby='limit-up-list-title'] thead th:last-child,
 section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   width: 1%;
-  padding-right: 6px;
-  padding-left: 8px;
+  padding-right: 0.4615rem;
+  padding-left: 0.6154rem;
   font-family: var(--font-sans);
   text-align: center;
   white-space: nowrap;
@@ -1322,10 +1341,10 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .limit-up-focus-tabs {
   display: inline-flex;
   width: fit-content;
-  gap: 4px;
-  padding: 4px;
+  gap: 0.3077rem;
+  padding: 0.3077rem;
   border: 1px solid rgba(255, 255, 255, 0.68);
-  border-radius: 14px;
+  border-radius: 1.0769rem;
   background: rgba(255, 255, 255, 0.42);
   box-shadow: var(--shadow-sm);
   -webkit-backdrop-filter: var(--blur-sm);
@@ -1333,10 +1352,10 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 }
 
 .limit-up-focus-tabs__tab {
-  min-width: 96px;
-  padding: 8px 16px;
+  min-width: 7.3846rem;
+  padding: 0.6154rem 1.2308rem;
   border: 0;
-  border-radius: 10px;
+  border-radius: 0.7692rem;
   background: transparent;
   color: var(--text-secondary);
   font-weight: 700;
@@ -1355,12 +1374,12 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 
 #limit-up-focus-panel {
   display: grid;
-  gap: 12px;
+  gap: 0.9231rem;
 }
 
 .sprint-limit-up-list {
   display: grid;
-  gap: 14px;
+  gap: 1.0769rem;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -1381,7 +1400,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 }
 
 .sprint-limit-up-list .empty-state {
-  min-height: 144px;
+  min-height: 11.0769rem;
   justify-items: center;
   align-content: center;
   text-align: center;
@@ -1389,13 +1408,13 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 
 .sprint-limit-up-list table {
   width: 100%;
-  min-width: 900px;
+  min-width: 69.2308rem;
   border-collapse: collapse;
   border-spacing: 0;
 }
 
 .sprint-limit-up-list thead th {
-  padding: 8px 10px;
+  padding: 0.6154rem 0.7692rem;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-secondary);
   font-size: 0.9rem;
@@ -1406,7 +1425,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 
 .sprint-limit-up-list tbody th,
 .sprint-limit-up-list tbody td {
-  padding: 9px 10px;
+  padding: 0.6923rem 0.7692rem;
   border-bottom: 1px solid var(--border-color);
   background: transparent;
   text-align: center;
@@ -1420,17 +1439,17 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 
 .sprint-limit-up-list thead th:first-child,
 .sprint-limit-up-list tbody th {
-  padding-left: 6px;
+  padding-left: 0.4615rem;
   text-align: left;
 }
 
 .sprint-limit-up-list tbody th {
-  min-width: 140px;
+  min-width: 10.7692rem;
   font-size: 1rem;
 }
 
 .sprint-limit-up-list tbody th div {
-  margin-top: 4px;
+  margin-top: 0.3077rem;
   color: var(--text-secondary);
   font-size: 0.9rem;
   font-weight: 500;
@@ -1446,7 +1465,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 }
 
 .sprint-limit-up-list__reason {
-  min-width: 220px;
+  min-width: 16.9231rem;
   color: var(--text-secondary);
   line-height: 1.5;
   text-align: left !important;
@@ -1462,7 +1481,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .limit-up-ladder,
 .limit-up-comparison {
   display: grid;
-  gap: 14px;
+  gap: 1.0769rem;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -1481,7 +1500,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 
 .limit-up-ladder .empty-state,
 .limit-up-comparison .empty-state {
-  min-height: 144px;
+  min-height: 11.0769rem;
   justify-items: center;
   align-content: center;
   text-align: center;
@@ -1491,24 +1510,24 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .limit-up-ladder__stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 0.7692rem;
 }
 
 .limit-up-ladder__stat {
   display: flex;
-  min-width: 118px;
-  flex: 1 1 118px;
+  min-width: 9.0769rem;
+  flex: 1 1 9.0769rem;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: 0.4615rem;
+  padding: 0.7692rem 0.9231rem;
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: 0.9231rem;
   background: rgba(255, 255, 255, 0.5);
 }
 
 .limit-up-ladder__stat-label {
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: 0.8462rem;
   font-weight: 600;
 }
 
@@ -1523,12 +1542,12 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .limit-up-ladder__list {
   display: grid;
   align-content: start;
-  gap: 10px;
+  gap: 0.7692rem;
 }
 
 .limit-up-ladder__group {
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: 0.9231rem;
   background: rgba(255, 255, 255, 0.5);
 }
 
@@ -1537,11 +1556,11 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   display: flex;
   width: 100%;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: 0.7692rem;
+  padding: 0.6154rem 0.9231rem;
   border: 0;
   border-bottom: 1px solid var(--border-color);
-  border-radius: 12px 12px 0 0;
+  border-radius: 0.9231rem 0.9231rem 0 0;
   background: transparent;
   text-align: left;
 }
@@ -1563,9 +1582,9 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 }
 
 .limit-up-ladder__chevron {
-  width: 12px;
+  width: 0.9231rem;
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: 0.8462rem;
   line-height: 1;
 }
 
@@ -1577,17 +1596,17 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 
 .limit-up-ladder__stocks {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 4px 12px;
+  grid-template-columns: repeat(auto-fill, minmax(14.6154rem, 1fr));
+  gap: 0.3077rem 0.9231rem;
   margin: 0;
-  padding: 6px 12px 10px;
+  padding: 0.4615rem 0.9231rem 0.7692rem;
   list-style: none;
 }
 
 .limit-up-ladder__stock {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.6154rem;
   min-width: 0;
 }
 
@@ -1609,26 +1628,26 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .limit-up-comparison__summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 0.6154rem;
 }
 
 .limit-up-comparison__summary-item {
   display: flex;
-  min-width: 104px;
-  flex: 1 1 104px;
+  min-width: 8rem;
+  flex: 1 1 8rem;
   flex-direction: column;
-  gap: 2px;
-  padding: 8px 12px;
+  gap: 0.1538rem;
+  padding: 0.6154rem 0.9231rem;
   border: 1px solid var(--border-color);
-  border-radius: 10px;
+  border-radius: 0.7692rem;
   background: rgba(255, 255, 255, 0.55);
 }
 
 .limit-up-comparison__summary-label {
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: 0.8462rem;
   font-weight: 700;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.0308rem;
 }
 
 .limit-up-comparison__summary-value {
@@ -1645,28 +1664,28 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
  */
 .limit-up-comparison__body {
   display: grid;
-  gap: 6px;
-  max-width: 545px;
+  gap: 0.4615rem;
+  max-width: 41.9231rem;
 }
 
 .limit-up-comparison__caption {
-  max-width: 760px;
+  max-width: 58.4615rem;
   color: var(--text-tertiary);
   font-size: 0.78rem;
 }
 
 .limit-up-comparison__levels {
   display: grid;
-  gap: 6px;
+  gap: 0.4615rem;
 }
 
 /* 每一档 = 一个方块：档头 + 3px 进度条 + 两栏逐票对齐的表 */
 .limit-up-comparison__level {
   display: grid;
-  gap: 5px;
-  padding: 8px 12px 9px;
+  gap: 0.3846rem;
+  padding: 0.6154rem 0.9231rem 0.6923rem;
   border: 1px solid var(--border-color);
-  border-radius: 10px;
+  border-radius: 0.7692rem;
   background: rgba(255, 255, 255, 0.55);
   animation: cmp-rise 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-delay: calc(var(--i, 0) * 50ms);
@@ -1675,12 +1694,12 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .limit-up-comparison__level-head {
   display: flex;
   align-items: baseline;
-  gap: 7px;
+  gap: 0.5385rem;
 }
 
 .limit-up-comparison__level-badge {
-  padding: 2px 9px;
-  border-radius: 7px;
+  padding: 0.1538rem 0.6923rem;
+  border-radius: 0.5385rem;
   color: #fff;
   background: linear-gradient(135deg, #fb7185, #be123c);
   box-shadow: 0 3px 10px rgba(190, 18, 60, 0.22);
@@ -1715,8 +1734,8 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 
 /* 晋级率进度条：进场时从左长出来 */
 .limit-up-comparison__bar {
-  height: 3px;
-  border-radius: 999px;
+  height: 0.2308rem;
+  border-radius: 76.8462rem;
   background: rgba(15, 23, 42, 0.07);
   overflow: hidden;
 }
@@ -1725,7 +1744,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   display: block;
   width: var(--rate, 0%);
   height: 100%;
-  border-radius: 999px;
+  border-radius: 76.8462rem;
   background: linear-gradient(90deg, #fb7185, #be123c);
   transform-origin: left center;
   animation: cmp-grow 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -1743,9 +1762,9 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  min-height: 36px;
-  padding: 2px 8px;
+  gap: 0.9231rem;
+  min-height: 2.7692rem;
+  padding: 0.1538rem 0.6154rem;
   border-top: 1px solid var(--border-color);
   font-size: 0.84rem;
 }
@@ -1805,7 +1824,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 
 .dragon-tiger-list {
   display: grid;
-  gap: 14px;
+  gap: 1.0769rem;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -1820,7 +1839,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 }
 
 .dragon-tiger-list .empty-state {
-  min-height: 144px;
+  min-height: 11.0769rem;
   justify-items: center;
   align-content: center;
   text-align: center;
@@ -1828,13 +1847,13 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 
 .dragon-tiger-list table {
   width: 100%;
-  min-width: 1020px;
+  min-width: 78.4615rem;
   border-collapse: collapse;
   border-spacing: 0;
 }
 
 .dragon-tiger-list thead th {
-  padding: 8px 10px;
+  padding: 0.6154rem 0.7692rem;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-secondary);
   font-size: 0.9rem;
@@ -1845,7 +1864,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 
 .dragon-tiger-list tbody th,
 .dragon-tiger-list tbody td {
-  padding: 9px 10px;
+  padding: 0.6923rem 0.7692rem;
   border-bottom: 1px solid var(--border-color);
   background: transparent;
   text-align: center;
@@ -1865,7 +1884,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 
 .auction-list {
   display: grid;
-  gap: 14px;
+  gap: 1.0769rem;
   min-width: 0;
 }
 
@@ -1876,8 +1895,8 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .auction-list__description {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
-  margin: 6px 0 0;
+  gap: 0.3077rem 0.9231rem;
+  margin: 0.4615rem 0 0;
   color: var(--text-secondary);
   font-size: 0.86rem;
 }
@@ -1886,23 +1905,23 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 10px;
+  gap: 0.7692rem;
 }
 
 .auction-list__summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 0.6154rem;
 }
 
 .auction-status {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 64px;
-  padding: 4px 9px;
+  min-width: 4.9231rem;
+  padding: 0.3077rem 0.6923rem;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: 76.8462rem;
   font-size: 0.78rem;
   font-weight: 700;
   line-height: 1.2;
@@ -1984,7 +2003,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .auction-list__filter-hint {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.4615rem;
   font-size: 0.78rem;
   color: var(--text-secondary);
 }
@@ -2003,10 +2022,10 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 48px;
-  padding: 4px 8px;
+  min-width: 3.6923rem;
+  padding: 0.3077rem 0.6154rem;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 0.6154rem;
   font-size: 0.86rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
@@ -2036,10 +2055,10 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 52px;
-  padding: 3px 8px;
+  min-width: 4rem;
+  padding: 0.2308rem 0.6154rem;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: 76.8462rem;
   font-size: 0.74rem;
   font-weight: 600;
   line-height: 1.2;
@@ -2076,7 +2095,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 }
 
 .auction-list .empty-state {
-  min-height: 144px;
+  min-height: 11.0769rem;
   align-content: center;
   justify-items: center;
 }
@@ -2095,13 +2114,13 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 
 .auction-list table {
   width: 100%;
-  min-width: 1250px;
+  min-width: 96.1538rem;
   border-collapse: collapse;
   border-spacing: 0;
 }
 
 .auction-list thead th {
-  padding: 8px 10px;
+  padding: 0.6154rem 0.7692rem;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-secondary);
   font-size: 0.86rem;
@@ -2112,7 +2131,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 
 .auction-list tbody th,
 .auction-list tbody td {
-  padding: 10px;
+  padding: 0.7692rem;
   border-bottom: 1px solid var(--border-color);
   text-align: center;
   /* 行高由最长的「研判依据」/「股票 + 代码」撑开，单值列如果顶对齐会明显偏上 */
@@ -2131,7 +2150,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 }
 
 .auction-list tbody th {
-  min-width: 130px;
+  min-width: 10rem;
 }
 
 /* 注意：这里原来还有 `.auction-list tbody th > span`，是给「名称 + 代码」两行
@@ -2140,7 +2159,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
  * .auction-list__subvalue。 */
 .auction-list__subvalue {
   display: block;
-  margin-top: 3px;
+  margin-top: 0.2308rem;
   color: var(--text-secondary);
   font-size: 0.8rem;
   font-weight: 500;
@@ -2159,8 +2178,8 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 }
 
 .auction-list__reasons {
-  max-width: 320px;
-  min-width: 220px;
+  max-width: 24.6154rem;
+  min-width: 16.9231rem;
   color: var(--text-secondary);
   font-size: 0.82rem;
   line-height: 1.5;
@@ -2180,12 +2199,12 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 }
 
 .dragon-tiger-list tbody th {
-  min-width: 140px;
+  min-width: 10.7692rem;
   font-size: 1rem;
 }
 
 .dragon-tiger-list tbody th div {
-  margin-top: 4px;
+  margin-top: 0.3077rem;
   color: var(--text-secondary);
   font-size: 0.9rem;
   font-weight: 500;
@@ -2201,7 +2220,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 }
 
 .dragon-tiger-list tbody td:nth-child(4) {
-  min-width: 260px;
+  min-width: 20rem;
   color: var(--text-secondary);
   line-height: 1.5;
 }
@@ -2212,7 +2231,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 }
 
 .holding-card__symbol {
- margin: 0 0 2px;
+ margin: 0 0 0.1538rem;
   color: var(--text-secondary);
   font-weight: 600;
   font-size: 0.85rem;
@@ -2227,7 +2246,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   display: flex;
   flex-wrap: nowrap;
   justify-content: flex-start;
-  gap: 4px;
+  gap: 0.3077rem;
 }
 
 .holding-list {
@@ -2242,14 +2261,14 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 
 .quote-table {
   width: 100%;
-  min-width: 860px;
+  min-width: 66.1538rem;
   border-collapse: collapse;
 }
 
 .quote-table th,
 .quote-table td {
-  padding: 0 18px;
-  font-size: 13px;
+  padding: 0 1.3846rem;
+  font-size: 1rem;
   /* F 用右对齐：数字位数不同也能共用一条右边线，和表头严格对齐 */
   text-align: right;
   vertical-align: middle;
@@ -2260,15 +2279,15 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 
 .quote-table thead th {
   /* 稿子 F：表头没有底色带，只有一条分隔线 */
-  padding: 8px 18px 9px;
+  padding: 0.6154rem 1.3846rem 0.6923rem;
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: 0.8462rem;
   font-weight: 600;
-  letter-spacing: 0.2px;
+  letter-spacing: 0.0154rem;
 }
 
 .quote-table tbody tr {
-  height: 43px;
+  height: 3.3077rem;
 }
 
 .quote-table tbody tr:last-child th,
@@ -2278,7 +2297,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 }
 
 .quote-table tbody th {
-  min-width: 132px;
+  min-width: 10.1538rem;
   font-weight: 600;
   white-space: normal;
 }
@@ -2286,7 +2305,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .quote-table thead th:first-child,
 .quote-table tbody th {
   /* 稿子 F：首列左内边距和其它列一致，和卡片标题对齐 */
-  padding-left: 18px;
+  padding-left: 1.3846rem;
   text-align: left;
 }
 
@@ -2298,28 +2317,28 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 }
 
 .quote-table tbody th .holding-card__symbol {
-  margin: 2px 0 0;
+  margin: 0.1538rem 0 0;
 }
 
 .quote-table tbody th .holding-card__note {
-  margin: 6px 0 0;
+  margin: 0.4615rem 0 0;
   white-space: normal;
 }
 
 .quote-table--holdings {
-  min-width: 980px;
+  min-width: 75.3846rem;
 }
 
 .quote-table--watchlist {
   /* 比通用 min-width 窄一档，但加了三列自选数据（自选日 / 自选价 / 自选收益）后要 1000 才不挤 */
-  min-width: 1000px;
+  min-width: 76.9231rem;
 }
 
 .quote-table thead th:last-child,
 .quote-table tbody td:last-child {
-  width: 132px;
-  min-width: 132px;
-  padding-left: 10px;
+  width: 10.1538rem;
+  min-width: 10.1538rem;
+  padding-left: 0.7692rem;
   text-align: center;
 }
 
@@ -2327,9 +2346,9 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .sort-button {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 0.3077rem;
   margin: 0;
-  padding: 2px 0;
+  padding: 0.1538rem 0;
   border: 0;
   background: none;
   color: inherit;
@@ -2345,7 +2364,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .sort-button:focus-visible {
   outline: 2px solid var(--text-secondary);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: 0.3077rem;
 }
 
 .sort-button--on {
@@ -2353,7 +2372,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 }
 
 .sort-button__glyph {
-  font-size: 9px;
+  font-size: 0.6923rem;
   line-height: 1;
 }
 
@@ -2365,31 +2384,31 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .quote-table .button--secondary,
 .quote-table .button--ghost,
 .quote-table .icon-button {
-  padding: 5px 10px;
-  border-radius: 8px;
-  font-size: 12.5px;
+  padding: 0.3846rem 0.7692rem;
+  border-radius: 0.6154rem;
+  font-size: 0.9615rem;
   font-weight: 550;
   line-height: 1.35;
 }
 
 .quote-table .holding-card__actions {
   justify-content: center;
-  gap: 8px;
+  gap: 0.6154rem;
 }
 
 .holding-card.card {
   border: 0;
   border-radius: 0;
   box-shadow: none;
-  padding: 14px 16px;
+  padding: 1.0769rem 1.2308rem;
   background: transparent;
 }
 
 .holding-card__metrics {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 10px;
- margin: 12px 0 10px;
+  gap: 0.7692rem;
+ margin: 0.9231rem 0 0.7692rem;
 }
 
 .holding-card__metrics--quote-only {
@@ -2397,7 +2416,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 }
 
 .holding-card__metrics dt {
-  margin-bottom: 2px;
+  margin-bottom: 0.1538rem;
   color: var(--text-secondary);
 }
 
@@ -2412,7 +2431,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 }
 
 .holding-card__note {
- margin: 8px 0 0;
+ margin: 0.6154rem 0 0;
   color: var(--text-secondary);
 }
 
@@ -2441,10 +2460,10 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
    */
   .app-topbar {
     height: auto;
-    min-height: 54px;
+    min-height: 4.1538rem;
     flex-wrap: wrap;
-    padding: 10px 12px;
-    row-gap: 10px;
+    padding: 0.7692rem 0.9231rem;
+    row-gap: 0.7692rem;
   }
 
   .app-topbar__brand {
@@ -2469,15 +2488,15 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   }
 
   .dashboard-shell {
-    width: min(1120px, calc(100% - 24px));
-    padding: 12px 0 28px;
-    gap: 12px;
+    width: min(86.1538rem, calc(100% - 1.8462rem));
+    padding: 0.9231rem 0 2.1538rem;
+    gap: 0.9231rem;
   }
 
   .dashboard-layout {
     padding: 0;
     grid-template-columns: 1fr;
-    gap: 12px;
+    gap: 0.9231rem;
   }
 
   .dashboard-rail {
@@ -2487,7 +2506,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   .dashboard-main,
   .holding-card__metrics,
   .form-grid {
-    gap: 12px;
+    gap: 0.9231rem;
   }
 
   .overview {
@@ -2529,12 +2548,12 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   nav.card[aria-label='一级导航'] {
     position: static;
     top: auto;
-    padding: 12px;
+    padding: 0.9231rem;
   }
 
   nav.card[aria-label='一级导航'] .group-sidebar__list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
+    gap: 0.7692rem;
   }
 
   .overview__actions,
@@ -2565,15 +2584,15 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   }
 
   section[aria-labelledby='limit-up-list-title'] {
-    padding-bottom: 4px;
+    padding-bottom: 0.3077rem;
   }
 
   .sprint-limit-up-list {
-    padding-bottom: 4px;
+    padding-bottom: 0.3077rem;
   }
 
   .dragon-tiger-list {
-    padding-bottom: 4px;
+    padding-bottom: 0.3077rem;
   }
 
   .auction-list__toolbar {
@@ -2613,11 +2632,11 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 4px;
+  gap: 0.3077rem;
   min-width: 4.5rem;
   height: 1.6rem;
-  padding: 0 8px;
-  border-radius: 7px;
+  padding: 0 0.6154rem;
+  border-radius: 0.5385rem;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
@@ -2695,7 +2714,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   position: absolute;
   width: 1px;
   height: 1px;
-  margin: -1px;
+  margin: -0.0769rem;
   padding: 0;
   overflow: hidden;
   clip: rect(0 0 0 0);
@@ -2707,8 +2726,8 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .workbench {
   display: grid;
   /* 稿子 F：右侧竞价栏 348px */
-  grid-template-columns: minmax(0, 1fr) 348px;
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) 26.7692rem;
+  gap: 1.0769rem;
   /* 稿子 F 的 .cols 是 stretch：两栏卡片等高（谁高跟谁） */
   align-items: stretch;
 }
@@ -2721,15 +2740,15 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .workbench__main {
   min-width: 0;
   display: grid;
-  gap: 14px;
+  gap: 1.0769rem;
 }
 
 .workbench__rail {
   display: grid;
-  gap: 14px;
+  gap: 1.0769rem;
   align-content: start;
   position: sticky;
-  top: 14px;
+  top: 1.0769rem;
 }
 
 /* 卡片头：标题 + 分段筛选 + 操作 */
@@ -2741,31 +2760,31 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .panel-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 18px 12px;
+  gap: 0.9231rem;
+  padding: 1.0769rem 1.3846rem 0.9231rem;
   flex-wrap: wrap;
 }
 
 .panel-header--tight {
   /* 和 .panel-header 一致：右栏标题要跟列表行名对齐（都是 18px） */
-  padding: 14px 18px 12px;
+  padding: 1.0769rem 1.3846rem 0.9231rem;
 }
 
 .panel-header__title {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 0.6154rem;
 }
 
 .panel-header__title h2 {
   margin: 0;
-  font-size: 14.5px;
+  font-size: 1.1154rem;
   font-weight: 700;
-  letter-spacing: -0.2px;
+  letter-spacing: -0.0154rem;
 }
 
 .panel-header__count {
-  font-size: 11.5px;
+  font-size: 0.8846rem;
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
 }
@@ -2773,7 +2792,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .panel-header__actions {
   margin-left: auto;
   display: flex;
-  gap: 8px;
+  gap: 0.6154rem;
   align-items: center;
 }
 
@@ -2781,28 +2800,28 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .group-filter {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.7692rem;
   margin-left: 0;
   flex-wrap: wrap;
 }
 
 .segmented {
   display: flex;
-  gap: 4px;
-  padding: 3px;
+  gap: 0.3077rem;
+  padding: 0.2308rem;
   background: rgba(17, 24, 39, 0.05);
-  border-radius: 10px;
+  border-radius: 0.7692rem;
 }
 
 .segmented__item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
+  gap: 0.4615rem;
+  padding: 0.3846rem 0.9231rem;
   border: 0;
   background: transparent;
-  border-radius: 8px;
-  font-size: 12px;
+  border-radius: 0.6154rem;
+  font-size: 0.9231rem;
   font-weight: 550;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -2824,17 +2843,17 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 }
 
 .segmented__count {
-  font-size: 11px;
+  font-size: 0.8462rem;
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
 }
 
 .button--compact {
-  height: 33px;
-  padding: 0 14px;
-  font-size: 12.5px;
+  height: 2.5385rem;
+  padding: 0 1.0769rem;
+  font-size: 0.9615rem;
   font-weight: 550;
-  border-radius: 10px;
+  border-radius: 0.7692rem;
 }
 
 /* 顶栏右侧操作 */
@@ -2842,14 +2861,14 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.6154rem;
 }
 
 .app-topbar__stamp {
-  font-size: 11.5px;
+  font-size: 0.8846rem;
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
-  margin-right: 4px;
+  margin-right: 0.3077rem;
 }
 
 /* 侧栏卡片 */
@@ -2861,8 +2880,8 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 
 .rail-card__meta {
   margin: 0;
-  padding: 0 16px 9px;
-  font-size: 11.5px;
+  padding: 0 1.2308rem 0.6923rem;
+  font-size: 0.8846rem;
   color: var(--text-tertiary);
 }
 
@@ -2876,8 +2895,8 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 11px 18px;
+  gap: 0.7692rem;
+  padding: 0.8462rem 1.3846rem;
   border-bottom: 1px solid rgba(17, 24, 39, 0.05);
 }
 
@@ -2889,16 +2908,16 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 0.2308rem;
 }
 
 .rail-list__name {
-  font-size: 12.5px;
+  font-size: 0.9615rem;
   font-weight: 600;
 }
 
 .rail-list__meta {
-  font-size: 11px;
+  font-size: 0.8462rem;
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
 }
@@ -2907,36 +2926,36 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 2px;
+  gap: 0.1538rem;
 }
 
 .rail-list__prob {
   /* 稿子 F：概率数字是墨色，不按档位染色（档位靠下面的进度条区分） */
-  font-size: 13px;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
 
 .rail-list__tier {
-  font-size: 10.5px;
+  font-size: 0.8077rem;
   color: var(--text-tertiary);
 }
 
 .rail-meter {
   display: block;
-  width: 112px;
-  height: 5px;
-  border-radius: 3px;
+  width: 8.6154rem;
+  height: 0.3846rem;
+  border-radius: 0.2308rem;
   background: rgba(17, 24, 39, 0.08);
   overflow: hidden;
-  margin-top: 3px;
+  margin-top: 0.2308rem;
 }
 
 .rail-meter__fill {
   display: block;
   height: 100%;
-  border-radius: 3px;
+  border-radius: 0.2308rem;
   background: var(--accent-primary);
 }
 
@@ -2957,14 +2976,14 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .dashboard-footer {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 1.0769rem;
   flex-wrap: wrap;
-  padding: 7px 14px;
+  padding: 0.5385rem 1.0769rem;
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: 0.9231rem;
   background: var(--glass-strong);
   box-shadow: var(--shadow-sm);
-  font-size: 12px;
+  font-size: 0.9231rem;
   color: var(--text-tertiary);
 }
 
@@ -2975,32 +2994,32 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 0.9231rem;
 }
 
 .dashboard-footer__index {
   display: inline-flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 0.4615rem;
 }
 
 .dashboard-footer__index-name {
   color: var(--text-tertiary);
-  font-size: 11.5px;
+  font-size: 0.8846rem;
 }
 
 .dashboard-footer__index-value {
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 1rem;
   font-variant-numeric: tabular-nums;
   font-weight: 650;
 }
 
 /* 涨跌幅色块：底色比文字淡一档，整条不需要胶囊也不会糊成一片灰 */
 .dashboard-footer__pct {
-  padding: 1.5px 6px;
-  border-radius: 6px;
-  font-size: 11.5px;
+  padding: 0.1154rem 0.4615rem;
+  border-radius: 0.4615rem;
+  font-size: 0.8846rem;
   font-variant-numeric: tabular-nums;
   font-weight: 650;
 }
@@ -3023,12 +3042,12 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .dashboard-footer__stat {
   display: inline-flex;
   align-items: baseline;
-  gap: 4px;
+  gap: 0.3077rem;
 }
 
 .dashboard-footer__stat b {
   color: var(--text-primary);
-  font-size: 12.5px;
+  font-size: 0.9615rem;
   font-variant-numeric: tabular-nums;
   font-weight: 650;
 }
@@ -3045,7 +3064,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 /* 时间戳靠右，颜色比行情数据再弱一档 */
 .dashboard-footer__times {
   margin-left: auto;
-  gap: 10px;
+  gap: 0.7692rem;
 }
 
 .dashboard-footer__times b {
@@ -3056,18 +3075,18 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 
 .dashboard-footer__sep {
   width: 1px;
-  height: 12px;
+  height: 0.9231rem;
   background: var(--border-strong);
 }
 
 .rail-card__more {
-  margin: auto 16px 12px;
-  padding: 8px;
+  margin: auto 1.2308rem 0.9231rem;
+  padding: 0.6154rem;
   border: 1px solid var(--border-color);
-  border-radius: 9px;
+  border-radius: 0.6923rem;
   background: rgba(255, 255, 255, 0.9);
   color: var(--text-secondary);
-  font: 550 12.5px inherit;
+  font: 550 0.9615rem inherit;
 }
 
 .rail-card__more:hover {
@@ -3079,7 +3098,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .watch-stock {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.7692rem;
 }
 
 /*
@@ -3105,19 +3124,19 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 }
 
 .quote-table--watchlist tbody td.quote-table__watch-date {
-  width: 96px;
-  min-width: 96px;
-  padding-left: 10px;
+  width: 7.3846rem;
+  min-width: 7.3846rem;
+  padding-left: 0.7692rem;
   text-align: center;
   white-space: nowrap;
 }
 
 /* 自选价是价格：和「最新价」一样右对齐 */
 .quote-table--watchlist tbody td.quote-table__watch-price {
-  width: 92px;
-  min-width: 92px;
-  padding-left: 10px;
-  padding-right: 10px;
+  width: 7.0769rem;
+  min-width: 7.0769rem;
+  padding-left: 0.7692rem;
+  padding-right: 0.7692rem;
   white-space: nowrap;
 }
 
@@ -3127,10 +3146,10 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
  * 右内边距仍显式写成 10px，免得继承通用 `:last-child` 留给「操作」列的 18px。
  */
 .quote-table--watchlist tbody td.quote-table__watch-return:last-child {
-  width: 96px;
-  min-width: 96px;
-  padding-left: 10px;
-  padding-right: 10px;
+  width: 7.3846rem;
+  min-width: 7.3846rem;
+  padding-left: 0.7692rem;
+  padding-right: 0.7692rem;
   text-align: center;
   white-space: nowrap;
 }
@@ -3142,7 +3161,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
  * 列宽交给内容 + 表头的 padding 决定，和其它数字列一样。
  */
 .watch-pct {
-  font-size: 12px;
+  font-size: 0.9231rem;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
@@ -3160,7 +3179,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
  * 必须带 .quote-table 前缀，否则会被 `.quote-table th, .quote-table td` 的 13px 压过去
  */
 .quote-table .watch-delta {
-  font-size: 12px;
+  font-size: 0.9231rem;
   font-weight: 650;
 }
 
@@ -3199,8 +3218,8 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   display: flex;
   align-items: center;
   width: 100%;
-  min-height: 43px;
-  padding: 0 18px;
+  min-height: 3.3077rem;
+  padding: 0 1.3846rem;
   margin: 0;
   border: 0;
   background: transparent;
@@ -3214,12 +3233,12 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  gap: 2px;
+  gap: 0.1538rem;
 }
 
 /* .watch-stock 自己的头像间距，别被上面的 gap 覆盖 */
 .quote-table__stock.watch-stock {
-  gap: 10px;
+  gap: 0.7692rem;
 }
 
 .quote-table__stock .holding-card__symbol {
@@ -3241,10 +3260,10 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 1.2308rem;
   flex-wrap: wrap;
-  margin-top: 4px;
-  padding: 12px 14px;
+  margin-top: 0.3077rem;
+  padding: 0.9231rem 1.0769rem;
   border: 1px solid rgba(220, 47, 53, 0.22);
   border-radius: var(--radius-md);
   background: rgba(220, 47, 53, 0.05);
@@ -3252,14 +3271,14 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 
 .form-danger__title {
   margin: 0;
-  font-size: 12.5px;
+  font-size: 0.9615rem;
   font-weight: 650;
   color: var(--danger);
 }
 
 .form-danger__hint {
-  margin: 3px 0 0;
-  font-size: 11.5px;
+  margin: 0.2308rem 0 0;
+  font-size: 0.8846rem;
   color: var(--text-secondary);
 }
 
@@ -3329,7 +3348,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   #limit-up-focus-panel {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 0.9231rem;
   }
 
   .workbench__main {
@@ -3407,16 +3426,16 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
    * 必须放在上面所有 min-height: 0 之后，否则会被同优先级的规则覆盖。
    */
   .dashboard-main--fill > .workbench {
-    min-height: 420px;
+    min-height: 32.3077rem;
   }
 
   .dashboard-main--fill > #limit-up-focus-panel {
-    min-height: 340px;
+    min-height: 26.1538rem;
   }
 
   .dashboard-main--fill > .card,
   #limit-up-focus-panel > .card {
-    min-height: 280px;
+    min-height: 21.5385rem;
   }
 
   /* ===== 列表体：唯一的滚动区域（横向滚宽表，纵向滚行） ===== */
@@ -3495,18 +3514,18 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .stock-identity {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.7692rem;
   min-width: 0;
 }
 
 .stock-identity__avatar {
-  width: 26px;
-  height: 26px;
-  flex: 0 0 26px;
-  border-radius: 9px;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 2rem;
+  border-radius: 0.6923rem;
   display: grid;
   place-items: center;
-  font-size: 11.5px;
+  font-size: 0.8846rem;
   font-weight: 700;
   /* 沪市蓝块、深市绿块，和稿子 F 的 .badge / .badge.sz 同色 */
   background: rgba(59, 111, 245, 0.12);
@@ -3521,17 +3540,17 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .stock-identity__text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0.1538rem;
   min-width: 0;
 }
 
 .stock-identity__name {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.4615rem;
   min-width: 0;
   font-weight: 650;
-  font-size: 13px;
+  font-size: 1rem;
 }
 
 /* 稿子 F 的 .scode：11px 等宽常规字重。
@@ -3540,7 +3559,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 .stock-identity .stock-identity__text .stock-identity__code {
   margin: 0;
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: 0.8462rem;
   font-weight: 400;
   line-height: 1.35;
   font-family: var(--font-mono);
@@ -3550,13 +3569,13 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 /* 稿子 F 的 .tag：红底红字的小胶囊 */
 .stock-tag {
   flex: 0 0 auto;
-  max-width: 132px;
+  max-width: 10.1538rem;
   overflow: hidden;
-  padding: 1.5px 6px;
-  border-radius: 6px;
+  padding: 0.1154rem 0.4615rem;
+  border-radius: 0.4615rem;
   background: var(--danger-soft);
   color: var(--rise);
-  font-size: 10px;
+  font-size: 0.7692rem;
   font-weight: 650;
   line-height: 1.5;
   /* 窄屏下别被 flex 压成竖排的「涨/停」 */
@@ -3575,7 +3594,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 section[aria-labelledby='limit-up-list-title'] tbody th .stock-identity .stock-identity__name,
 section[aria-labelledby='sprint-limit-up-list-title'] tbody th .stock-identity .stock-identity__name,
 section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .stock-identity__name {
-  font-size: 13px;
+  font-size: 1rem;
 }
 
 /* 列表里的名称不做 autolink 式的蓝色下划线，只有自选/持仓那两列可点才变蓝 */
@@ -3608,7 +3627,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 0.6154rem;
 }
 
 /* 正文面板：位置和原来的折叠条一样（标题下面、表格上面），只是由按钮控制显隐 */
@@ -3637,12 +3656,12 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 .trend-research ul {
   margin: 0;
-  padding-left: 18px;
+  padding-left: 1.3846rem;
   color: var(--text-secondary);
 }
 
 .trend-research li {
-  margin-bottom: 2px;
+  margin-bottom: 0.1538rem;
 }
 
 .trend-research__details {
@@ -3666,7 +3685,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 0.6154rem;
 }
 
 /*
@@ -3682,13 +3701,13 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
+  gap: 0.3077rem;
+  padding: 0.1538rem 0.6154rem;
   border: 1px solid var(--border-color);
-  border-radius: 999px;
+  border-radius: 76.8462rem;
   background: var(--bg-muted);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 0.9231rem;
   font-weight: 600;
   line-height: 1.5;
   cursor: pointer;
@@ -3710,7 +3729,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 }
 
 .warning-notes__icon {
-  font-size: 12px;
+  font-size: 0.9231rem;
 }
 
 .warning-notes__caret {
@@ -3735,7 +3754,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
   border-radius: var(--radius-md);
   background: var(--bg-muted);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 1rem;
 }
 
 .warning-notes__panel[hidden] {
@@ -3750,11 +3769,11 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 .warning-notes__list {
   margin: 0;
-  padding-left: 18px;
+  padding-left: 1.3846rem;
 }
 
 .warning-notes__list li {
-  margin-bottom: 2px;
+  margin-bottom: 0.1538rem;
 }
 
 /* ---- 趋势条件区（默认折叠：条件 + 生效条件 + 覆盖说明一起收起来） ---- */
@@ -3770,7 +3789,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 .trend-settings__summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 10px;
+  gap: 0.3077rem 0.7692rem;
   align-items: baseline;
   cursor: pointer;
   list-style: none;
@@ -3791,12 +3810,12 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 .trend-settings__summary-text {
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 0.9231rem;
 }
 
 .trend-settings__summary-note {
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: 0.9231rem;
 }
 
 .trend-settings__body {
@@ -3820,18 +3839,18 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 .trend-filters__field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  min-width: 132px;
+  gap: 0.3077rem;
+  min-width: 10.1538rem;
 }
 
 .trend-filters__field > span {
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: 0.9231rem;
 }
 
 .trend-filters__field select,
 .trend-filters__field input {
-  padding: 6px 8px;
+  padding: 0.4615rem 0.6154rem;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--glass-strong);
@@ -3841,9 +3860,9 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 .trend-filters__check {
   display: flex;
-  gap: 6px;
+  gap: 0.4615rem;
   align-items: center;
-  padding-bottom: 6px;
+  padding-bottom: 0.4615rem;
   color: var(--text-secondary);
 }
 
@@ -3851,25 +3870,25 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 .theme-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(20.6154rem, 1fr));
   gap: var(--space-2);
   margin-top: var(--space-2);
 }
 
 .theme-branch-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(17.8462rem, 1fr));
+  gap: 0.7692rem;
   margin-top: var(--space-2);
-  max-height: 420px;
+  max-height: 32.3077rem;
   overflow-y: auto;
 }
 
 .theme-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: 0.4615rem;
+  padding: 0.7692rem 0.9231rem;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--glass-strong);
@@ -3908,9 +3927,9 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 .theme-card__stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
+  gap: 0.3077rem 0.9231rem;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 0.9231rem;
 }
 
 .theme-card__stats b {
@@ -3923,7 +3942,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
   align-items: center;
   justify-content: space-between;
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: 0.9231rem;
 }
 
 .theme-card__leader {
@@ -3934,13 +3953,13 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 .theme-metrics {
   display: inline-flex;
-  gap: 3px;
+  gap: 0.2308rem;
   align-items: center;
 }
 
 .theme-metrics__dot {
-  width: 7px;
-  height: 7px;
+  width: 0.5385rem;
+  height: 0.5385rem;
   border: 1px solid var(--border-strong);
   border-radius: 50%;
   background: transparent;
@@ -3956,7 +3975,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 .theme-detail__metrics {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 0.4615rem;
   margin: var(--space-2) 0;
   padding: 0;
   list-style: none;
@@ -3965,9 +3984,9 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 .theme-detail__metric {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-width: 148px;
-  padding: 6px 10px;
+  gap: 0.1538rem;
+  min-width: 11.3846rem;
+  padding: 0.4615rem 0.7692rem;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   background: var(--bg-muted);
@@ -3980,7 +3999,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 .theme-detail__metric-label {
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: 0.9231rem;
 }
 
 .theme-detail__metric-value {
@@ -3991,10 +4010,10 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
   margin: 0;
   padding: 0;
   /* 命中/未命中条目多，给个滚动上限，别把整行撑成一面墙 */
-  max-height: 116px;
+  max-height: 8.9231rem;
   overflow-y: auto;
   list-style: none;
-  font-size: 12px;
+  font-size: 0.9231rem;
   line-height: 1.4;
 }
 
@@ -4008,7 +4027,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 @media (max-width: 720px) {
   .trend-filters__field {
-    min-width: 108px;
+    min-width: 8.3077rem;
   }
 
   .theme-grid,
@@ -4040,26 +4059,26 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 /* 12 列（趋势）/ 9 列（题材详情）的最小可读宽度（含行尾「添加自选」列） */
 .screener-table--trend {
-  min-width: 1320px;
+  min-width: 101.5385rem;
 }
 
 .screener-table--stocks {
-  min-width: 1360px;
+  min-width: 104.6154rem;
 }
 
 .screener-table thead th {
   position: sticky;
   top: 0;
   z-index: 1;
-  height: 34px;
-  padding: 0 12px;
+  height: 2.6154rem;
+  padding: 0 0.9231rem;
   border-bottom: 1px solid var(--border-color);
   background: rgba(255, 255, 255, 0.96);
   -webkit-backdrop-filter: var(--blur-md);
   backdrop-filter: var(--blur-md);
   box-shadow: inset 0 -1px 0 var(--border-color);
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: 0.8462rem;
   font-weight: 600;
   text-align: left;
   white-space: nowrap;
@@ -4067,10 +4086,10 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 .screener-table tbody th,
 .screener-table tbody td {
-  padding: 13px 12px;
+  padding: 1rem 0.9231rem;
   border-bottom: 1px solid var(--border-color);
   background: transparent;
-  font-size: 13px;
+  font-size: 1rem;
   text-align: left;
   vertical-align: middle;
   white-space: nowrap;
@@ -4106,8 +4125,8 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 }
 
 .screener-table tbody th {
-  min-width: 178px;
-  font-size: 13px;
+  min-width: 13.6923rem;
+  font-size: 1rem;
   font-weight: 500;
 }
 
@@ -4134,7 +4153,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 }
 
 .screener-table__pct {
-  font-size: 13px;
+  font-size: 1rem;
   color: var(--text-secondary);
 }
 
@@ -4149,9 +4168,9 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 /* 次要信息（所属板块、均线数值）压到主行下面的小字 */
 .screener-table__sub {
   display: block;
-  margin-top: 3px;
+  margin-top: 0.2308rem;
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: 0.8462rem;
   font-weight: 400;
   line-height: 1.35;
   white-space: normal;
@@ -4163,11 +4182,11 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 .screener-table__badge {
   display: inline-block;
-  padding: 1px 8px;
+  padding: 1px 0.6154rem;
   border: 1px solid var(--border-strong);
-  border-radius: 999px;
+  border-radius: 76.8462rem;
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: 0.8462rem;
   font-weight: 600;
 }
 
@@ -4182,7 +4201,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
    行高会被撑到 500px 以上。垂直方向跟其他列一样居中：原来是 top，
    胶囊少的时候会贴在行顶，和居中的股票名对不上。 */
 .screener-table tbody td.screener-table__verdict {
-  min-width: 376px;
+  min-width: 28.9231rem;
   text-align: left;
   vertical-align: middle;
 }
@@ -4194,10 +4213,10 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 .screener-table .theme-verdict li {
   display: inline-block;
-  margin: 0 4px 4px 0;
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-size: 11px;
+  margin: 0 0.3077rem 0.3077rem 0;
+  padding: 1px 0.6154rem;
+  border-radius: 76.8462rem;
+  font-size: 0.8462rem;
   line-height: 1.7;
 }
 
@@ -4211,11 +4230,11 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 @media (max-width: 720px) {
   .screener-table--trend {
-    min-width: 1170px;
+    min-width: 90rem;
   }
 
   .screener-table--stocks {
-    min-width: 1210px;
+    min-width: 93.0769rem;
   }
 }
 
@@ -4225,14 +4244,14 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 .trend-filters__error {
   color: var(--danger);
-  font-size: 12px;
+  font-size: 0.9231rem;
 }
 
 .trend-filters__actions {
   display: flex;
   gap: var(--space-2);
   align-items: center;
-  padding-bottom: 6px;
+  padding-bottom: 0.4615rem;
 }
 
 /* 覆盖 / 截断 / 数据截止说明：真实数字放正文，附加解释弱化。
@@ -4251,11 +4270,11 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
   border-radius: var(--radius-md);
   background: var(--bg-muted);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 1rem;
 }
 
 .trend-coverage p {
-  margin: 0 0 4px;
+  margin: 0 0 0.3077rem;
 }
 
 .trend-coverage p:last-child {
@@ -4264,9 +4283,9 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 /* 每行的数据说明（例如剔除了未完成日K） */
 .screener-table .theme-verdict__note {
-  margin: 4px 0 0;
+  margin: 0.3077rem 0 0;
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: 0.8462rem;
 }
 /* ---- 题材 v2：统一股票表 + 角色标签（2026-09-18） ---- */
 
@@ -4278,9 +4297,9 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 .theme-card__counts {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
+  gap: 0.3077rem 0.9231rem;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 0.9231rem;
 }
 
 .theme-card__counts b {
@@ -4291,16 +4310,16 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
   display: block;
   overflow: hidden;
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: 0.8462rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .theme-detail__reasons {
   margin: var(--space-2) 0;
-  padding-left: 18px;
+  padding-left: 1.3846rem;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 0.9231rem;
 }
 
 .theme-detail__controls {
@@ -4319,7 +4338,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 }
 
 .theme-detail__search input {
-  width: 220px;
+  width: 16.9231rem;
   max-width: 100%;
 }
 
@@ -4328,7 +4347,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 .theme-detail__legacy-metrics {
   margin: var(--space-2) 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 0.9231rem;
 }
 
 .theme-detail__legacy-metrics summary {
@@ -4348,11 +4367,11 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 .theme-detail__classification-summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 10px;
+  gap: 0.3077rem 0.7692rem;
   align-items: baseline;
   cursor: pointer;
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 0.9231rem;
   list-style: none;
 }
 
@@ -4371,7 +4390,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 .theme-detail__classification-note {
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: 0.8462rem;
   white-space: nowrap;
 }
 
@@ -4383,7 +4402,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 .theme-role-badges {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 0.3077rem;
 }
 
 .theme-role-badges__empty {
@@ -4391,12 +4410,12 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 }
 
 .theme-role-badge {
-  padding: 2px 8px;
+  padding: 0.1538rem 0.6154rem;
   border: 1px solid var(--border-strong);
-  border-radius: 999px;
+  border-radius: 76.8462rem;
   background: var(--bg-muted);
   color: var(--text-primary);
-  font-size: 11px;
+  font-size: 0.8462rem;
   white-space: nowrap;
 }
 
@@ -4418,11 +4437,11 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 .theme-relation {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0.1538rem;
 }
 
 .theme-relation__state {
-  font-size: 12px;
+  font-size: 0.9231rem;
 }
 
 .theme-relation--supported .theme-relation__state {
@@ -4448,9 +4467,9 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 }
 
 .theme-evidence__title {
-  margin: 0 0 4px;
+  margin: 0 0 0.3077rem;
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 0.9231rem;
   font-weight: 600;
 }
 
@@ -4482,15 +4501,15 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 .screener-table__toggle-cell {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.6154rem;
   min-width: 0;
 }
 
 .screener-table__caret {
   flex: 0 0 auto;
-  width: 10px;
+  width: 0.7692rem;
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: 0.8462rem;
   line-height: 1;
 }
 
@@ -4515,16 +4534,16 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 .screener-table tbody td.screener-table__action {
   width: 1%;
-  padding-left: 8px;
+  padding-left: 0.6154rem;
   text-align: center;
   white-space: nowrap;
 }
 
 .add-watchlist-button {
-  height: 26px;
-  min-width: 78px;
-  padding: 0 10px;
-  border-radius: 8px;
-  font-size: 12px;
+  height: 2rem;
+  min-width: 6rem;
+  padding: 0 0.7692rem;
+  border-radius: 0.6154rem;
+  font-size: 0.9231rem;
   font-weight: 500;
 }
