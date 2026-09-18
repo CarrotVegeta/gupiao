@@ -19,7 +19,7 @@ import { HoldingForm, type HoldingFormValues } from './components/HoldingForm';
 import { HoldingList } from './components/HoldingList';
 import { LimitUpFocus, type LimitUpFocusTab } from './components/LimitUpFocus';
 import { Overview } from './components/Overview';
-import { AuctionRail } from './components/AuctionRail';
+import { SprintLimitUpRail } from './components/SprintLimitUpRail';
 import { GroupFilter } from './components/GroupFilter';
 import { Watchlist } from './components/Watchlist';
 import { WatchlistFilterBar, type WatchlistScope } from './components/WatchlistFilterBar';
@@ -694,7 +694,7 @@ export default function App() {
     }
 
     // 自选/持仓的名称旁要用涨停池算连板标识。
-    // 池子已经有数据就不再重复拉（和竞价候选侧栏同一个思路），
+    // 池子已经有数据就不再重复拉（和右栏冲刺涨停同一个思路），
     // 只有从来没成功拿到过（unavailable）才补一次。
     if (
       (activePage === 'watchlist' || activePage === 'holdings') &&
@@ -875,7 +875,23 @@ export default function App() {
 
   const closeModal = (): void => setModal(null);
 
-  // 落地页右侧常驻竞价候选，首次进入自选页时拉一次
+  // 自选页右栏常驻冲刺涨停，首次进入自选页时拉一次
+  useEffect(() => {
+    if (
+      activePage === 'watchlist' &&
+      sprintLimitUp.status === 'unavailable' &&
+      !isSprintLimitUpRefreshing
+    ) {
+      void refreshSprintLimitUp();
+    }
+  }, [
+    activePage,
+    isSprintLimitUpRefreshing,
+    refreshSprintLimitUp,
+    sprintLimitUp.status,
+  ]);
+
+  // 顶栏「竞价」的计数要在落地页就有数：快照仍预取一次（右栏已经不再展示竞价候选）
   useEffect(() => {
     if (activePage === 'watchlist' && auction.status === 'unavailable' && !isAuctionRefreshing) {
       void refreshAuction();
@@ -1195,13 +1211,17 @@ export default function App() {
       </div>
 
       <aside className="workbench__rail">
-        <AuctionRail
-          data={auction}
-          isRefreshing={isAuctionRefreshing}
+        {/* 右栏看的是「马上要封板的那几只」，点「查看全部」进涨停聚焦的冲刺涨停页签 */}
+        <SprintLimitUpRail
+          data={sprintLimitUp}
+          isRefreshing={isSprintLimitUpRefreshing}
           onRefresh={() => {
-            void refreshAuction();
+            void refreshSprintLimitUp();
           }}
-          onOpenAll={() => setActivePage('auction')}
+          onOpenAll={() => {
+            setActiveLimitUpTab('sprint');
+            setActivePage('limit-up');
+          }}
         />
       </aside>
     </div>

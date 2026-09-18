@@ -540,7 +540,7 @@ describe('Task 7 app interactions', () => {
     expect(
       within(screen.getByRole('region', { name: '大盘概览' })).getByText('上证指数'),
     ).toBeInTheDocument();
-    // 默认进入自选页：右侧常驻竞价候选，分组筛选在卡片表头里
+    // 默认进入自选页：右侧常驻冲刺涨停，分组筛选在卡片表头里
     expect(screen.getByRole('button', { name: '自选 1' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('navigation', { name: '自选筛选' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '持仓 1' }));
@@ -640,7 +640,7 @@ describe('Task 7 app interactions', () => {
     expect(screen.getByRole('navigation', { name: '持仓筛选' })).toBeInTheDocument();
   });
 
-  it('preloads the auction snapshot for the rail and reuses it on the auction page', async () => {
+  it('preloads the sprint pool for the watchlist rail and keeps the 竞价 badge populated', async () => {
     const user = userEvent.setup();
     const fetchMock = createFetchMock();
     vi.stubGlobal('fetch', fetchMock);
@@ -648,8 +648,15 @@ describe('Task 7 app interactions', () => {
     render(<App />);
     await screen.findByRole('heading', { name: '大盘概览' });
 
-    // 落地页右侧常驻竞价候选，进入自选页就拉一次
-    await screen.findByRole('heading', { name: '竞价候选' });
+    // 自选页右栏常驻冲刺涨停，进入自选页就拉一次
+    await screen.findByRole('heading', { name: '冲刺涨停' });
+    expect(screen.getByText('冲刺样本')).toBeInTheDocument();
+    await waitFor(() => expect(getFetchUrls(fetchMock, '/api/sprint-limit-up')).toHaveLength(1));
+    expect(getFetchUrls(fetchMock, '/api/sprint-limit-up')[0]).toMatch(
+      /^\/api\/sprint-limit-up\?date=\d{8}$/,
+    );
+
+    // 右栏不再展示竞价候选，但顶栏「竞价」的计数仍要在落地页就有数，所以快照照旧预取
     await waitFor(() => expect(getFetchUrls(fetchMock, '/api/auction')).toHaveLength(1));
     expect(getFetchUrls(fetchMock, '/api/auction')[0]).toMatch(/^\/api\/auction\?date=\d{8}$/);
 
@@ -657,10 +664,26 @@ describe('Task 7 app interactions', () => {
 
     expect(await screen.findByRole('heading', { name: '竞价连板候选' })).toBeInTheDocument();
     expect(screen.getByText('人民网')).toBeInTheDocument();
-    expect(screen.getByText('合格')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '竞价结论' })).toBeInTheDocument();
     expect(screen.getByText('62%')).toBeInTheDocument();
-    // 侧栏已拉过一次；进竞价页会再刷一次（服务端有 5 分钟缓存，代价很低）
-    expect(getFetchUrls(fetchMock, '/api/auction').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('jumps from the watchlist rail to the 涨停聚焦 · 冲刺涨停 tab', async () => {
+    const user = userEvent.setup();
+    const fetchMock = createFetchMock();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: '大盘概览' });
+
+    // 右栏的「查看全部」不只是切页：还要停在冲刺涨停页签上，否则用户看到的是涨停池
+    await user.click(await screen.findByRole('button', { name: '查看全部 1 只 →' }));
+
+    expect(await screen.findByRole('tab', { name: '冲刺涨停' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(await screen.findByRole('table', { name: '冲刺涨停列表' })).toBeInTheDocument();
   });
 
   it('shows the live change percent on the auction list from a separate quotes call', async () => {
@@ -706,7 +729,7 @@ describe('Task 7 app interactions', () => {
     expect(within(row).getByText('+4.00%')).toBeInTheDocument();
   });
 
-  it('switches the two limit-up focus tabs and fetches the sprint list only when selected', async () => {
+  it('switches the two limit-up focus tabs and shows the sprint list only on its own tab', async () => {
     const user = userEvent.setup();
     const fetchMock = createFetchMock({
       sprintLimitUp: [sprintLimitUpResponseFixture()],
@@ -716,17 +739,21 @@ describe('Task 7 app interactions', () => {
     render(<App />);
     await screen.findByRole('heading', { name: '大盘概览' });
 
+    // 自选页右栏已经拉过一次冲刺涨停池；涨停聚焦页默认停在涨停池，不显示冲刺那批
+    await waitFor(() => expect(getFetchUrls(fetchMock, '/api/sprint-limit-up')).toHaveLength(1));
+
     await user.click(screen.getByRole('button', { name: /涨停聚焦/ }));
     expect(await screen.findByRole('heading', { name: '涨停池' })).toBeInTheDocument();
-    expect(getFetchUrls(fetchMock, '/api/sprint-limit-up')).toHaveLength(0);
+    expect(screen.queryByText('冲刺样本')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: '冲刺涨停' }));
 
     expect(await screen.findByRole('heading', { name: '冲刺涨停' })).toBeInTheDocument();
     expect(screen.getByText('冲刺样本')).toBeInTheDocument();
     expect(screen.queryByText('桂发祥')).not.toBeInTheDocument();
-    expect(getFetchUrls(fetchMock, '/api/sprint-limit-up')).toHaveLength(1);
-    expect(getFetchUrls(fetchMock, '/api/sprint-limit-up')[0]).toMatch(
+    // 进页签会再刷一次（和竞价页一个套路：进页面就拉最新一份）
+    expect(getFetchUrls(fetchMock, '/api/sprint-limit-up')).toHaveLength(2);
+    expect(getFetchUrls(fetchMock, '/api/sprint-limit-up')[1]).toMatch(
       /^\/api\/sprint-limit-up\?date=\d{8}$/,
     );
 

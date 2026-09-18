@@ -2928,6 +2928,10 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   font-size: 0.8462rem;
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
+  /* 「涨速 + 涨停原因」可能很长：在窄栏里就地截断，别把右边的涨幅挤走 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rail-list__right {
@@ -2937,47 +2941,18 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   gap: 0.1538rem;
 }
 
-.rail-list__prob {
-  /* 稿子 F：概率数字是墨色，不按档位染色（档位靠下面的进度条区分） */
+/* 右栏冲刺涨停：涨幅是主角（红涨绿跌走全局的 .value--rise / .value--fall），
+   最新价缩成它下面的小注；涨速和涨停原因在左列第二行。 */
+.sprint-rail__pct {
   font-size: 1rem;
   font-weight: 700;
-  color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
 
-.rail-list__tier {
-  font-size: 0.8077rem;
+.sprint-rail__price {
   color: var(--text-tertiary);
-}
-
-.rail-meter {
-  display: block;
-  width: 8.6154rem;
-  height: 0.3846rem;
-  border-radius: 0.2308rem;
-  background: rgba(17, 24, 39, 0.08);
-  overflow: hidden;
-  margin-top: 0.2308rem;
-}
-
-.rail-meter__fill {
-  display: block;
-  height: 100%;
-  border-radius: 0.2308rem;
-  background: var(--accent-primary);
-}
-
-.rail-meter__fill.tier-qualified {
-  background: linear-gradient(90deg, #dc2f35, #f07277);
-}
-
-.rail-meter__fill.tier-watch {
-  background: linear-gradient(90deg, #d99120, #eab308);
-}
-
-.rail-meter__fill.tier-unqualified,
-.rail-meter__fill.tier-insufficient {
-  background: rgba(17, 24, 39, 0.22);
+  font-size: 0.8462rem;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 页脚状态条：一条细长的状态卡 —— 左边大盘行情 + 情绪，右边时间戳 */
@@ -3301,8 +3276,8 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
 /* 稿子 F：时间戳和卡片计数是等宽，页脚/指数卡标题/侧栏副标题用正文字体 */
 .app-topbar__stamp,
 .panel-header__count,
-.rail-list__prob,
-.rail-list__tier,
+.sprint-rail__pct,
+.sprint-rail__price,
 .rail-card__meta,
 .overview__hero-value,
 .overview__metrics,
