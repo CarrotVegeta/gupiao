@@ -22,14 +22,25 @@ const response: AuctionResponse = {
       auctionPrice: 10.2,
       auctionPct: 2,
       auctionAmount: 3_200_000,
-      auctionRatio: 4,
+      auctionRatio: 6,
       auctionPremium: 'mild',
       turnoverRate: 12.4,
-      limitUpProbability: 0.62,
       sealedAtAuction: false,
-      probabilityMissing: 0,
+      minuteTrend: {
+        trend: 'rising',
+        trendPct: 10.01,
+        lateShiftPct: -4.07,
+        maxMatchedVolume: 67864,
+        peakMatchedTime: '09:16',
+        lateRush: false,
+        matchedSharePct: 195.75,
+        touchedLimitUp: true,
+        label: '竞价走高 10.01%，尾段下砸 4.07%',
+        pricePath: [19.88, 21.87, 21.87, 21.6],
+      },
+      auctionAmountSource: 'tick',
       result: 'qualified',
-      reasons: ['竞价溢价 +2.00%（抬高概率）', '昨日封板稳定，未炸板'],
+      reasons: ['竞价高开 2.00%，在 2%~6% 区间', '竞价量比 6.00%，达到 5%'],
     },
     {
       symbol: '000002',
@@ -47,11 +58,11 @@ const response: AuctionResponse = {
       auctionRatio: 0.5,
       auctionPremium: 'discount',
       turnoverRate: 3.2,
-      limitUpProbability: 0.07,
       sealedAtAuction: false,
-      probabilityMissing: 0,
+      minuteTrend: null,
+      auctionAmountSource: 'minute',
       result: 'unqualified',
-      reasons: ['竞价溢价 -2.00%（压低概率）', '昨日存在封板分歧'],
+      reasons: ['竞价高开 -2.00%，不在 2%~6% 区间', '竞价量比 0.50%，低于 5%'],
     },
     {
       symbol: '000003',
@@ -69,9 +80,9 @@ const response: AuctionResponse = {
       auctionRatio: null,
       auctionPremium: null,
       turnoverRate: null,
-      limitUpProbability: null,
       sealedAtAuction: null,
-      probabilityMissing: 0,
+      minuteTrend: null,
+      auctionAmountSource: null,
       result: 'insufficient',
       reasons: ['缺少 09:25 竞价成交数据'],
     },
@@ -120,7 +131,7 @@ const renderList = (data: AuctionResponse = response, quoteMap: QuoteMap = quote
   );
 
 describe('AuctionList', () => {
-  it('marks auction results with probability and sorts by board count first', () => {
+  it('marks auction results with the two-condition verdict and sorts qualified first', () => {
     renderList();
 
     expect(screen.getByRole('heading', { name: '竞价连板候选' })).toBeInTheDocument();
@@ -129,29 +140,81 @@ describe('AuctionList', () => {
     expect(screen.getByText('9:15 前显示上一交易日竞价')).toBeInTheDocument();
     // 9:15 前服务端会把竞价日回退到上一交易日，卡片照实显示返回的日期
     expect(screen.getByText(/竞价日：2026-08-19 · 昨日：2026-08-18/)).toBeInTheDocument();
-    expect(screen.getByText('较高概率 1')).toBeInTheDocument();
+    expect(screen.getByText('合格 1')).toBeInTheDocument();
+    expect(screen.getByText('不合格 1')).toBeInTheDocument();
     expect(screen.getByText('数据不足 1')).toBeInTheDocument();
 
+    // 排序：合格在前，其次连板数降序
     const rows = screen.getAllByRole('row');
-    expect(rows[1]).toHaveTextContent('三板样本');
-    expect(rows[1]).toHaveTextContent('低概率');
-    expect(rows[2]).toHaveTextContent('二板样本');
-    expect(rows[2]).toHaveTextContent('数据不足');
-    expect(rows[3]).toHaveTextContent('首板样本');
-    expect(rows[3]).toHaveTextContent('较高概率');
-    expect(within(rows[3]).getByText('62%')).toBeInTheDocument();
-    expect(rows[3]).toHaveTextContent('+2.00%');
-    expect(rows[3]).toHaveTextContent('320.00万');
-    expect(rows[3]).toHaveTextContent('4.00%');
-    expect(rows[3]).toHaveTextContent('竞价溢价 +2.00%（抬高概率）');
-    expect(rows[3]).toHaveTextContent('温和');
+    expect(rows[1]).toHaveTextContent('首板样本');
+    expect(rows[1]).toHaveTextContent('合格');
+    expect(rows[2]).toHaveTextContent('三板样本');
+    expect(rows[2]).toHaveTextContent('不合格');
+    expect(rows[3]).toHaveTextContent('二板样本');
+    expect(rows[3]).toHaveTextContent('数据不足');
+    expect(rows[1]).toHaveTextContent('+2.00%');
+    expect(rows[1]).toHaveTextContent('320.00万');
+    expect(rows[1]).toHaveTextContent('6.00%');
+    expect(rows[1]).toHaveTextContent('竞价量比 6.00%，达到 5%');
+    expect(rows[1]).toHaveTextContent('温和');
   });
 
-  it('shows the live change percent in its own column next to the auction gap', () => {
+  it('shows a check or cross for each of the two conditions', () => {
+    renderList();
+
+    const passed = screen.getByRole('row', { name: /首板样本/ });
+    expect(passed).toHaveTextContent('✓');
+    expect(passed).not.toHaveTextContent('✗');
+
+    const failed = screen.getByRole('row', { name: /三板样本/ });
+    expect(failed).toHaveTextContent('✗');
+    expect(failed).not.toHaveTextContent('✓');
+
+    const unknown = screen.getByRole('row', { name: /二板样本/ });
+    expect(within(unknown).getAllByText('—').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('flags heavy volume at the 爆量 threshold', () => {
+    const heavy = {
+      ...response,
+      items: response.items.map((item) =>
+        item.symbol === '000002' ? { ...item, auctionPct: 3, auctionRatio: 12, result: 'qualified' as const } : item,
+      ),
+    };
+    renderList(heavy);
+
+    const row = screen.getByRole('row', { name: /三板样本/ });
+    expect(row).toHaveTextContent('12.00%');
+    expect(row).toHaveTextContent('爆量');
+  });
+
+  it('renders the auction minute shape without touching the verdict', () => {
+    renderList();
+
+    // 形态标签与迷你走势只做过程观察，判定仍是两条件的结果
+    const qualified = screen.getByRole('row', { name: /首板样本/ });
+    expect(qualified).toHaveTextContent('竞价走高 10.01%，尾段下砸 4.07%');
+    expect(qualified).toHaveTextContent('合格');
+    expect(within(qualified).getByRole('img', { hidden: true })).toBeInTheDocument();
+
+    // 分时拿不到的票显示占位，不影响其它列
+    const noTrend = screen.getByRole('row', { name: /三板样本/ });
+    expect(noTrend).not.toHaveTextContent('竞价走高');
+    expect(noTrend).toHaveTextContent('不合格');
+  });
+
+  it('exposes the matched-volume peak in the minute cell tooltip', () => {
+    renderList();
+
+    const cell = screen.getByTitle(/峰值匹配量 67864（09:16）/);
+    expect(cell).toHaveTextContent('竞价走高 10.01%，尾段下砸 4.07%');
+  });
+
+  it('shows the live change percent in its own column', () => {
     renderList();
 
     const headers = screen.getAllByRole('columnheader').map((cell) => cell.textContent);
-    expect(headers.indexOf('涨跌幅')).toBe(headers.indexOf('竞价涨幅') + 1);
+    expect(headers.indexOf('涨跌幅')).toBe(headers.indexOf('溢价') + 1);
 
     const first = screen.getByRole('row', { name: /首板样本/ });
     const rise = within(first).getByText('+3.24%');
@@ -190,7 +253,7 @@ describe('AuctionList', () => {
     const cell = screen.getByRole('row', { name: /首板样本/ }).querySelector('.auction-list__reasons');
     expect(cell?.tagName).toBe('TD');
     expect(cell?.firstElementChild).toHaveClass('auction-list__reasons-text');
-    expect(cell).toHaveTextContent('竞价溢价 +2.00%（抬高概率）');
+    expect(cell).toHaveTextContent('竞价量比 6.00%，达到 5%');
   });
 
   it('filters the table when a summary chip is clicked', async () => {
@@ -200,16 +263,16 @@ describe('AuctionList', () => {
     const rowCount = (): number => screen.getAllByRole('row').length;
     expect(rowCount()).toBe(4);
 
-    // 三个候选：2 板低概率、数据不足、首板较高概率
-    await user.click(screen.getByRole('button', { name: '较高概率 1' }));
-    expect(screen.getByRole('button', { name: '较高概率 1' })).toHaveAttribute('aria-pressed', 'true');
+    // 三个候选：首板合格、3 板不合格、2 板数据不足
+    await user.click(screen.getByRole('button', { name: '合格 1' }));
+    expect(screen.getByRole('button', { name: '合格 1' })).toHaveAttribute('aria-pressed', 'true');
     expect(rowCount()).toBe(2);
     expect(screen.getByRole('row', { name: /首板样本/ })).toBeInTheDocument();
     expect(screen.queryByRole('row', { name: /三板样本/ })).not.toBeInTheDocument();
-    expect(screen.getByText(/已筛选 「较高概率」，共 1 只/)).toBeInTheDocument();
+    expect(screen.getByText(/已筛选 「合格」，共 1 只/)).toBeInTheDocument();
 
     // 再点一次取消筛选
-    await user.click(screen.getByRole('button', { name: '较高概率 1' }));
+    await user.click(screen.getByRole('button', { name: '合格 1' }));
     expect(rowCount()).toBe(4);
 
     // 数据不足同样可以筛
@@ -254,7 +317,7 @@ describe('AuctionList', () => {
     };
     renderList(onlyQualified);
 
-    await user.click(screen.getByRole('button', { name: '观察 0' }));
+    await user.click(screen.getByRole('button', { name: '不合格 0' }));
 
     expect(screen.getByText('当前筛选条件下没有候选')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '显示全部 1 只' })).toBeInTheDocument();

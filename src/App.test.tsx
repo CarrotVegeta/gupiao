@@ -9,6 +9,7 @@ import type {
   LimitUpResponse,
   MarketOverviewResponse,
   Quote,
+  MinuteSeriesResponse,
   QuotesResponse,
   SprintLimitUpResponse,
   StorageState,
@@ -16,6 +17,7 @@ import type {
 
 type FetchPayload =
   | AuctionResponse
+  | MinuteSeriesResponse
   | QuotesResponse
   | MarketOverviewResponse
   | LimitUpResponse
@@ -119,6 +121,27 @@ const quotesResponseFixture = (response: Partial<QuotesResponse> = {}): QuotesRe
   fetchedAt: '2026-08-18T10:30:00.000Z',
   source: 'eastmoney',
   errors: [],
+  ...response,
+});
+
+/**
+ * 迷你分时图的固件：给默认的自选/持仓票（600519）一条「低开走高」的分时，
+ * 覆盖 MiniChart 的「有昨收 → 画基准线并染色」这条路径。
+ */
+const minuteResponseFixture = (
+  response: Partial<MinuteSeriesResponse> = {},
+): MinuteSeriesResponse => ({
+  series: [
+    {
+      symbol: '600519',
+      preClose: 165,
+      points: [164.2, 165.4, 167.1, 168.2],
+      times: ['0930', '0931', '0932', '0933'],
+    },
+  ],
+  fetchedAt: '2026-08-18T10:30:00.000Z',
+  source: 'tencent',
+  missing: [],
   ...response,
 });
 
@@ -271,11 +294,11 @@ const auctionResponseFixture = (
       auctionRatio: 5.2,
       auctionPremium: 'rich',
       turnoverRate: 8.5,
-      limitUpProbability: 0.62,
       sealedAtAuction: false,
-      probabilityMissing: 0,
+      minuteTrend: null,
+      auctionAmountSource: 'tick',
       result: 'qualified',
-      reasons: ['竞价溢价 +4.00%（抬高概率）'],
+      reasons: ['竞价高开 4.00%，在 2%~6% 区间', '竞价量比 5.20%，达到 5%'],
     },
   ],
   fetchedAt: '2026-08-19T01:25:10.000Z',
@@ -376,6 +399,7 @@ const createFetchMock = ({
   dragonTiger = [dragonTigerResponseFixture()],
   auction = [auctionResponseFixture()],
   screener = [trendScanResponseFixture()],
+  minute = [minuteResponseFixture()],
 }: {
   market?: FetchReply[];
   quotes?: FetchReply[];
@@ -385,6 +409,7 @@ const createFetchMock = ({
   dragonTiger?: FetchReply[];
   auction?: FetchReply[];
   screener?: FetchReply[];
+  minute?: FetchReply[];
 } = {}) => {
   let marketIndex = 0;
   let quotesIndex = 0;
@@ -393,6 +418,7 @@ const createFetchMock = ({
   let sprintLimitUpIndex = 0;
   let dragonTigerIndex = 0;
   let auctionIndex = 0;
+  let minuteIndex = 0;
   let screenerIndex = 0;
 
   const nextReply = (queue: FetchReply[], index: number): FetchReply =>
@@ -445,6 +471,12 @@ const createFetchMock = ({
     if (url.startsWith('/api/auction')) {
       const reply = nextReply(auction, auctionIndex);
       auctionIndex += 1;
+      return resolveFetchReply(reply);
+    }
+
+    if (url.startsWith('/api/minute?')) {
+      const reply = nextReply(minute, minuteIndex);
+      minuteIndex += 1;
       return resolveFetchReply(reply);
     }
 
@@ -665,7 +697,8 @@ describe('Task 7 app interactions', () => {
     expect(await screen.findByRole('heading', { name: '竞价连板候选' })).toBeInTheDocument();
     expect(screen.getByText('人民网')).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: '竞价结论' })).toBeInTheDocument();
-    expect(screen.getByText('62%')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '竞价量比' })).toBeInTheDocument();
+    expect(screen.getAllByText('合格').length).toBeGreaterThan(0);
   });
 
   it('jumps from the watchlist rail to the 涨停聚焦 · 冲刺涨停 tab', async () => {
@@ -983,7 +1016,7 @@ describe('Task 7 app interactions', () => {
     expect(screen.getByText('600519')).toBeInTheDocument();
   });
 
-  it('defaults a new holding to the selected custom group', async () => {
+  it('defaults a new holding to 不分组 even while a custom group is being viewed', async () => {
     const user = userEvent.setup();
 
     render(<App />);
@@ -993,12 +1026,14 @@ describe('Task 7 app interactions', () => {
     await user.type(screen.getByLabelText('分组名称'), '长期持仓');
     await user.click(screen.getByRole('button', { name: '保存分组' }));
 
-    // 回到列表后关掉面板，再选中新分组
+    // 回到列表后关掉面板，再选中新分组，然后新增股票
     await user.click(screen.getByRole('button', { name: '关闭' }));
     await user.click(screen.getByRole('button', { name: '长期持仓' }));
     await user.click(screen.getByRole('button', { name: '添加股票' }));
 
-    expect(screen.getByRole<HTMLOptionElement>('option', { name: '长期持仓' }).selected).toBe(true);
+    // 新增默认「不分组」：不跟着当前筛选走，也不落到第一个分组上
+    expect(screen.getByRole<HTMLOptionElement>('option', { name: '不分组' }).selected).toBe(true);
+    expect(screen.getByRole<HTMLOptionElement>('option', { name: '长期持仓' }).selected).toBe(false);
   });
 
   it('persists a new holding before refresh and keeps it when refresh rejects', async () => {
