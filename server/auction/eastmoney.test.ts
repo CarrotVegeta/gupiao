@@ -69,7 +69,7 @@ describe('eastmoney call-auction adapter', () => {
         prePrice: 10,
         details: ['09:24:57,10.20,800,0,4', '09:25:00,10.40,5000,0,4', '09:30:00,10.55,300,1,2'],
       }),
-    ).toEqual({ auctionPrice: 10.4, auctionPct: 4, auctionAmount: 5_200_000 });
+    ).toEqual({ preClose: 10, auctionPrice: 10.4, auctionPct: 4, auctionAmount: 5_200_000 });
   });
 
   it('accepts an auction print stamped just after 09:25:00', () => {
@@ -83,7 +83,7 @@ describe('eastmoney call-auction adapter', () => {
           '09:30:00,10.05,300,1,2',
         ],
       }),
-    ).toEqual({ auctionPrice: 9.9, auctionPct: -1, auctionAmount: 4_950_000 });
+    ).toEqual({ preClose: 10, auctionPrice: 9.9, auctionPct: -1, auctionAmount: 4_950_000 });
   });
 
   it('still ignores continuous-auction prints from 09:30 onward', () => {
@@ -104,7 +104,7 @@ describe('eastmoney call-auction adapter', () => {
 
   it('reproduces the trained logistic model on a reference candidate', () => {
     expect(predictLimitUpProbability(referenceInputs)).toMatchObject({
-      probability: expect.closeTo(0.3637, 3),
+      probability: expect.closeTo(0.3172, 3),
       missingCount: 0,
     });
   });
@@ -149,7 +149,7 @@ describe('eastmoney call-auction adapter', () => {
   it('maps calibrated probabilities to tiers on the training base rate', () => {
     expect(toProbabilityTier(0.7)).toBe('qualified');
     expect(toProbabilityTier(0.55)).toBe('qualified');
-    expect(toProbabilityTier(0.4)).toBe('watch');
+    expect(toProbabilityTier(0.4)).toBe('qualified');
     expect(toProbabilityTier(0.3)).toBe('watch');
     expect(toProbabilityTier(0.29)).toBe('unqualified');
   });
@@ -180,11 +180,11 @@ describe('eastmoney call-auction adapter', () => {
   it('evaluates a candidate into probability, tier, premium and explanations', () => {
     const result = evaluateAuctionCandidate(
       mapEastmoneyAuctionPoolItem(strongPoolRow)!,
-      { auctionPrice: 10.4, auctionPct: 4, auctionAmount: 5_200_000 },
+      { preClose: 10, auctionPrice: 10.4, auctionPct: 4, auctionAmount: 5_200_000 },
       context,
     );
 
-    expect(result.limitUpProbability).toBeCloseTo(0.3637, 3);
+    expect(result.limitUpProbability).toBeCloseTo(0.3172, 3);
     expect(result.result).toBe('watch');
     expect(result.auctionPremium).toBe('rich');
     expect(result.auctionRatio).toBe(5.2);
@@ -197,12 +197,12 @@ describe('eastmoney call-auction adapter', () => {
     const poolItem = mapEastmoneyAuctionPoolItem(strongPoolRow)!;
     const weak = evaluateAuctionCandidate(
       poolItem,
-      { auctionPrice: 9.8, auctionPct: -2, auctionAmount: 1_000_000 },
+      { preClose: 10, auctionPrice: 9.8, auctionPct: -2, auctionAmount: 1_000_000 },
       context,
     );
     const strong = evaluateAuctionCandidate(
       poolItem,
-      { auctionPrice: 10.9, auctionPct: 9, auctionAmount: 5_200_000 },
+      { preClose: 10, auctionPrice: 10.9, auctionPct: 9, auctionAmount: 5_200_000 },
       context,
     );
 
@@ -211,6 +211,20 @@ describe('eastmoney call-auction adapter', () => {
     expect(strong.limitUpProbability!).toBeGreaterThan(weak.limitUpProbability! * 4);
     expect(weak.result).toBe('unqualified');
     expect(strong.result).toBe('qualified');
+  });
+
+  it('withholds a tier when more than one active feature is missing', () => {
+    const pool = { ...mapEastmoneyAuctionPoolItem(strongPoolRow)!, turnoverRate: null, floatMarketCap: null };
+    expect(evaluateAuctionCandidate(pool, { preClose: 10, auctionPrice: 10.4, auctionPct: 4, auctionAmount: null }, context))
+      .toMatchObject({ result: 'insufficient', limitUpProbability: null, probabilityMissing: 2, auctionPremium: null });
+  });
+
+  it('uses the supplied limit price and does not treat a near-limit opening as sealed', () => {
+    const pool = mapEastmoneyAuctionPoolItem(strongPoolRow)!;
+    expect(evaluateAuctionCandidate(pool,
+      { preClose: 10, auctionPrice: 10.99, auctionPct: 9.9, auctionAmount: null }, context).sealedAtAuction).toBe(false);
+    expect(evaluateAuctionCandidate(pool,
+      { preClose: 10, auctionPrice: 10.99, auctionPct: 9.9, auctionAmount: null, limitUpPrice: 10.99 }, context).sealedAtAuction).toBe(true);
   });
 
   it('sorts by previous board count first and probability second', () => {
@@ -269,7 +283,7 @@ describe('eastmoney call-auction adapter', () => {
     expect(body.items[0].limitUpProbability).toBeLessThan(1);
   });
 
-  it('reports missing context features instead of failing the whole response', async () => {
+  it('does not count retired market context fields as missing model features', async () => {
     const fetchImpl = vi.fn<typeof fetch>((input) => {
       const url = String(input);
       if (url.includes('/stock/kline/get')) {
@@ -294,7 +308,7 @@ describe('eastmoney call-auction adapter', () => {
     const body = await fetchEastmoneyAuction('20260819', fetchImpl);
 
     expect(body.status).toBe('fresh');
-    expect(body.items[0].probabilityMissing).toBe(2);
+    expect(body.items[0].probabilityMissing).toBe(0);
     expect(body.items[0].limitUpProbability).toBeGreaterThan(0);
   });
 

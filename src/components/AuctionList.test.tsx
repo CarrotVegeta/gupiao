@@ -129,16 +129,16 @@ describe('AuctionList', () => {
     expect(screen.getByText('9:15 前显示上一交易日竞价')).toBeInTheDocument();
     // 9:15 前服务端会把竞价日回退到上一交易日，卡片照实显示返回的日期
     expect(screen.getByText(/竞价日：2026-08-19 · 昨日：2026-08-18/)).toBeInTheDocument();
-    expect(screen.getByText('合格 1')).toBeInTheDocument();
+    expect(screen.getByText('较高概率 1')).toBeInTheDocument();
     expect(screen.getByText('数据不足 1')).toBeInTheDocument();
 
     const rows = screen.getAllByRole('row');
     expect(rows[1]).toHaveTextContent('三板样本');
-    expect(rows[1]).toHaveTextContent('不合格');
+    expect(rows[1]).toHaveTextContent('低概率');
     expect(rows[2]).toHaveTextContent('二板样本');
     expect(rows[2]).toHaveTextContent('数据不足');
     expect(rows[3]).toHaveTextContent('首板样本');
-    expect(rows[3]).toHaveTextContent('合格');
+    expect(rows[3]).toHaveTextContent('较高概率');
     expect(within(rows[3]).getByText('62%')).toBeInTheDocument();
     expect(rows[3]).toHaveTextContent('+2.00%');
     expect(rows[3]).toHaveTextContent('320.00万');
@@ -200,16 +200,16 @@ describe('AuctionList', () => {
     const rowCount = (): number => screen.getAllByRole('row').length;
     expect(rowCount()).toBe(4);
 
-    // 三个候选：2 板不合格、数据不足、首板合格
-    await user.click(screen.getByRole('button', { name: '合格 1' }));
-    expect(screen.getByRole('button', { name: '合格 1' })).toHaveAttribute('aria-pressed', 'true');
+    // 三个候选：2 板低概率、数据不足、首板较高概率
+    await user.click(screen.getByRole('button', { name: '较高概率 1' }));
+    expect(screen.getByRole('button', { name: '较高概率 1' })).toHaveAttribute('aria-pressed', 'true');
     expect(rowCount()).toBe(2);
     expect(screen.getByRole('row', { name: /首板样本/ })).toBeInTheDocument();
     expect(screen.queryByRole('row', { name: /三板样本/ })).not.toBeInTheDocument();
-    expect(screen.getByText(/已筛选 「合格」，共 1 只/)).toBeInTheDocument();
+    expect(screen.getByText(/已筛选 「较高概率」，共 1 只/)).toBeInTheDocument();
 
     // 再点一次取消筛选
-    await user.click(screen.getByRole('button', { name: '合格 1' }));
+    await user.click(screen.getByRole('button', { name: '较高概率 1' }));
     expect(rowCount()).toBe(4);
 
     // 数据不足同样可以筛
@@ -234,16 +234,16 @@ describe('AuctionList', () => {
     renderList(withSealed);
 
     // 000001 竞价已封板、000003 数据不足，都不能算「可买」
-    await user.click(screen.getByRole('button', { name: '只看可买 1' }));
+    await user.click(screen.getByRole('button', { name: '竞价未涨停 1' }));
 
-    expect(screen.getByRole('button', { name: '只看可买 1' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: '竞价未涨停 1' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
     expect(screen.queryByRole('row', { name: /首板样本/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('row', { name: /二板样本/ })).not.toBeInTheDocument();
     expect(screen.getByRole('row', { name: /三板样本/ })).toBeInTheDocument();
-    expect(screen.getByText(/已筛选 只看可买，共 1 只/)).toBeInTheDocument();
+    expect(screen.getByText(/已筛选 竞价未涨停，共 1 只/)).toBeInTheDocument();
   });
 
   it('explains an empty result instead of showing a blank table', async () => {

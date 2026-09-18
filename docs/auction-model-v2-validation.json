@@ -1,0 +1,250 @@
+{
+  "metadata": {
+    "version": "auction-segmented-v2",
+    "from": "20260227",
+    "through": "20260916",
+    "holdoutFrom": "20260820",
+    "samples": 11596,
+    "excludedLegacyStSamples": 542,
+    "inputSha256": "c3f25ea8ec3becfed601f0fed9ef360f81346b16d614cda92e367033ebe4018a",
+    "pricesSha256": "f285ff4fa215c78dd55ceb477d396ce0a1a503c2000726e55b970280fa8c118d",
+    "policy": {
+      "qualifiedProbability": 0.4,
+      "watchProbability": 0.3,
+      "maxMissingFeatures": 1
+    }
+  },
+  "development": {
+    "original": {
+      "n": 8043,
+      "predicted": 0.16715393346843918,
+      "sealed": 0.14385179659331096,
+      "touched": 0.21708317791868706,
+      "nextOpenReturn": -0.3798767737117245,
+      "brier": 0.11006982786829594,
+      "auc": 0.7590285652173149,
+      "qualified": {
+        "n": 213,
+        "predicted": 0.6802904505483564,
+        "sealed": 0.4507042253521127,
+        "touched": 0.6197183098591549,
+        "nextOpenReturn": -1.582300469483569
+      },
+      "watch": {
+        "n": 737,
+        "predicted": 0.395350208532516,
+        "sealed": 0.41112618724559025,
+        "touched": 0.5848032564450475,
+        "nextOpenReturn": -0.5794565217391306
+      },
+      "low": {
+        "n": 7093,
+        "predicted": 0.1280338527042703,
+        "sealed": 0.10686592415057099,
+        "touched": 0.16678415339066685,
+        "nextOpenReturn": -0.32299505998588635
+      },
+      "top3": {
+        "n": 282,
+        "predicted": 0.6053884862010191,
+        "sealed": 0.4929078014184397,
+        "touched": 0.6879432624113475,
+        "nextOpenReturn": -0.43578014184397174
+      }
+    },
+    "segmented": {
+      "n": 8043,
+      "predicted": 0.14717705876259168,
+      "sealed": 0.14385179659331096,
+      "touched": 0.21708317791868706,
+      "nextOpenReturn": -0.3798767737117245,
+      "brier": 0.10558463432519803,
+      "auc": 0.7753652457317605,
+      "qualified": {
+        "n": 451,
+        "predicted": 0.5189432334683827,
+        "sealed": 0.5365853658536586,
+        "touched": 0.7450110864745011,
+        "nextOpenReturn": -0.6541241685144122
+      },
+      "watch": {
+        "n": 339,
+        "predicted": 0.34337012372197423,
+        "sealed": 0.39233038348082594,
+        "touched": 0.5929203539823009,
+        "nextOpenReturn": -0.6273156342182896
+      },
+      "low": {
+        "n": 7253,
+        "predicted": 0.11489028173053058,
+        "sealed": 0.1078174548462705,
+        "touched": 0.16668964566386324,
+        "nextOpenReturn": -0.3512230811706241
+      },
+      "top3": {
+        "n": 282,
+        "predicted": 0.5401276022447893,
+        "sealed": 0.5638297872340425,
+        "touched": 0.776595744680851,
+        "nextOpenReturn": -0.6136170212765958
+      }
+    }
+  },
+  "validation": {
+    "original": {
+      "n": 1209,
+      "predicted": 0.15880585842544576,
+      "sealed": 0.14557485525227462,
+      "touched": 0.24234904880066171,
+      "nextOpenReturn": -0.6600851063829795,
+      "brier": 0.10764720003089794,
+      "auc": 0.7599995599753586,
+      "qualified": {
+        "n": 39,
+        "predicted": 0.6499500762050475,
+        "sealed": 0.5641025641025641,
+        "touched": 0.8717948717948718,
+        "nextOpenReturn": -0.2643243243243246
+      },
+      "watch": {
+        "n": 112,
+        "predicted": 0.40566302177175323,
+        "sealed": 0.35714285714285715,
+        "touched": 0.6964285714285714,
+        "nextOpenReturn": -2.29132075471698
+      },
+      "low": {
+        "n": 1058,
+        "predicted": 0.11456897110201389,
+        "sealed": 0.10775047258979206,
+        "touched": 0.17107750472589792,
+        "nextOpenReturn": -0.5067248062015505
+      },
+      "top3": {
+        "n": 60,
+        "predicted": 0.5779372399196752,
+        "sealed": 0.5333333333333333,
+        "touched": 0.8,
+        "nextOpenReturn": -1.391964285714286
+      }
+    },
+    "segmented": {
+      "n": 1209,
+      "predicted": 0.14756892435264657,
+      "sealed": 0.14557485525227462,
+      "touched": 0.24234904880066171,
+      "nextOpenReturn": -0.6600851063829795,
+      "brier": 0.10661143924936614,
+      "auc": 0.761798160696999,
+      "qualified": {
+        "n": 80,
+        "predicted": 0.5293989461562502,
+        "sealed": 0.5,
+        "touched": 0.8375,
+        "nextOpenReturn": -1.3990909090909094
+      },
+      "watch": {
+        "n": 60,
+        "predicted": 0.3475948796966787,
+        "sealed": 0.38333333333333336,
+        "touched": 0.7166666666666667,
+        "nextOpenReturn": -1.9423214285714288
+      },
+      "low": {
+        "n": 1069,
+        "predicted": 0.10776727882885795,
+        "sealed": 0.10570626753975679,
+        "touched": 0.17118802619270346,
+        "nextOpenReturn": -0.5365642994241838
+      },
+      "top3": {
+        "n": 60,
+        "predicted": 0.5430641252878875,
+        "sealed": 0.5166666666666667,
+        "touched": 0.8,
+        "nextOpenReturn": -2.0800000000000005
+      }
+    },
+    "sealedOriginal": {
+      "n": 113,
+      "predicted": 0.6982959286631628,
+      "sealed": 0.7964601769911505,
+      "touched": 1,
+      "nextOpenReturn": 0.7641818181818177,
+      "brier": 0.16416108310529962,
+      "auc": 0.672463768115942,
+      "qualified": {
+        "n": 108,
+        "predicted": 0.706198448342851,
+        "sealed": 0.8055555555555556,
+        "touched": 1,
+        "nextOpenReturn": 0.895428571428571
+      },
+      "watch": {
+        "n": 5,
+        "predicted": 0.5276015035818975,
+        "sealed": 0.6,
+        "touched": 1,
+        "nextOpenReturn": -1.9919999999999998
+      },
+      "low": {
+        "n": 0,
+        "predicted": null,
+        "sealed": null,
+        "touched": null,
+        "nextOpenReturn": null
+      },
+      "top3": {
+        "n": 60,
+        "predicted": 0.7601754719008971,
+        "sealed": 0.8166666666666667,
+        "touched": 1,
+        "nextOpenReturn": 1.9980701754385966
+      }
+    },
+    "sealedSegmented": {
+      "n": 113,
+      "predicted": 0.7751881084491936,
+      "sealed": 0.7964601769911505,
+      "touched": 1,
+      "nextOpenReturn": 0.7641818181818177,
+      "brier": 0.1585429262880856,
+      "auc": 0.6265700483091787,
+      "qualified": {
+        "n": 113,
+        "predicted": 0.7751881084491936,
+        "sealed": 0.7964601769911505,
+        "touched": 1,
+        "nextOpenReturn": 0.7641818181818177
+      },
+      "watch": {
+        "n": 0,
+        "predicted": null,
+        "sealed": null,
+        "touched": null,
+        "nextOpenReturn": null
+      },
+      "low": {
+        "n": 0,
+        "predicted": null,
+        "sealed": null,
+        "touched": null,
+        "nextOpenReturn": null
+      },
+      "top3": {
+        "n": 60,
+        "predicted": 0.7991328784488304,
+        "sealed": 0.8166666666666667,
+        "touched": 1,
+        "nextOpenReturn": 1.6826315789473683
+      }
+    }
+  },
+  "limitations": [
+    "已整组剔除旧生成器按5%标记的创业/科创/北交ST样本；尚未逐日重建该组。",
+    "历史流通股数/名称来自抓取时点，非逐日复原；除权及历史ST变化可能影响标签。",
+    "竞价未涨停不保证实际成交；收益未扣费用滑点。",
+    "未采集历史竞价金额/题材强度，不将其强行用于筛选。",
+    "市场家数由日K重建，与线上涨停池口径不同；旧indexGapPct误用了平安银行，新模型均剔除。"
+  ]
+}

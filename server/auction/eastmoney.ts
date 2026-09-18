@@ -1,9 +1,11 @@
 import type { AuctionItem, AuctionResponse } from '../../src/types.js';
+import { AUCTION_POLICY } from '../../src/lib/auction-policy.js';
 import { toEastmoneySecId } from '../quotes/eastmoney.js';
 import { TENCENT_FIELD, fetchTencentQuoteFields, toTencentSymbol } from '../tencent/client.js';
 import {
   classifyAuctionPremium,
   isSealedAtAuction,
+  limitUpPct,
   predictLimitUpProbability,
   toProbabilityTier,
 } from './model.js';
@@ -23,6 +25,8 @@ type AuctionPoolItem = Pick<
 >;
 
 type AuctionDetail = {
+  preClose: number;
+  limitUpPrice?: number | null;
   auctionPrice: number;
   auctionPct: number;
   auctionAmount: number | null;
@@ -278,6 +282,7 @@ export const mapEastmoneyAuctionDetail = (raw: unknown): AuctionDetail | null =>
   }
 
   return {
+    preClose: prePrice,
     auctionPrice,
     auctionPct: Number((((auctionPrice - prePrice) / prePrice) * 100).toFixed(2)),
     auctionAmount: Number((auctionPrice * auctionLots * 100).toFixed(2)),
@@ -390,6 +395,8 @@ const fetchTencentAuctionDetails = async (
 
   targets.forEach((target, index) => {
     details.set(target.symbol, {
+      preClose: target.preClose,
+      limitUpPrice: asNumber(quotes.get(toTencentSymbol(target.symbol))?.[TENCENT_FIELD.limitUpPrice]),
       auctionPrice: target.open,
       auctionPct: Number((((target.open - target.preClose) / target.preClose) * 100).toFixed(2)),
       auctionAmount: ticks[index]?.auctionAmount ?? null,
@@ -441,7 +448,11 @@ export const evaluateAuctionCandidate = (
     poolItem.previousAmount > 0
       ? Number(((detail.auctionAmount / poolItem.previousAmount) * 100).toFixed(2))
       : null;
+  const sealedAtAuction = isSealedAtAuction(poolItem.symbol, poolItem.name,
+    detail.auctionPrice, detail.preClose, detail.limitUpPrice);
   const prediction = predictLimitUpProbability({
+    limitPct: limitUpPct(poolItem.symbol, poolItem.name),
+    sealedAtAuction: sealedAtAuction === true,
     gapPct: detail.auctionPct,
     board: poolItem.boardCount,
     previousOneWord: isPreviousOneWord(poolItem.firstSealTime, poolItem.breakCount),
@@ -453,17 +464,22 @@ export const evaluateAuctionCandidate = (
     indexGapPct: context.indexGapPct,
   });
   const premium = classifyAuctionPremium(detail.auctionPct);
+  const insufficient = sealedAtAuction === null || prediction.missingCount > AUCTION_POLICY.maxMissingFeatures;
+  const probability = Number(prediction.probability.toFixed(4));
 
   return {
     ...poolItem,
-    ...detail,
+    auctionPrice: detail.auctionPrice,
+    auctionPct: detail.auctionPct,
+    auctionAmount: detail.auctionAmount,
     auctionRatio,
-    auctionPremium: premium.level,
-    limitUpProbability: Number(prediction.probability.toFixed(4)),
-    sealedAtAuction: isSealedAtAuction(poolItem.symbol, poolItem.name, detail.auctionPct),
+    auctionPremium: insufficient ? null : premium.level,
+    limitUpProbability: insufficient ? null : probability,
+    sealedAtAuction,
     probabilityMissing: prediction.missingCount,
-    result: toProbabilityTier(prediction.probability),
-    reasons: [...prediction.reasons, premium.reason],
+    result: insufficient ? 'insufficient' : toProbabilityTier(probability),
+    reasons: insufficient ? ['有效价格或模型特征不足，暂停概率分档']
+      : [...prediction.reasons, ...(prediction.missingCount ? ['缺失特征按训练均值代入，概率仅供低置信度参考'] : []), premium.reason],
   };
 };
 export const sortAuctionItems = <T extends SortableAuctionItem>(items: T[]): T[] =>
@@ -740,6 +756,7 @@ const fetchAuctionOpenQuotes = async (
         continue;
       }
       result[symbol] = {
+        preClose: prePrice,
         auctionPrice,
         auctionPct: Number((((auctionPrice - prePrice) / prePrice) * 100).toFixed(2)),
         auctionAmount: null,
@@ -769,6 +786,7 @@ const fetchTencentOpenQuotes = async (
         continue;
       }
       result[symbol] = {
+        preClose: prePrice,
         auctionPrice,
         auctionPct: Number((((auctionPrice - prePrice) / prePrice) * 100).toFixed(2)),
         auctionAmount: null,

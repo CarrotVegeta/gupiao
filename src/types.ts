@@ -263,9 +263,9 @@ export type AuctionItem = {
   auctionPremium: AuctionPremium | null;
   /** 09:25 时点信息算出的「今日收盘继续涨停」概率，0~1 */
   limitUpProbability: number | null;
-  /** 竞价就封在涨停价（一字/秒板），实际上买不到 */
+  /** 竞价价是否达到实际涨停价；false不保证成交，null表示价格数据不足 */
   sealedAtAuction: boolean | null;
-  /** 概率计算中缺失的特征个数（按均值代入） */
+  /** 五项有效特征中的缺失数；缺1项按均值代入，缺2项及以上暂停分档 */
   probabilityMissing: number;
   result: AuctionResult;
   reasons: string[];

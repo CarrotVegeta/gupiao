@@ -10,6 +10,7 @@
  */
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { limitUpPct } from '../server/auction/model-features.js';
 
 const CACHE_DIR = path.resolve(process.cwd(), 'scripts/output/cache');
 mkdirSync(CACHE_DIR, { recursive: true });
@@ -124,6 +125,8 @@ const fetchUniverse = async (): Promise<Stock[]> => {
 type Bar = { date: string; open: number; high: number; low: number; close: number; volume: number };
 
 const toSinaSymbol = (symbol: string): string => {
+  // 指数必须保留交易所前缀，避免上证000001与平安银行串号及共用缓存。
+  if (/^(sh|sz|bj)\d{6}$/.test(symbol)) return symbol;
   if (symbol.startsWith('6')) return `sh${symbol}`;
   if (symbol.startsWith('0') || symbol.startsWith('3')) return `sz${symbol}`;
   return `bj${symbol}`;
@@ -156,12 +159,7 @@ const fetchKline = async (symbol: string): Promise<Bar[]> => {
 };
 
 /** 涨停幅度：科创板/创业板 20%，北交所 30%，ST 5%，其余 10% */
-const limitRatio = (symbol: string, name: string): number => {
-  if (/st|\*st/i.test(name)) return 0.05;
-  if (symbol.startsWith('688') || symbol.startsWith('30')) return 0.2;
-  if (symbol.startsWith('8') || symbol.startsWith('4') || symbol.startsWith('92')) return 0.3;
-  return 0.1;
-};
+const limitRatio = (symbol: string, name: string): number => limitUpPct(symbol, name) / 100;
 
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 
@@ -229,7 +227,7 @@ const main = async (): Promise<void> => {
     .map(([date]) => date)
     .sort();
 
-  const indexBars = await fetchKline('000001');
+  const indexBars = await fetchKline('sh000001');
   const indexByDate = new Map(indexBars.map((bar) => [bar.date, bar]));
 
   // 每个交易日的涨停名单 / 触板名单

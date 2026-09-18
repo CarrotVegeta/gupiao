@@ -14,6 +14,6 @@
     "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["server/**/*.ts", "src/types.ts"],
+  "include": ["server/**/*.ts", "src/types.ts", "src/lib/auction-policy.ts"],
   "exclude": ["server/**/*.test.ts"]
 }

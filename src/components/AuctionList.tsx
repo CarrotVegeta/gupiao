@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { StockIdentity } from './StockIdentity';
+import { AUCTION_POLICY, auctionResultLabels } from '../lib/auction-policy';
 import type {
   AuctionItem,
   AuctionPremium,
@@ -19,12 +20,7 @@ type AuctionListProps = {
   onRefresh: () => void;
 };
 
-const resultLabels: Record<AuctionResult, string> = {
-  qualified: '合格',
-  watch: '观察',
-  unqualified: '不合格',
-  insufficient: '数据不足',
-};
+const resultLabels = auctionResultLabels;
 
 const premiumLabels: Record<AuctionPremium, string> = {
   discount: '低吸',
@@ -74,13 +70,13 @@ const formatProbability = (value: number | null): string =>
 const quotePctClass = (value: number | null): string =>
   value === null || value === 0 ? 'value--neutral' : value > 0 ? 'value--rise' : 'value--fall';
 
-/** 概率分档的配色：≥55% 合格、30~55% 观察、其余不合格 */
+/** 与服务端共用概率分档阈值。 */
 const probabilityClass = (value: number | null): string =>
   value === null
     ? 'auction-probability--unknown'
-    : value >= 0.55
+    : value >= AUCTION_POLICY.qualifiedProbability
       ? 'auction-probability--high'
-      : value >= 0.3
+      : value >= AUCTION_POLICY.watchProbability
         ? 'auction-probability--mid'
         : 'auction-probability--low';
 
@@ -94,7 +90,7 @@ export const AuctionList = ({ data, quotes, isRefreshing, onRefresh }: AuctionLi
   );
   const buyableCount = items.filter((item) => item.sealedAtAuction === false).length;
   const filterLabel =
-    [filter === 'all' ? null : `「${resultLabels[filter]}」`, buyableOnly ? '只看可买' : null]
+    [filter === 'all' ? null : `「${resultLabels[filter]}」`, buyableOnly ? '竞价未涨停' : null]
       .filter((label): label is string => label !== null)
       .join(' + ') || '全部';
   const visibleItems = items
@@ -109,7 +105,9 @@ export const AuctionList = ({ data, quotes, isRefreshing, onRefresh }: AuctionLi
           <h2 id="auction-list-title">竞价连板候选</h2>
           <p className="auction-list__description">
             <span>固定快照：09:25</span>
-            <span>概率＝今日收盘继续涨停的概率，溢价＝按竞价价买入的性价比</span>
+            <span>概率＝今日收盘封板概率；已封板与未封板分别估计，溢价仅表示价格位置</span>
+            <span>较高概率 ≥{AUCTION_POLICY.qualifiedProbability * 100}% · 观察 ≥{AUCTION_POLICY.watchProbability * 100}% · 其余低概率</span>
+            <span>竞价未涨停仅表示开盘价低于涨停价，不保证成交或收益</span>
             <span>涨跌幅＝现价相对昨收（盘中实时）</span>
             {/* 09:15 前集合竞价还没开始，服务端会把整卡退回上一个完整竞价日 */}
             <span>9:15 前显示上一交易日竞价</span>
@@ -162,10 +160,10 @@ export const AuctionList = ({ data, quotes, isRefreshing, onRefresh }: AuctionLi
             buyableOnly ? ' auction-filter--active' : ''
           }`}
           aria-pressed={buyableOnly}
-          title="只看竞价未封板、按竞价价买得到的票"
+          title="只显示竞价价低于实际涨停价的候选，不保证实际成交"
           onClick={() => setBuyableOnly((current) => !current)}
         >
-          只看可买 {buyableCount}
+          竞价未涨停 {buyableCount}
         </button>
         {filter === 'all' && !buyableOnly ? null : (
           <span className="auction-list__filter-hint" role="status">
@@ -185,8 +183,7 @@ export const AuctionList = ({ data, quotes, isRefreshing, onRefresh }: AuctionLi
       </div>
 
       <p className="status-note">
-        概率 ≥55% 的一档平均 2.5 只/天。回测见 README「为什么竞价买入没有优势」：
-        涨停股次日普遍高开，按竞价价买入拿不到这个溢价。
+        概率分档用于观察收盘封板可能性，不是买入信号。缺失两项及以上有效特征时暂停分档。
       </p>
 
       {data.status === 'stale' ? (
@@ -235,7 +232,7 @@ export const AuctionList = ({ data, quotes, isRefreshing, onRefresh }: AuctionLi
               <tr>
                 <th scope="col">股票</th>
                 <th scope="col">昨日连板</th>
-                <th scope="col">涨停概率</th>
+                <th scope="col">收盘封板概率</th>
                 <th scope="col">竞价结论</th>
                 <th scope="col">溢价</th>
                 <th scope="col">竞价涨幅</th>
