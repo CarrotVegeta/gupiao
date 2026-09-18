@@ -1668,6 +1668,11 @@ describe('Task 7 app interactions', () => {
     await clickPrimaryNav(user, /^选股/);
 
     expect(screen.queryByRole('region', { name: '大盘概览' })).not.toBeInTheDocument();
+
+    // 选股页默认落在「主线」档（2026-09-19 起）；趋势形态扫描在「趋势」档
+    expect(await screen.findByRole('heading', { name: '主线' })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: '趋势' }));
+
     expect(
       await screen.findByRole('heading', { name: '趋势形态扫描（不是选股信号）' }),
     ).toBeInTheDocument();

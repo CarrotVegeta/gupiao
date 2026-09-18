@@ -24,6 +24,7 @@ import { createAuctionCache } from './auction/cache.js';
 import { appendAuctionSnapshot } from './auction/snapshot-log.js';
 import { mergeMarketIndices, mergeQuoteBundles } from './merge.js';
 import { fetchEastmoneyLimitUp } from './limit-up/eastmoney.js';
+import { enrichLimitUpWithThs } from './limit-up/ths-fields.js';
 import { fetchLimitUpLadder } from './limit-up/ladder.js';
 import { fetchMarketBreadth } from './market/breadth.js';
 import {
@@ -36,6 +37,8 @@ import { fetchEastmoneyMarket } from './market/eastmoney.js';
 import { fetchTencentMarket } from './market/tencent.js';
 import { fetchEastmoneySprintLimitUp } from './sprint-limit-up/eastmoney.js';
 import { buildThemeDetail, buildThemes, buildThemeStocks } from './themes/service.js';
+import { buildThsBoardDetail, buildThsBoards } from './themes/thsBoard.js';
+import { buildReport, renderReport } from './mainline/report.js';
 import { buildTopicDetail, buildTopics } from './themes/topics.js';
 import { parseTrendFilters, scanTrend } from './screener/trend.js';
 import {
@@ -137,7 +140,13 @@ export const createApp = () => {
       return res.status(400).json({ message: 'date 必须是 YYYYMMDD 格式' });
     }
 
-    const body: LimitUpResponse = await fetchEastmoneyLimitUp(tradeDate);
+    /*
+     * 主结果来自东财涨停池；再按代码 join 同花顺涨停池补上
+     * **涨停原因**（东财池没有这个字段）+ 封单额 / 开板次数 / 换手率 / 流通市值。
+     * 补充失败不影响主结果，缺口显示「—」（见 server/limit-up/ths-fields.ts）。
+     */
+    const pool = await fetchEastmoneyLimitUp(tradeDate);
+    const body: LimitUpResponse = await enrichLimitUpWithThs(tradeDate, pool);
     return res.status(200).json(body);
   });
 
@@ -210,6 +219,77 @@ export const createApp = () => {
     }
 
     return res.status(200).json(body);
+  });
+
+  /*
+   * 选股页「板块」档主口径：**同花顺涨停板块 Top 20**（`block_top`，公开、无需 cookie、支持历史日期）。
+   *
+   * 它和下面两个口径都不可比，页面必须把差别写清楚（见 `server/themes/thsBoard.ts` 顶部）：
+   *   - `/api/themes/boards` 东财板块（宽概念，家数自算，覆盖全部板块）
+   *   - `/api/themes`        细分逻辑（涨停原因标签）
+   * 只给 Top 20 是上游写死的（参数无效），所以响应 status 一律 partial。
+   */
+  app.get('/api/themes/ths', async (req, res) => {
+    const tradeDate = parseTradeDate(req.query.date);
+    if (tradeDate === null) {
+      return res.status(400).json({ message: 'date 必须是 YYYYMMDD 格式' });
+    }
+
+    const body: ThemesResponse = await buildThsBoards(tradeDate);
+    return res.status(200).json(body);
+  });
+
+  // 同花顺板块成员详情：成员 = 该板块当日涨停股（上游一次响应里就带全了）
+  app.get('/api/ths-boards/:code/detail', async (req, res) => {
+    const tradeDate = parseTradeDate(req.query.date);
+    if (tradeDate === null) {
+      return res.status(400).json({ message: 'date 必须是 YYYYMMDD 格式' });
+    }
+
+    const code = String(req.params.code ?? '').trim();
+    if (!/^\d{5,6}$/.test(code)) {
+      return res.status(400).json({ message: 'code 必须是同花顺板块代码（5~6 位数字）' });
+    }
+
+    const body: ThemeDetailResponseV2 = await buildThsBoardDetail(tradeDate, code);
+    return res.status(200).json(body);
+  });
+
+  /**
+   * 主线复盘报告（设计稿 §8 的收盘后固定动作）。
+   *
+   * `GET /api/mainline?days=5&date=YYYYMMDD&format=json|markdown`
+   *   - days：回看多少个交易日（含最新），默认 5，上限 20
+   *   - date：结束交易日，缺省用最近一个有数据的日子
+   *   - format：默认 json；`markdown` 返回可直接贴进笔记的文本报告
+   *
+   * 这是「看盘复盘」用的只读接口，不改动任何线上数据。
+   */
+  app.get('/api/mainline', async (req, res) => {
+    const daysRaw = Number(req.query.days ?? 5);
+    const days = Number.isFinite(daysRaw) ? Math.min(20, Math.max(1, Math.trunc(daysRaw))) : 5;
+
+    const dateRaw = typeof req.query.date === 'string' && req.query.date.trim() !== '' ? req.query.date.trim() : null;
+    let endDate: string | undefined;
+    if (dateRaw !== null) {
+      const parsed = parseTradeDate(dateRaw);
+      if (parsed === null) {
+        return res.status(400).json({ message: 'date 必须是 YYYYMMDD 格式' });
+      }
+      endDate = parsed;
+    }
+
+    try {
+      const report = await buildReport({ days, endDate });
+      if (req.query.format === 'markdown') {
+        return res.status(200).type('text/markdown; charset=utf-8').send(renderReport(report));
+      }
+      return res.status(200).json(report);
+    } catch (error) {
+      return res.status(502).json({
+        message: error instanceof Error ? error.message : '主线报告生成失败',
+      });
+    }
   });
 
   /*

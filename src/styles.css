@@ -808,17 +808,11 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 }
 
 /*
- * 财联社情绪行：封板率 / 高开率 / 获利率 / 连板梯队。
- * 与上面的自算口径（涨跌数 / 涨停 / 炸板 / 晋级）并列，口径不一致本身就是上游异常信号。
+ * 这里原来挂着 `.market-breadth__row`（财联社情绪行：封板率 / 高开率 / 获利率 / 连板梯队）。
+ * 那一行已从「大盘行情」面板去掉：它只有当天快照、口径也和这里的自算口径
+ * （涨跌数 / 涨停 / 炸板 / 晋级）不同，并排放在指数条里容易被当成同一套数字读。
+ * 要看它们去「轮动」页的「市场情绪」卡（`.rotation-emotion`）。
  */
-.market-breadth__row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3077rem 0.9231rem;
-  padding-top: 0.3077rem;
-  margin-top: 0.3077rem;
-  border-top: 1px dashed var(--border-color);
-}
 
 .sector-rotation__controls {
   display: flex;
@@ -1466,7 +1460,8 @@ section[aria-labelledby='limit-up-list-title'] .empty-state {
 
 section[aria-labelledby='limit-up-list-title'] table {
   width: 100%;
-  min-width: 73.8462rem;
+  /* 12 列（2026-09-18 加了「涨停原因」「封单」「换手」）：比原来的 9 列宽一档 */
+  min-width: 92.3077rem;
   border-collapse: collapse;
   border-spacing: 0;
 }
@@ -1516,14 +1511,33 @@ section[aria-labelledby='limit-up-list-title'] tbody th div {
   font-weight: 500;
 }
 
-section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(2),
-section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(4),
-section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
+/*
+ * 连板 / 最新价 / 涨跌幅：加粗，涨跌幅另上红。
+ * 这里**按类名**而不是 `:nth-child` 选列 —— 列是按业务顺序排的，
+ * 中间插一列（2026-09-18 加的「涨停原因」）就会把所有位置选择器整体错位，
+ * 而且错了不会报错，只会让「加粗/变红」落到隔壁列上。
+ */
+section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__board,
+section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__price,
+section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__pct {
   font-weight: 600;
 }
 
-section[aria-labelledby='limit-up-list-title'] tbody td:nth-child(5) {
+section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__pct {
   color: var(--rise);
+}
+
+/*
+ * 涨停原因：唯一左对齐的文本列。标签串可能很长（「光通信+拟收购光泰通信+AI赋能+RFID物联网」），
+ * 这里截断出省略号，公告级长文挂在 title 上，不把行撑高。
+ */
+section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__reason,
+section[aria-labelledby='limit-up-list-title'] thead th.limit-up-list__reason {
+  max-width: 24rem;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 行尾「添加自选」：就是表格最后一列，宽度贴内容、居中。
@@ -1571,6 +1585,328 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   color: #fff;
   box-shadow: 0 6px 14px rgba(59, 111, 245, 0.22);
 }
+
+/* ---------------------------------------------------------------------------
+   主线复盘（选股页「主线」档）
+   --------------------------------------------------------------------------- */
+
+/*
+ * 选股页 / 涨停聚焦页在填充模式下的滚动：**由 `.dashboard-main` 承担**
+ * （见文件开头 `.dashboard-main { overflow-y: auto; grid-auto-rows: max-content }`）。
+ * 这里只把卡片头 / 限制说明按内容高度固定住。
+ *
+ * ⚠ 真正管用的「卡片不裁切」覆盖写在**文件末尾**（搜索「主线面板 · 填充模式覆盖」）：
+ * 文件后半段的 `.dashboard-main--fill > .card { overflow: hidden }` 优先级更高、
+ * 位置也更靠后，写在 1600 行这里会被它盖掉。
+ */
+@media (min-width: 1181px) and (min-height: 520px) {
+  .dashboard-main--fill > .card:has(> .mainline-body) > .overview__header,
+  .dashboard-main--fill > .card:has(> .mainline-body) > .warning-notes {
+    flex: 0 0 auto;
+  }
+}
+
+.mainline-body {
+  display: block;
+}
+
+/* 章节跳转：内容长，给一组锚点，别让人以为下面没内容 */
+.mainline-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3077rem;
+  margin: 0.6154rem 0 0;
+}
+
+.mainline-jump__item {
+  padding: 0.3077rem 0.7692rem;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 0.6154rem;
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.8077rem;
+  font-weight: 600;
+}
+
+.mainline-jump__item:hover {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+/* 总览表里的板块名也是可点的（点一下换第四节的明细） */
+.mainline-table__pick {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mainline-table__pick:hover {
+  color: var(--accent-primary);
+}
+
+.mainline-section-title {
+  margin: 1.0769rem 0 0.6154rem;
+  font-size: 0.9231rem;
+  color: var(--text-secondary);
+}
+
+.mainline-window-picker {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 0.3077rem;
+  padding: 0.3077rem 0.6154rem;
+  border: 1px solid rgba(255, 255, 255, 0.68);
+  border-radius: 0.9231rem;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.mainline-window-picker__item {
+  padding: 0.3077rem 0.6154rem;
+  border: 0;
+  border-radius: 0.6154rem;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.8462rem;
+  font-weight: 600;
+}
+
+.mainline-window-picker__item[aria-pressed='true'] {
+  background: var(--accent-primary);
+  color: #fff;
+}
+
+.mainline-rank-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15.3846rem, 1fr));
+  gap: 0.9231rem;
+}
+
+.mainline-rank-card {
+  padding: 0.9231rem;
+  border: 1px solid rgba(255, 255, 255, 0.68);
+  border-radius: 0.9231rem;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.mainline-rank-list {
+  display: grid;
+  gap: 0.3077rem;
+  margin: 0.6154rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mainline-rank-list li {
+  display: grid;
+  grid-template-columns: 1.2308rem 1fr auto 2.3077rem;
+  align-items: center;
+  gap: 0.4615rem;
+  font-size: 0.8462rem;
+}
+
+.mainline-rank-list__no {
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.mainline-rank-list__name {
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mainline-rank-list__name:hover {
+  color: var(--accent-primary);
+}
+
+.mainline-rank-list__value {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.mainline-rank-list__streak {
+  color: transparent;
+  font-size: 0.7692rem;
+  text-align: right;
+}
+
+.mainline-rank-list__streak.is-hot {
+  color: var(--accent-primary);
+  font-weight: 700;
+}
+
+.mainline-repeat-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17.8462rem, 1fr));
+  gap: 0.7692rem;
+}
+
+.mainline-repeat-card {
+  display: grid;
+  gap: 0.4615rem;
+  padding: 0.9231rem;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 0.9231rem;
+  background: rgba(255, 255, 255, 0.56);
+  box-shadow: var(--shadow-sm);
+  text-align: left;
+}
+
+.mainline-repeat-card:hover,
+.mainline-repeat-card[aria-current='true'] {
+  border-color: var(--accent-primary);
+}
+
+.mainline-repeat-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6154rem;
+}
+
+.mainline-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mainline-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8462rem;
+}
+
+.mainline-table th,
+.mainline-table td {
+  padding: 0.4615rem 0.6154rem;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mainline-table thead th {
+  color: var(--text-tertiary);
+  font-size: 0.7692rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.mainline-table tbody tr.is-selected {
+  background: rgba(59, 111, 245, 0.08);
+}
+
+.mainline-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.mainline-table__ranks {
+  color: var(--text-tertiary);
+}
+
+.mainline-table__evidence {
+  max-width: 30.7692rem;
+  color: var(--text-secondary);
+  white-space: normal;
+}
+
+/*
+ * ===== 主线面板 · 填充模式覆盖 =====
+ *
+ * 必须放在文件末尾：文件后半段（约 4063 行起）的
+ * `.dashboard-main--fill > .card { display: flex; overflow: hidden; flex: 1 1 auto }`
+ * 优先级相同但源码位置更靠后，写在别处都会被它盖掉。
+ *
+ * 它带来的后果是：卡片被压成「剩余高度 + 裁切 + 自己内部滚动」，
+ * 高约 631px 的卡片里装着 2000px 内容 —— 三、四段以下都要在卡片里滚，
+ * 极易被当成「没数据」。这里恢复成和 `.dashboard-main` 一致的约定：
+ * **卡片按内容长高，纵向滚动交给 `.dashboard-main`**（它本来就有 overflow-y: auto）。
+ *
+ * 选择器加 `#root` 前缀把优先级提到 2,1,0，并且位于文件末尾，双重保证压得住。
+ */
+@media (min-width: 1181px) and (min-height: 520px) {
+  #root .dashboard-main--fill > .card:has(> .mainline-body) {
+    flex: 0 0 auto;
+    overflow: visible;
+    min-height: 0;
+    max-height: none;
+  }
+}
+
+.mainline-table--compact tbody th {
+  font-weight: 600;
+}
+
+.mainline-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 0.9231rem;
+}
+
+.mainline-detail-block {
+  display: grid;
+  gap: 0.4615rem;
+  margin-top: 0.9231rem;
+}
+
+.mainline-ladder {
+  display: grid;
+  gap: 0.4615rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8462rem;
+}
+
+.mainline-ladder li {
+  display: grid;
+  grid-template-columns: 5.3846rem 1fr;
+  gap: 0.6154rem;
+}
+
+.mainline-ladder__slot {
+  color: var(--text-tertiary);
+}
+
+.mainline-theme-list {
+  display: grid;
+  gap: 0.6154rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8462rem;
+}
+
+.mainline-theme-list li {
+  display: grid;
+  gap: 0.1538rem;
+  padding: 0.6154rem 0.7692rem;
+  border-radius: 0.7692rem;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.mainline-theme-list__key {
+  font-weight: 700;
+}
+
+.mainline-theme-list__meta,
+.mainline-theme-list__members {
+  color: var(--text-secondary);
+  font-size: 0.8077rem;
+}
+
 
 #limit-up-focus-panel {
   display: grid;
@@ -2510,6 +2846,36 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   min-width: 10.1538rem;
   font-weight: 600;
   white-space: normal;
+}
+
+/*
+ * 股票列（自选 / 持仓的第一列）：**宽度跟内容走，不去吸收表格的剩余宽度**。
+ *
+ * 表格是 `width: 100%`，而其它列要么是 nowrap 的数字、要么是固定尺寸的分时图，
+ * 它们的 min-content 就等于 max-content；于是表格被撑宽时，多出来的宽度只能全落到
+ * 唯一「能换行、能压缩」的股票列上 —— 实测 1406px 宽的表里股列拿了 288px，
+ * 而名称+代码只用到 148px，名称和分时图之间白白空出一条。
+ *
+ * 这里显式写 `width`（值沿用原来的 min-width）把这一列钉在内容宽度上：
+ * 标签长一点它就宽一点，但不参与分表格的余量；省下的宽度分给右边的数字列。
+ *
+ * 配套两条：名称不折行（折行会把行高从 50px 顶到 64px），
+ * 标签给 `min-width: 0` 让它在放不下时被省略号截断（title 里仍有全称）。
+ * 也就是说：先截标签，再宽列，绝不折名称。
+ */
+.quote-table thead th:first-child,
+.quote-table tbody th {
+  width: 10.1538rem;
+}
+
+/* 名称 + 标签排在一行里：名称本身不折行 */
+.quote-table tbody th .stock-identity__name {
+  white-space: nowrap;
+}
+
+/* 不给 min-width:0，flex 就不会把标签压到省略号，它会反过来把名称挤折行 */
+.quote-table tbody th .stock-tag {
+  min-width: 0;
 }
 
 .quote-table thead th:first-child,

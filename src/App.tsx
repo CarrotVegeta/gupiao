@@ -47,7 +47,6 @@ import type {
   Holding,
   LimitUpLadderResponse,
   LimitUpResponse,
-  MarketEmotion,
   MarketIndex,
   MinuteSeriesMap,
   Quote,
@@ -255,7 +254,7 @@ export default function App() {
   const [loadedState] = useState(() => loadState(localStorage));
   const [state, setState] = useState<StorageState>(loadedState.state);
   const [activePage, setActivePage] = useState<PrimaryNavPage>('watchlist');
-  const [activeScreenerTab, setActiveScreenerTab] = useState<ScreenerTab>('trend');
+  const [activeScreenerTab, setActiveScreenerTab] = useState<ScreenerTab>('mainline');
   /** 「轮动」页的板块数，由页面内取数后回报，只用于导航计数 */
   const [rotationPlateCount, setRotationPlateCount] = useState<number | null>(null);
   const [activeLimitUpTab, setActiveLimitUpTab] = useState<LimitUpFocusTab>('pool');
@@ -276,8 +275,6 @@ export default function App() {
   const [marketUpdatedAt, setMarketUpdatedAt] = useState<string | null>(null);
   const [marketTurnover, setMarketTurnover] = useState<number | null>(null);
   const [marketBreadth, setMarketBreadth] = useState<MarketBreadth | null>(null);
-  /** 财联社情绪（封板率 / 高开率 / 获利率）：只有当天快照，历史日期后端返回 null */
-  const [marketEmotion, setMarketEmotion] = useState<MarketEmotion | null>(null);
   const [isMarketRefreshing, setIsMarketRefreshing] = useState(false);
   const [limitUp, setLimitUp] = useState<LimitUpResponse>(emptyLimitUpResponse());
   const [isLimitUpRefreshing, setIsLimitUpRefreshing] = useState(false);
@@ -546,7 +543,6 @@ export default function App() {
       setMarketIndices((current) => mergeMarketOverview(current, response));
       setMarketTurnover(response.turnover);
       setMarketBreadth(response.breadth);
-      setMarketEmotion(response.emotion ?? null);
       if (response.indices.some((index) => index.status === 'fresh')) {
         setMarketUpdatedAt(response.fetchedAt);
       }
@@ -1335,13 +1331,12 @@ export default function App() {
               </section>
             ) : null}
 
-            {/* 选股页与涨停聚焦页都不重复展示大盘指数条：这两页看的是题材 / 涨停结构，指数另有专门入口 */}
+            {/* 选股页与涨停聚焦页都不重复展示大盘指数条：这两页看的是板块 / 涨停结构，指数另有专门入口 */}
             {activePage === 'screener' || activePage === 'limit-up' ? null : (
               <MarketOverview
                 indices={marketOverview}
                 turnover={marketTurnover}
                 breadth={marketBreadth}
-                emotion={marketEmotion}
               />
             )}
 

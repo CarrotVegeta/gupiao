@@ -51,7 +51,36 @@ const themesPayload = {
   error: null,
 };
 
-/** 细分逻辑题材条目（TP: 前缀）：题材页主口径 */
+/** 同花顺板块（THS: 前缀）条目：选股页「板块」档现在用这个口径 */
+const thsItem = {
+  ...themeItem,
+  code: 'THS:885756',
+  name: '芯片概念',
+  limitUpCount: 18,
+  continuousCount: 3,
+  maxBoardLabel: '6天3板',
+  durationDays: 10,
+  source: 'ths' as const,
+  conceptLimitUpCount: null,
+  supportedLimitUpCount: null,
+  unresolvedLimitUpCount: null,
+};
+
+const thsPayload = {
+  schemaVersion: 2,
+  scope: 'ths',
+  tradeDate: '20260918',
+  main: [thsItem],
+  branch: [],
+  pending: [],
+  fetchedAt: '2026-09-18T08:00:00.000Z',
+  source: '10jqka',
+  status: 'partial',
+  warnings: ['上游（同花顺 block_top）固定只返回涨停板块 Top 20'],
+  error: null,
+};
+
+/** 细分逻辑（TP: 前缀）条目：选股页「板块」档不再使用，接口 /api/themes 仍在提供 */
 const topicItem = {
   code: 'TP:光通信',
   name: '光通信',
@@ -430,10 +459,10 @@ describe('toTrendScanResponse', () => {
 });
 
 describe('请求函数', () => {
-  it('fetchThemes 拼上 date 参数', async () => {
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(themesPayload)));
-    await fetchThemes('20260917', fetchImpl as unknown as typeof fetch);
-    expect(fetchImpl).toHaveBeenCalledWith('/api/themes?date=20260917');
+  it('fetchThemes 打同花顺口径的 /api/themes/ths 并拼上 date 参数', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(thsPayload)));
+    await fetchThemes('20260918', fetchImpl as unknown as typeof fetch);
+    expect(fetchImpl).toHaveBeenCalledWith('/api/themes/ths?date=20260918');
   });
 
   it('fetchThemeDetail 走新的 detail 路由并带上 date 与 signal', async () => {
@@ -499,11 +528,11 @@ describe('请求函数', () => {
   it('HTTP 失败时抛错而不是返回空数据', async () => {
     const fetchImpl = vi.fn(async () => new Response('', { status: 502 }));
     await expect(fetchThemes(undefined, fetchImpl as unknown as typeof fetch)).rejects.toThrow(
-      '题材请求失败（502）',
+      '板块请求失败（502）',
     );
     await expect(
       fetchThemeDetail('BK0900', undefined, undefined, fetchImpl as unknown as typeof fetch),
-    ).rejects.toThrow('题材详情请求失败（502）');
+    ).rejects.toThrow('板块详情请求失败（502）');
   });
 
   it('unavailableThemeDetail 是可用的空壳，便于加载态展示', () => {
@@ -553,5 +582,36 @@ describe('细分逻辑题材（TP: 口径）', () => {
 
   it('缺省 scope 的旧板块响应按 board 处理', () => {
     expect(toThemesResponse(themesPayload).scope).toBe('board');
+  });
+
+  it('加载中 / 失败的空壳按同花顺口径（选股页默认档）', () => {
+    expect(unavailableThemes('加载中').scope).toBe('ths');
+  });
+});
+
+describe('同花顺板块（THS: 口径）', () => {
+  it('接受 THS: 前缀的板块条目，保留 scope 与来源', () => {
+    const result = toThemesResponse(thsPayload);
+
+    expect(result.status).toBe('partial');
+    expect(result.scope).toBe('ths');
+    expect(result.source).toBe('10jqka');
+    expect(result.main[0].code).toBe('THS:885756');
+    expect(result.main[0].source).toBe('ths');
+  });
+
+  it('拒绝既不是 BK / TP: 也不是 THS: 的条目', () => {
+    const bad = { ...thsPayload, main: [{ ...thsItem, code: 'XX:芯片' }] };
+    expect(toThemesResponse(bad).status).toBe('unavailable');
+  });
+
+  it('THS: 板块详情打到 /api/ths-boards/:code/detail', async () => {
+    const calls: string[] = [];
+    const impl = (async (input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return new Response(JSON.stringify({ schemaVersion: 2 }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await fetchThemeDetail('THS:885756', '20260918', undefined, impl);
+    expect(calls[0]).toBe('/api/ths-boards/885756/detail?date=20260918');
   });
 });

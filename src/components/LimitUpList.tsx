@@ -50,6 +50,17 @@ const formatBoardCount = (value: number | null): string =>
 
 const formatInteger = (value: number | null): string => (value === null ? '—' : String(value));
 
+/** 金额：亿 / 万，和行情软件口径一致（封单额、流通市值共用） */
+const formatAmount = (value: number | null | undefined): string => {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+  if (value >= 100_000_000) return `${(value / 100_000_000).toFixed(2)}亿`;
+  if (value >= 10_000) return `${Math.round(value / 10_000)}万`;
+  return String(Math.round(value));
+};
+
+const formatRatio = (value: number | null | undefined): string =>
+  value === null || value === undefined || !Number.isFinite(value) ? '—' : `${value.toFixed(1)}%`;
+
 const compareNullableNumberDesc = (left: number | null, right: number | null): number => {
   if (left === null && right === null) {
     return 0;
@@ -165,11 +176,24 @@ export const LimitUpList = ({
               <tr>
                 <th scope="col">股票</th>
                 <th scope="col">连板</th>
+                <th
+                  scope="col"
+                  className="is-left limit-up-list__reason"
+                  title="涨停原因标签（同花顺 reason_type）；悬停看公告级长文"
+                >
+                  涨停原因
+                </th>
                 <th scope="col">板块</th>
                 <th scope="col">最新价</th>
                 <th scope="col">涨跌幅</th>
                 <th scope="col">首次封板</th>
                 <th scope="col">最后封板</th>
+                <th scope="col" title="封单额（同花顺涨停池）">
+                  封单
+                </th>
+                <th scope="col" title="换手率（同花顺涨停池）">
+                  换手
+                </th>
                 <th scope="col">炸板次数</th>
                 <th scope="col">自选</th>
               </tr>
@@ -181,12 +205,21 @@ export const LimitUpList = ({
                     {/* 不挂标签：连板数已经在右侧「连板」列，名称旁再放一个红标签是重复的 */}
                     <StockIdentity name={item.name} code={item.symbol} />
                   </th>
-                  <td>{formatBoardCount(item.boardCount)}</td>
+                  <td className="limit-up-list__board">{formatBoardCount(item.boardCount)}</td>
+                  {/*
+                    涨停原因来自同花顺（东财池没有这个字段）：标签串占一格，
+                    公告级长文挂在 title 上 —— 这一列是「这票为什么涨」的入口
+                  */}
+                  <td className="is-left limit-up-list__reason" title={item.reasonText ?? undefined}>
+                    {item.reason ?? '—'}
+                  </td>
                   <td>{formatValue(item.industry)}</td>
-                  <td>{formatPrice(item.price)}</td>
-                  <td>{formatSignedPercent(item.pct)}</td>
+                  <td className="limit-up-list__price">{formatPrice(item.price)}</td>
+                  <td className="limit-up-list__pct">{formatSignedPercent(item.pct)}</td>
                   <td>{formatValue(item.firstSealTime)}</td>
                   <td>{formatValue(item.lastSealTime)}</td>
+                  <td>{formatAmount(item.sealAmount)}</td>
+                  <td>{formatRatio(item.turnoverRate)}</td>
                   <td>{formatInteger(item.breakCount)}</td>
                   <td className="limit-up-list__action">
                     <AddToWatchlistButton

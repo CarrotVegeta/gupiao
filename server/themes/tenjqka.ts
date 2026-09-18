@@ -6,12 +6,15 @@
  * 提供的四类数据：
  *   1. 涨停池 `limit_up_pool` —— 涨停原因、封板类型、开板次数、封单额、换手率、流通市值、分时序列
  *   2. 板块排行 `block_top` —— 涨停家数、连板家数、最高板、持续天数、板块成员（**固定 Top 20，参数无效**）
+ *      · 2026-09-18 起它同时是选股页「板块」档的数据源（`server/themes/thsBoard.ts`），
+ *        因为它把「该板块今天涨停的票」连同现价 / 连板 / 首封 / 涨停原因一起给了
  *   3. 板块日K `d.10jqka.com.cn/v6/line/bk_XXXXXX/01/last.js` —— 含成交额，用于「成交额连续放大」
  *   4. 个股日K `d.10jqka.com.cn/v6/line/hs_XXXXXX/01/last.js` —— 含成交额与换手率
  *
  * 注意：`block_top` 只给 Top 20 板块，2~4 只涨停的支线题材不在其中，
- * 所以「涨停家数」是自算的（涨停股 × 东财 F10 题材归属），`block_top` 只用来
- * ① 交叉验证 ② 拿到同花顺板块代码去取板块日K。
+ * 所以东财口径的「涨停家数」是自算的（涨停股 × 东财 F10 题材归属），`block_top` 只用来
+ * ① 交叉验证 ② 拿到同花顺板块代码去取板块日K；
+ * 而同花顺口径的家数直接用上游给的 `limit_up_num`（见 `thsBoard.ts` 的口径披露）。
  */
 import type { QuoteError } from '../../src/types.js';
 
@@ -110,6 +113,8 @@ export type LimitUpPoolRow = {
   floatMarketCap: number | null;
   turnoverRate: number | null;
   reasonTags: string[];
+  /** 涨停原因长文（`reason_info`，AI 汇总稿，含公告依据），可能为空 */
+  reasonText: string | null;
   /** 分时涨跌幅序列（约 80 个点） */
   intraday: number[];
 };
@@ -136,6 +141,7 @@ const mapPoolRow = (raw: Record<string, unknown>): LimitUpPoolRow | null => {
     floatMarketCap: asNumber(raw.currency_value),
     turnoverRate: asNumber(raw.turnover_rate),
     reasonTags: splitReasonTags(raw.reason_type),
+    reasonText: asString(raw.reason_info) || null,
     intraday: Array.isArray(raw.time_preview)
       ? raw.time_preview.map((value) => asNumber(value)).filter((value): value is number => value !== null)
       : [],
@@ -206,6 +212,64 @@ export type BlockTopRow = {
   /** 上游给的持续天数（语义不完全明确，只作参考） */
   days: number | null;
   memberSymbols: string[];
+  /** 该板块当日**涨停**成员（`stock_list` 原样解析，含现价 / 连板 / 首封 / 涨停原因） */
+  members: BlockTopMember[];
+};
+
+/**
+ * `block_top` 的成员项：上游把「这个板块今天涨停的票」连同涨停细节一起给了，
+ * 所以同花顺口径的板块成员表**不需要再打行情或涨停池**。
+ * 拿不到的字段一律 null，不拿别的数字顶。
+ */
+export type BlockTopMember = {
+  symbol: string;
+  name: string;
+  /** 最新价 */
+  price: number | null;
+  /** 涨跌幅 % */
+  pct: number | null;
+  /** 原样保留「6天3板」 */
+  highLabel: string | null;
+  /** 连板数（上游 continue_num；解析不出来时退回 highLabel 的解析结果） */
+  boardCount: number | null;
+  /** 涨停原因标签串（`reason_type`），如「光通信+拟收购光泰通信+AI赋能」 */
+  reasonTags: string[];
+  /** 上游给的涨停原因长文（`reason_info`，AI 汇总稿，只作参考） */
+  reasonText: string | null;
+  firstSealTime: string | null;
+  lastSealTime: string | null;
+  /** 上游的封板类型标记，如 FIRST_LIMIT / LIMIT_BACK */
+  changeTag: string | null;
+  isSt: boolean;
+};
+
+const mapBlockTopMember = (raw: unknown): BlockTopMember | null => {
+  if (!isRecord(raw)) return null;
+  const symbol = String(raw.code ?? '').trim();
+  const name = asString(raw.name);
+  if (!/^\d{6}$/.test(symbol) || !name) return null;
+
+  const highLabel = asString(raw.high) || null;
+  const continueNum = asNumber(raw.continue_num);
+
+  return {
+    symbol,
+    name,
+    price: asNumber(raw.latest),
+    pct: asNumber(raw.change_rate),
+    highLabel,
+    /*
+     * 连板数优先从 `high`（如「6天3板」→ 3）解析，和涨停池那边的口径保持一致；
+     * 上游的 `continue_num` 在这里并不可靠：实测「6天3板」的票 continue_num 是 1。
+     */
+    boardCount: parseBoardCount(highLabel) ?? continueNum,
+    reasonTags: splitReasonTags(raw.reason_type),
+    reasonText: asString(raw.reason_info) || null,
+    firstSealTime: toSealTime(raw.first_limit_up_time),
+    lastSealTime: toSealTime(raw.last_limit_up_time),
+    changeTag: asString(raw.change_tag) || null,
+    isSt: raw.is_st === 1 || raw.is_st === true,
+  };
 };
 
 const mapBlockTopRow = (raw: Record<string, unknown>): BlockTopRow | null => {
@@ -214,9 +278,9 @@ const mapBlockTopRow = (raw: Record<string, unknown>): BlockTopRow | null => {
   if (!/^\d{5,6}$/.test(code) || !name) return null;
 
   const stocks = Array.isArray(raw.stock_list) ? raw.stock_list : [];
-  const memberSymbols = stocks
-    .map((item) => (isRecord(item) ? String(item.code ?? '').trim() : ''))
-    .filter((symbol) => /^\d{6}$/.test(symbol));
+  const members = stocks
+    .map((item) => mapBlockTopMember(item))
+    .filter((member): member is BlockTopMember => member !== null);
 
   return {
     code,
@@ -226,7 +290,8 @@ const mapBlockTopRow = (raw: Record<string, unknown>): BlockTopRow | null => {
     continuousCount: asNumber(raw.continuous_plate_num),
     highLabel: asString(raw.high) || null,
     days: asNumber(raw.days),
-    memberSymbols,
+    memberSymbols: members.map((member) => member.symbol),
+    members,
   };
 };
 
@@ -273,7 +338,8 @@ export type KlineBar = {
   turnoverRate: number | null;
 };
 
-const parseJsonp = (text: string): Record<string, unknown> | null => {
+/** 解析同花顺的 JSONP 外壳：`quotebridge_xxx({...})` → 对象 */
+export const parseJsonp = (text: string): Record<string, unknown> | null => {
   const match = text.match(/^[^(]*\(([\s\S]*)\)\s*;?\s*$/);
   if (!match) return null;
   try {

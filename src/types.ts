@@ -206,6 +206,21 @@ export type LimitUpItem = {
   lastSealTime: string | null;
   industry: string | null;
   breakCount: number | null;
+  /**
+   * 涨停原因标签串（同花顺 `reason_type`，如「光通信+拟收购光泰通信+AI赋能」）。
+   * 主源（东财涨停池）不提供，由同花顺涨停池按代码 join 补上；补不到时 null。
+   */
+  reason?: string | null;
+  /** 涨停原因长文（同花顺 `reason_info`，AI 汇总稿，含公告依据）；补不到时 null */
+  reasonText?: string | null;
+  /** 封单额（元）——同花顺涨停池补 */
+  sealAmount?: number | null;
+  /** 开板次数 ——同花顺涨停池补（与东财的「炸板次数」是同一件事的两种记法） */
+  openCount?: number | null;
+  /** 换手率 % ——同花顺涨停池补 */
+  turnoverRate?: number | null;
+  /** 流通市值（元）——同花顺涨停池补 */
+  floatMarketCap?: number | null;
 };
 
 export type LimitUpResponse = {
@@ -446,8 +461,8 @@ export type WatchCheckResponse = {
   errors: QuoteError[];
 };
 
-/** 选股页的数据来源：板块骨架来自东财，涨停结构来自同花顺，行情来自腾讯 */
-export type ScreenerSource = 'eastmoney+10jqka' | 'eastmoney+10jqka+tencent' | 'eastmoney';
+/** 选股页的数据来源：板块档走同花顺 `block_top`，趋势档还要东财板块骨架与腾讯行情 */
+export type ScreenerSource = 'eastmoney+10jqka' | 'eastmoney+10jqka+tencent' | 'eastmoney' | '10jqka';
 
 /** 题材分类：主线 / 支线 */
 export type ThemeKind = 'main' | 'branch';
@@ -484,20 +499,21 @@ export type ThemeLeader = {
 export type ThemeItem = {
   /**
    * 题材标识：
-   *   - 板块口径：东财板块代码，如 `BK0900`
+   *   - 同花顺板块口径（选股页「板块」档在用）：`THS:` + 同花顺板块代码，如 `THS:885756`
+   *   - 东财板块口径：东财板块代码，如 `BK0900`
    *   - 细分逻辑口径：`TP:` + 归一化后的涨停原因标签，如 `TP:光通信`
    */
   code: string;
   name: string;
   kind: ThemeKind;
   pct: number | null;
-  /** 当日涨停家数（自算：涨停股按 F10 纯正板块归属分组） */
+  /** 当日涨停家数（同花顺口径用上游给的 limit_up_num；东财口径是自算） */
   limitUpCount: number;
   /** 连板家数 */
   continuousCount: number;
   maxBoard: number | null;
   maxBoardLabel: string | null;
-  /** 持续天数：连续满足「每日涨停家数 ≥2」的交易日数 */
+  /** 持续天数（同花顺口径用上游给的 days；东财口径是「连续家数 ≥2」的交易日数） */
   durationDays: number;
   /** 板块成交额（元） */
   amount: number | null;
@@ -522,16 +538,19 @@ export type ThemeItem = {
   /** 待确认关联涨停数（证据缺失 / 未决） */
   unresolvedLimitUpCount: number | null;
   /**
-   * 题材口径：`board` = 东财板块（宽概念），`topic` = 涨停原因细分逻辑。
-   * 2026-09-18 起题材页以 `topic` 为主；缺省按 `board` 处理（兼容旧数据）。
+   * 口径：
+   *   - `ths` = 同花顺概念板块（`block_top`，**只有涨停板块 Top 20**）—— 选股页 2026-09-18 起用这个
+   *   - `board` = 东财板块（宽概念，接口 `/api/themes/boards`）
+   *   - `topic` = 涨停原因细分逻辑（接口 `/api/themes`）
+   * 后两个口径的接口都还在，只是页面不再使用。
    */
-  source?: 'board' | 'topic';
+  source?: 'board' | 'topic' | 'ths';
 };
 
 export type ThemesResponse = {
   schemaVersion: 2;
-  /** 本响应的题材单位；缺省按 `board` 处理（兼容旧数据） */
-  scope?: 'board' | 'topic';
+  /** 本响应的口径单位；缺省按 `board` 处理（兼容旧数据） */
+  scope?: 'board' | 'topic' | 'ths';
   tradeDate: string | null;
   main: ThemeItem[];
   branch: ThemeItem[];
@@ -686,6 +705,16 @@ export type ScanCoverage = {
 
 export type ThemeStockV2 = ThemeStockItem & {
   quoteAsOf: string | null;
+  /**
+   * 连板高度原文（如「6天3板」）。目前只有同花顺口径给得出，其它口径为 undefined。
+   * 展示用，不参与任何判定。
+   */
+  highLabel?: string | null;
+  /**
+   * 上游给的涨停原因长文（同花顺 `reason_info`，AI 汇总稿）。只在行内 tooltip 里出现，
+   * 不参与判定；缺省表示这个口径没有这段文本。
+   */
+  reasonText?: string | null;
   relation: ThemeRelation;
   roles: RoleTag[];
   checks: Partial<Record<ThemeStockRole, CheckResult[]>>;
@@ -711,6 +740,152 @@ export type ThemeDetailResponseV2 = {
   status: ScreenerDataStatus;
   warnings: string[];
   error: string | null;
+};
+
+// ---------------------------------------------------------------------------
+// 主线复盘（`/api/mainline`）
+//
+// 与后端 `server/mainline/types.ts` 对齐，但**不 import 服务端代码**——客户端
+// bundle 只依赖这里的结构定义。字段缺失一律 null，界面按「不可用」披露。
+// ---------------------------------------------------------------------------
+
+/** 五档阵容里的一只票 */
+export type MainlineLadderMember = {
+  symbol: string;
+  name: string;
+  boardCount: number;
+  highLabel: string | null;
+  firstSealTime: string | null;
+  sealAmount: number | null;
+  /** 当日成交额（元）；涨停池不给时为 null（中军按代理口径算） */
+  amount: number | null;
+  floatMarketCap: number | null;
+  turnoverRate: number | null;
+  pct: number | null;
+  /** 封板类型标记，用于炸板判定 */
+  changeTag: string | null;
+  limitUpIn60d: number | null;
+  isSt: boolean;
+  reasonTags: string[];
+};
+
+export type MainlineLadder = {
+  maxBoard: number;
+  leader: MainlineLadderMember | null;
+  frontRow: MainlineLadderMember[];
+  firstBoard: MainlineLadderMember[];
+  laggard: MainlineLadderMember[];
+  core: MainlineLadderMember[];
+  coreSupport: number;
+  breakRate: number | null;
+  full: boolean;
+  coreAvailable: boolean;
+  laggardAvailable: boolean;
+  breakRateAvailable: boolean;
+};
+
+export type MainlineTheme = {
+  symbol: string;
+  name: string;
+  boardCount: number;
+  highLabel: string | null;
+};
+
+/** 板块内提取出的题材（涨停原因归一后 ≥2 家成题） */
+export type MainlineThemeTag = {
+  key: string;
+  count: number;
+  maxBoard: number;
+  members: string[];
+  variants: string[];
+  /** 连续多少个交易日在这个板块内 ≥2 家 */
+  streak: number;
+  /** 当日蔓延到多少个板块 */
+  boardSpread: number;
+};
+
+/** 评分表的一项 */
+export type MainlineCondition = {
+  key: string;
+  label: string;
+  hit: boolean;
+  score: number;
+  evidence: string | null;
+};
+
+export type MainlineTier = 'mainline' | 'candidate' | 'branch' | 'one_day';
+
+export type MainlineJudge = {
+  tier: MainlineTier;
+  total: number;
+  conditions: MainlineCondition[];
+  ebb: boolean;
+  degraded: boolean;
+};
+
+/** 一个板块某一天的快照 */
+export type MainlineDay = {
+  date: string;
+  code: string;
+  name: string;
+  pct: number | null;
+  limitUpCount: number;
+  continuousCount: number;
+  highLabel: string | null;
+  maxBoard: number;
+  upstreamDays: number | null;
+  amount: number | null;
+  mainNet: number | null;
+  rank: { pct: number | null; limitUp: number | null; flow: number | null; amount: number | null };
+  hit: number;
+  streakHit: number;
+  streakRank: { pct: number; limitUp: number; flow: number; amount: number };
+  streak: number;
+  dayKind: 'strong' | 'divergence' | 'weak';
+  capitalReturn: number | null;
+  judge: MainlineJudge | null;
+};
+
+/** 报告里的一个板块 */
+export type MainlineBoardReport = {
+  code: string;
+  name: string;
+  days: MainlineDay[];
+  members: Array<{
+    symbol: string;
+    name: string;
+    boardCount: number;
+    highLabel: string | null;
+    firstSealTime: string | null;
+    price: number | null;
+    pct: number | null;
+    sealAmount: number | null;
+    turnoverRate: number | null;
+    floatMarketCap: number | null;
+    isCoreCandidate: boolean;
+    reasonTags: string[];
+  }>;
+  themes: MainlineThemeTag[];
+  ladder: MainlineLadder;
+  appearDays: number;
+  streakHit: number;
+  maxRankStreak: number;
+  maxRankKey: 'pct' | 'limitUp' | 'flow' | 'amount' | null;
+  capitalReturn: number | null;
+  score: MainlineJudge | null;
+};
+
+export type MainlineReport = {
+  tradeDates: string[];
+  latestDate: string;
+  ranks: Array<{
+    key: 'pct' | 'limitUp' | 'flow' | 'amount';
+    label: string;
+    rows: MainlineBoardReport[];
+  }>;
+  boards: MainlineBoardReport[];
+  warnings: string[];
+  flowAvailable: boolean;
 };
 
 export type TrendFilters = {

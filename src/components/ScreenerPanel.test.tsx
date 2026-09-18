@@ -1,64 +1,16 @@
 import { useState } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ScreenerPanel, type ScreenerTab } from './ScreenerPanel';
+import type { MainlineBoardReport, MainlineReport } from '../types';
 
-const themeMetrics = [
-  { key: 'duration', label: '持续时间', hit: true, value: '6 天', detail: '连续 6 个交易日涨停家数 ≥2' },
-  { key: 'limitUpCount', label: '涨停家数', hit: true, value: '12 只', detail: '主线要求 ≥5' },
-  { key: 'ladder', label: '连板梯队', hit: true, value: '最高 5 板', detail: '梯队完整' },
-  { key: 'amount', label: '成交额', hit: false, value: '1.08 倍', detail: '要求放大 ≥1.15 倍' },
-  { key: 'catalyst', label: '催化强度', hit: false, value: '未识别', detail: '未命中关键词' },
-  { key: 'leader', label: '龙头表现', hit: true, value: '澳弘电子', detail: '最高 5 板' },
-  { key: 'revival', label: '回流能力', hit: true, value: '分歧后回升', detail: '分歧后回升' },
-  { key: 'influence', label: '市场影响力', hit: true, value: '较上证 +0.7%', detail: '跑赢上证' },
-];
-
-const themeItem = {
-  code: 'BK0900',
-  name: '新能源车',
-  kind: 'main' as const,
-  pct: 0.29,
-  limitUpCount: 12,
-  continuousCount: 4,
-  maxBoard: 5,
-  maxBoardLabel: '5 板',
-  durationDays: 6,
-  amount: 4.7e11,
-  amountRatio: 25.85,
-  catalysts: ['量产', '订单'],
-  leader: { symbol: '605058', name: '澳弘电子', boardCount: 5, highLabel: '5 板' },
-  metrics: themeMetrics,
-  score: 6,
-  classificationReasons: ['最近 3 个交易日驱动有依据家数 5/2/2'],
-  conceptLimitUpCount: 12,
-  supportedLimitUpCount: 5,
-  unresolvedLimitUpCount: 7,
-};
-
-const branchItem = {
-  ...themeItem,
-  code: 'BK0590',
-  name: '西部大开发',
-  kind: 'branch' as const,
-  limitUpCount: 8,
-  score: 3,
-  conceptLimitUpCount: 8,
-  supportedLimitUpCount: 2,
-  unresolvedLimitUpCount: 6,
-};
-
-const pendingItem = {
-  ...themeItem,
-  code: 'BK0666',
-  name: '待确认题材',
-  kind: 'branch' as const,
-  limitUpCount: 3,
-  conceptLimitUpCount: 3,
-  supportedLimitUpCount: 1,
-  unresolvedLimitUpCount: 1,
-};
+/**
+ * 选股页容器现在只有两档：主线 / 趋势。
+ *
+ * 2026-09-19 删掉了「板块」（同花顺概念 Top 20）与「细分逻辑」（涨停原因标签）两档，
+ * 所以这里原来那 10 条针对这两档的用例一并删除；组件与后端接口仍保留。
+ */
 
 const trendPick = {
   symbol: '300499',
@@ -80,153 +32,115 @@ const trendPick = {
   unmatched: [],
 };
 
-/** v2 详情响应：一张表 + 角色标签，同股多标签只有一行 */
-const detailPayload = {
-  schemaVersion: 2,
-  ruleVersion: 'roles-v1-2026-09-18+classify-v2',
-  tradeDate: '20260917',
-  asOf: '2026-09-17T14:00:00.000Z',
-  theme: { code: 'BK0900', name: '新能源车' },
-  items: [
+/** 主线档的一天快照 */
+const mainlineDay = {
+  date: '20260918',
+  code: '885756',
+  name: '芯片概念',
+  pct: 2.71,
+  limitUpCount: 18,
+  continuousCount: 3,
+  highLabel: '6天3板',
+  maxBoard: 3,
+  upstreamDays: 10,
+  amount: 9.3748e11,
+  mainNet: 1.144e10,
+  rank: { pct: 2, limitUp: 1, flow: 2, amount: 1 },
+  hit: 4,
+  streakHit: 2,
+  streakRank: { pct: 3, limitUp: 5, flow: 2, amount: 5 },
+  streak: 3,
+  dayKind: 'strong' as const,
+  capitalReturn: 1,
+  judge: null,
+};
+
+const mainlineBoard: MainlineBoardReport = {
+  code: '885756',
+  name: '芯片概念',
+  days: [mainlineDay],
+  members: [],
+  themes: [
     {
-      symbol: '605058',
-      name: '澳弘电子',
-      price: 48.76,
-      pct: 9.99,
-      boardCount: 5,
-      firstSealTime: '09:31:01',
-      sealType: '换手板',
-      openCount: 1,
-      sealAmount: 3e7,
-      turnoverRate: 15.8,
-      amount: 1.08e9,
-      avgAmount3d: 7.63e8,
-      avgAmount5d: 7.1e8,
-      floatMarketCap: 6.97e9,
-      reason: 'PCB + HDI板',
-      precise: true,
-      hits: [],
-      misses: [],
-      risks: [],
-      ma5: 40.67,
-      ma10: 34.8,
-      ma20: 31.09,
-      maBull: true,
-      distMa5: 19.9,
-      distMa10: 40.1,
-      stableDays10: 9,
-      pct10: 52.3,
-      pct20: 78.1,
-      limitUpIn60d: 3,
-      quoteAsOf: '2026-09-17T14:00:00.000Z',
-      relation: {
-        state: 'supported',
-        evidenceIds: ['ev-1'],
-        reasons: ['本轮有明确依据：PCB'],
-        alternativeThemeCodes: [],
-        topicKeys: [],
-        asOf: '2026-09-17T14:00:00.000Z',
-      },
-      roles: [
-        {
-          role: 'leader',
-          status: 'candidate',
-          reasons: ['题材内龙头候选比较排名第 1'],
-          missingEvidence: ['分时带动证据：缺少分钟级带动证据，v1 只能给「龙头候选」'],
-          assignedAt: '2026-09-17T14:00:00.000Z',
-          ruleVersion: 'roles-v1-2026-09-18',
-        },
-        {
-          role: 'trend',
-          status: 'candidate',
-          reasons: ['题材内趋势中军候选比较排名第 1'],
-          missingEvidence: [],
-          assignedAt: '2026-09-17T14:00:00.000Z',
-          ruleVersion: 'roles-v1-2026-09-18',
-        },
-      ],
-      checks: {
-        leader: [
-          { key: '本轮关联', state: 'pass', value: 'supported', reason: '驱动有依据', evidenceIds: [] },
-          {
-            key: '分时带动证据',
-            state: 'pending',
-            value: null,
-            reason: '缺少分钟级带动证据，v1 只能给「龙头候选」，不能输出确认龙头',
-            evidenceIds: [],
-          },
-        ],
-      },
-      metricsState: 'ready',
-      metricsTradeDate: '20260917',
-      risksChecked: true,
+      key: '存储',
+      count: 2,
+      maxBoard: 1,
+      members: ['托伦斯', '诚邦股份'],
+      variants: ['存储芯片', '半导体存储'],
+      streak: 2,
+      boardSpread: 2,
     },
-    {
-      symbol: '600002',
-      name: '仅概念股',
-      price: 12.3,
-      pct: 1.2,
-      boardCount: null,
-      firstSealTime: null,
-      sealType: null,
-      openCount: null,
-      sealAmount: null,
-      turnoverRate: 3.2,
-      amount: 2e8,
-      avgAmount3d: null,
-      avgAmount5d: null,
-      floatMarketCap: 8e9,
-      reason: null,
-      precise: true,
-      hits: [],
-      misses: [],
-      risks: [],
-      ma5: null,
-      ma10: null,
-      ma20: null,
-      maBull: null,
-      distMa5: null,
-      distMa10: null,
-      stableDays10: null,
-      pct10: null,
-      pct20: null,
+  ],
+  ladder: {
+    maxBoard: 3,
+    leader: {
+      symbol: '002161',
+      name: '远望谷',
+      boardCount: 3,
+      highLabel: '6天3板',
+      firstSealTime: '09:44:15',
+      sealAmount: 8.28e7,
+      amount: null,
+      floatMarketCap: null,
+      turnoverRate: null,
+      pct: 10,
+      changeTag: null,
       limitUpIn60d: null,
-      quoteAsOf: '2026-09-17T14:00:00.000Z',
-      relation: {
-        state: 'membership_only',
-        evidenceIds: [],
-        reasons: ['只有静态概念归属，没有本轮驱动依据'],
-        alternativeThemeCodes: [],
-        topicKeys: [],
-        asOf: '2026-09-17T14:00:00.000Z',
+      isSt: false,
+      reasonTags: ['光通信'],
+    },
+    frontRow: [],
+    firstBoard: [],
+    laggard: [],
+    core: [],
+    coreSupport: 0,
+    breakRate: null,
+    full: false,
+    coreAvailable: false,
+    laggardAvailable: false,
+    breakRateAvailable: false,
+  },
+  appearDays: 5,
+  streakHit: 2,
+  maxRankStreak: 5,
+  maxRankKey: 'limitUp',
+  capitalReturn: 1,
+  score: {
+    tier: 'mainline',
+    total: 10,
+    ebb: false,
+    degraded: false,
+    conditions: [
+      {
+        key: 'limitUpTop3',
+        label: '涨停家数进入前三',
+        hit: true,
+        score: 2,
+        evidence: '涨停家数 18，当日第 1 名',
       },
-      roles: [],
-      checks: {},
-      metricsState: 'ready',
-      metricsTradeDate: '20260917',
-      risksChecked: false,
-    },
+      {
+        key: 'coreTroop',
+        label: '有大成交趋势中军',
+        hit: false,
+        score: 0,
+        evidence: '成员成交额 / 流通市值缺失，中军不可判定',
+      },
+    ],
+  },
+};
+
+const mainlineReport: MainlineReport = {
+  tradeDates: ['20260914', '20260918'],
+  latestDate: '20260918',
+  ranks: [
+    { key: 'pct', label: '涨幅榜', rows: [mainlineBoard] },
+    { key: 'limitUp', label: '涨停家数榜', rows: [mainlineBoard] },
+    { key: 'flow', label: '主力净流入榜', rows: [mainlineBoard] },
+    { key: 'amount', label: '成交额榜', rows: [mainlineBoard] },
   ],
-  evidence: [
-    {
-      id: 'ev-1',
-      themeCode: 'BK0900',
-      symbol: '605058',
-      sourceKind: 'limit_up_reason',
-      sourceName: '同花顺涨停池',
-      sourceUrl: null,
-      text: 'PCB',
-      publishedAt: null,
-      observedAt: '2026-09-17T14:00:00.000Z',
-      validTradeDate: '20260917',
-      topicKey: null,
-      match: 'ambiguous',
-    },
-  ],
-  coverage: { total: 30, attempted: 25, succeeded: 24, failed: 1, unscanned: 5 },
-  status: 'partial',
-  warnings: ['1 只成员日K取数失败，按「数据缺失」展示，不当作不达标'],
-  error: null,
+  boards: [mainlineBoard],
+  warnings: ['板块宇宙来自同花顺涨停板块 Top 20 的历史并集'],
+  flowAvailable: true,
 };
 
 const json = (body: unknown): Response =>
@@ -257,26 +171,13 @@ const installFetch = () => {
         },
         fetchedAt: '2026-09-17T14:00:00.000Z',
         source: 'eastmoney+10jqka',
+        conclusions: [],
         status: 'fresh',
         error: null,
       });
     }
-    if (url.includes('/detail')) {
-      return json(detailPayload);
-    }
-    if (url.startsWith('/api/themes')) {
-      return json({
-        schemaVersion: 2,
-        tradeDate: '20260917',
-        main: [themeItem],
-        branch: [branchItem],
-        pending: [pendingItem],
-        fetchedAt: '2026-09-17T14:00:00.000Z',
-        source: 'eastmoney+10jqka',
-        status: 'fresh',
-        warnings: [],
-        error: null,
-      });
+    if (url.startsWith('/api/mainline')) {
+      return json(mainlineReport);
     }
     throw new Error(`未预期的请求：${url}`);
   });
@@ -285,13 +186,15 @@ const installFetch = () => {
 };
 
 const Harness = ({
+  initialTab = 'trend' as ScreenerTab,
   onAddToWatchlist = vi.fn(),
   watchlistSymbols = new Set<string>(),
 }: {
+  initialTab?: ScreenerTab;
   onAddToWatchlist?: (stock: { symbol: string; name: string }) => void;
   watchlistSymbols?: ReadonlySet<string>;
 } = {}) => {
-  const [tab, setTab] = useState<ScreenerTab>('trend');
+  const [tab, setTab] = useState<ScreenerTab>(initialTab);
   return (
     <ScreenerPanel
       activeTab={tab}
@@ -311,6 +214,14 @@ describe('ScreenerPanel', () => {
     vi.unstubAllGlobals();
   });
 
+  it('只剩「主线」「趋势」两档，不再有「板块」「细分逻辑」', () => {
+    render(<Harness />);
+    const tabs = screen.getAllByRole('tab').map((tab) => tab.textContent);
+    expect(tabs).toEqual(['主线', '趋势']);
+    expect(screen.queryByRole('tab', { name: '板块' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: '细分逻辑' })).not.toBeInTheDocument();
+  });
+
   it('默认展示趋势页，并且把受限的研究结论收在标题行的警示按钮里', async () => {
     render(<Harness />);
 
@@ -319,154 +230,127 @@ describe('ScreenerPanel', () => {
       screen.getByRole('heading', { name: '趋势形态扫描（不是选股信号）' }),
     ).toBeInTheDocument();
 
-    // 开关是标题行上的警示按钮：默认收起，正文（受限结论）不显示
     const toggle = screen.getByRole('button', { name: /研究结论/ });
-    const header = screen
-      .getByRole('heading', { name: '趋势形态扫描（不是选股信号）' })
-      .closest('.overview__header');
-    expect(header?.contains(toggle)).toBe(true);
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(toggle.getAttribute('title')).toContain('不支持收益优势');
-    expect(toggle.getAttribute('title')).not.toContain('已被本项目回测否定');
-    const panel = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
-    expect(panel?.hasAttribute('hidden')).toBe(true);
-    expect(panel?.textContent ?? '').not.toContain('已被本项目回测否定');
-
     expect(await screen.findByText('高澜股份')).toBeInTheDocument();
   });
 
-  it('切到题材页显示主线 / 支线 / 待确认，点击进入详情', async () => {
+  it('切到主线档：打 /api/mainline，并渲染四榜、反复出现、总览、明细四段', async () => {
     const user = userEvent.setup();
     render(<Harness />);
 
-    await user.click(screen.getByRole('tab', { name: '题材' }));
+    await user.click(screen.getByRole('tab', { name: '主线' }));
 
-    expect(await screen.findByRole('heading', { name: '主线题材' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '支线题材' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '待确认题材' })).toBeInTheDocument();
-    expect(screen.getAllByText('新能源车').length).toBeGreaterThan(0);
+    // 默认回看 5 个交易日
+    await waitFor(() => {
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith('/api/mainline?days=5');
+    });
 
-    await user.click(screen.getByRole('button', { name: '查看 新能源车 的题材详情' }));
+    expect(await screen.findByRole('heading', { name: '主线' })).toBeInTheDocument();
+    expect(screen.getByText('20260914 ~ 20260918（2 个交易日）')).toBeInTheDocument();
 
-    expect(
-      await screen.findByRole('heading', { name: /新能源车 · 概念成员涨停 12 只/ }),
-    ).toBeInTheDocument();
-  });
-
-  it('题材详情只有一张表，没有四个角色页签', async () => {
-    const user = userEvent.setup();
-    render(<Harness />);
-
-    await user.click(screen.getByRole('tab', { name: '题材' }));
-    await user.click(await screen.findByRole('button', { name: '查看 新能源车 的题材详情' }));
-
-    await screen.findByRole('heading', { name: /新能源车 · 概念成员涨停/ });
-
-    for (const label of ['主线龙头', '主线换手核心', '主线趋势中军', '主线低位补涨']) {
-      expect(screen.queryByRole('tab', { name: label })).not.toBeInTheDocument();
+    // 四榜并列
+    for (const label of ['涨幅榜', '涨停家数榜', '主力净流入榜', '成交额榜']) {
+      expect(screen.getByText(label)).toBeInTheDocument();
     }
-    expect(screen.getAllByRole('table')).toHaveLength(1);
-    // 同股双标签只占一行：两个角色标签合并在同一行的「角色」列里
-    const row = document.querySelector('tbody tr');
-    expect(row?.textContent).toContain('澳弘电子');
-    expect(row?.textContent).toContain('龙头候选');
-    expect(row?.textContent).toContain('趋势中军候选');
-    expect(screen.getByText('龙头候选')).toBeInTheDocument();
-    expect(screen.getByText('趋势中军候选')).toBeInTheDocument();
+
+    // 四段标题都在（内容长，靠章节跳转定位）
+    expect(screen.getByRole('heading', { name: /一、四榜并列/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /二、反复出现的板块/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /三、当日板块总览/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /四、重点板块明细/ })).toBeInTheDocument();
+
+    // 总览表有数据，不是空壳
+    const overview = screen.getByRole('heading', { name: /三、当日板块总览/ }).nextElementSibling;
+    const rows = within(overview as HTMLElement).getAllByRole('row');
+    expect(rows.length).toBeGreaterThan(1);
+    expect(within(overview as HTMLElement).getByText('芯片概念')).toBeInTheDocument();
+
+    // 章节跳转按钮
+    for (const label of ['一 · 四榜并列', '二 · 反复出现', '三 · 板块总览', '四 · 重点明细']) {
+      expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+    }
   });
 
-  it('仅概念归属的股票没有确定角色，并标注本轮关联', async () => {
+  it('主线明细：五档阵容、归一后的题材、评分逐项依据都摆出来', async () => {
+    render(<Harness initialTab="mainline" />);
+
+    expect(await screen.findByText('远望谷（6天3板）')).toBeInTheDocument();
+    // 中军不可判定时如实写明，而不是显示「无」
+    expect(screen.getByText('不可判定（成员成交额缺失）')).toBeInTheDocument();
+    // 题材带归一来源
+    expect(screen.getByText('存储')).toBeInTheDocument();
+    expect(screen.getByText(/归一自：存储芯片 \/ 半导体存储/)).toBeInTheDocument();
+    // 评分明细逐项
+    expect(screen.getByText('涨停家数 18，当日第 1 名')).toBeInTheDocument();
+    expect(screen.getByText('成员成交额 / 流通市值缺失，中军不可判定')).toBeInTheDocument();
+  });
+
+  it('主线档回看天数可切：点了 3 天就按 days=3 重新取数', async () => {
     const user = userEvent.setup();
-    render(<Harness />);
+    render(<Harness initialTab="mainline" />);
 
-    await user.click(screen.getByRole('tab', { name: '题材' }));
-    await user.click(await screen.findByRole('button', { name: '查看 新能源车 的题材详情' }));
+    await screen.findByRole('heading', { name: '主线' });
+    await user.click(screen.getByRole('button', { name: '3 天' }));
 
-    expect(await screen.findByText('仅概念股')).toBeInTheDocument();
-    expect(screen.getByText('仅概念归属')).toBeInTheDocument();
-    expect(screen.getByText('仅概念归属，不发确定角色')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith('/api/mainline?days=3');
+    });
   });
 
-  it('覆盖不足时显示 partial 提示与覆盖数，不假装全题材已扫描', async () => {
-    const user = userEvent.setup();
-    render(<Harness />);
-
-    await user.click(screen.getByRole('tab', { name: '题材' }));
-    await user.click(await screen.findByRole('button', { name: '查看 新能源车 的题材详情' }));
-    await screen.findByText('仅概念股');
-
-    // 覆盖不足的说明收在标题旁的警示按钮里：点开才显示
-    const toggle = await screen.findByRole('button', { name: /数据说明与限制/ });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await user.click(toggle);
-    expect(
-      await screen.findByText(/本次结果不完整（有失败或未扫描成员）/),
-    ).toBeInTheDocument();
-
-    const coverageText = document.querySelector('.overview__actions')?.textContent ?? '';
-    expect(coverageText).toContain('未扫描');
-  });
-
-  it('「只看有角色标签」会隐藏无标签成员', async () => {
-    const user = userEvent.setup();
-    render(<Harness />);
-
-    await user.click(screen.getByRole('tab', { name: '题材' }));
-    await user.click(await screen.findByRole('button', { name: '查看 新能源车 的题材详情' }));
-    await screen.findByText('仅概念股');
-
-    await user.click(screen.getByRole('checkbox', { name: '只看有角色标签' }));
-
-    await waitFor(() => expect(screen.queryByText('仅概念股')).not.toBeInTheDocument());
-    expect(document.querySelector('tbody')?.textContent).toContain('澳弘电子');
-  });
-
-  it('键盘可以展开判断详情', async () => {
-    const user = userEvent.setup();
-    render(<Harness />);
-
-    await user.click(screen.getByRole('tab', { name: '题材' }));
-    await user.click(await screen.findByRole('button', { name: '查看 新能源车 的题材详情' }));
-
-    // 点（或聚焦后回车）股票那一行就展开，不再有单独的「展开」按钮
-    const row = (
-      await screen.findByText('澳弘电子', { exact: false, selector: '.stock-identity__name' })
-    ).closest('tr') as HTMLTableRowElement;
-    row.focus();
-    await user.keyboard('{Enter}');
-
-    expect(await screen.findByText(/本轮关联依据/)).toBeInTheDocument();
-    expect(screen.getByText(/缺少分钟级带动证据/)).toBeInTheDocument();
-  });
-
-  it('数据不可用时给出可见提示而不是白屏', async () => {
+  it('主线取数失败时显示失败原因，不拿旧数据顶上', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => json({ message: '上游失败' })),
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.startsWith('/api/mainline')) {
+          return new Response('boom', { status: 502 });
+        }
+        throw new Error(`未预期的请求：${url}`);
+      }),
     );
 
-    render(<Harness />);
+    render(<Harness initialTab="mainline" />);
 
-    await waitFor(() => expect(screen.getByText('形态扫描暂不可用。')).toBeInTheDocument());
-    expect(screen.getByRole('tab', { name: '题材' })).toBeInTheDocument();
+    expect(await screen.findByText('主线数据拉取失败。')).toBeInTheDocument();
+    expect(screen.getByText(/主线报告请求失败/)).toBeInTheDocument();
+    // 失败态不能混进「没有数据」或「正在加载」
+    expect(screen.queryByText(/正在拉取主线数据/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/拉取完成，但当前窗口内没有可用的主线数据/)).not.toBeInTheDocument();
   });
 
-  it('趋势表与题材详情每行末尾都有「添加自选」，已在自选的置灰', async () => {
-    const user = userEvent.setup();
-    const onAddToWatchlist = vi.fn();
-    render(
-      <Harness onAddToWatchlist={onAddToWatchlist} watchlistSymbols={new Set(['605058'])} />,
+  it('加载中显示「正在拉取」，不说「没有数据」（取数约 7 秒，两者必须分开）', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.startsWith('/api/mainline')) {
+          await gate;
+          return json(mainlineReport);
+        }
+        throw new Error(`未预期的请求：${url}`);
+      }),
     );
 
-    // 趋势表：不在自选 → 可点，回调拿到代码与名称
-    await user.click(await screen.findByRole('button', { name: '添加 高澜股份 到自选' }));
-    expect(onAddToWatchlist).toHaveBeenCalledWith({ symbol: '300499', name: '高澜股份' });
+    render(<Harness initialTab="mainline" />);
 
-    // 题材详情：605058 已在自选 → 置灰；另一只仍可点
-    await user.click(screen.getByRole('tab', { name: '题材' }));
-    await user.click(await screen.findByRole('button', { name: '查看 新能源车 的题材详情' }));
+    // 请求还在飞：只能说「正在拉取」
+    expect(await screen.findByText(/正在拉取主线数据/)).toBeInTheDocument();
+    expect(screen.getByText('正在拉取')).toBeInTheDocument();
+    expect(screen.queryByText(/暂时没有主线数据/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/拉取完成，但当前窗口内没有可用的主线数据/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '刷新中…' })).toBeDisabled();
 
-    expect(await screen.findByRole('button', { name: '澳弘电子 已在自选' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: '添加 仅概念股 到自选' })).toBeEnabled();
+    release();
+
+    // 拉完了才出数据，加载文案消失
+    expect(await screen.findByRole('heading', { name: /三、当日板块总览/ })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText(/正在拉取主线数据/)).not.toBeInTheDocument();
+    });
   });
 });

@@ -1,5 +1,5 @@
 import type { ThemeItem, ThemesResponse } from '../types';
-import { THEME_EVIDENCE } from '../lib/screener';
+import { THEME_EVIDENCE, TOPIC_EVIDENCE } from '../lib/screener';
 import { WarningNotesPanel, WarningNotesToggle, useWarningNotes } from './WarningNotes';
 
 type ThemeBoardProps = {
@@ -31,7 +31,17 @@ const MetricDots = ({ theme }: { theme: ThemeItem }) => (
 );
 
 const CountSummary = ({ theme }: { theme: ThemeItem }) =>
-  theme.source === 'topic' ? (
+  theme.source === 'ths' ? (
+    <span className="theme-card__counts">
+      <span title="同花顺口径的当日涨停家数（上游 limit_up_num）">
+        涨停 <b>{theme.limitUpCount}</b> 家
+      </span>
+      <span title="其中连板家数（上游 continuous_plate_num）">
+        连板 <b>{theme.continuousCount}</b> 只
+      </span>
+      {/* 最高板 / 持续天数在下一条 stats 行里，这里不重复摆 */}
+    </span>
+  ) : theme.source === 'topic' ? (
     <span className="theme-card__counts">
       <span title="当日涨停原因含该逻辑的涨停股数">涨停 <b>{theme.limitUpCount}</b> 家</span>
       <span title="其中连板（≥2 板）的家数">连板 <b>{theme.continuousCount}</b> 只</span>
@@ -66,13 +76,13 @@ const ThemeCard = ({
     className={`theme-card theme-card--${tone}`}
     type="button"
     onClick={() => onSelect(theme)}
-    aria-label={`查看 ${theme.name} 的题材详情`}
+    aria-label={`查看 ${theme.name} 的板块详情`}
   >
     <span className="theme-card__head">
       <span className="theme-card__name">{theme.name}</span>
       <span
         className={`theme-card__pct${(theme.pct ?? 0) >= 0 ? ' is-up' : ' is-down'}`}
-        title={theme.source === 'topic' ? '成员当日平均涨幅（题材没有板块涨幅）' : '板块涨跌幅'}
+        title={theme.source === 'topic' ? '成员当日平均涨幅（细分逻辑没有板块涨幅）' : '板块涨跌幅'}
       >
         {formatPct(theme.pct)}
       </span>
@@ -85,18 +95,31 @@ const ThemeCard = ({
       <span>
         持续 <b>{theme.durationDays}</b> 天
       </span>
-      <span title="8 项指标里当前可判断且命中的数量（题材口径下成交额 / 市场影响力不可用）">
-        {theme.source === 'topic' ? '指标' : '旧口径'} <b>{theme.score}/8</b>
-      </span>
+      {/* 同花顺口径没有那 8 项旧指标，这一格直接不摆 */}
+      {theme.source === 'ths' ? null : (
+        <span
+          title={
+            theme.source === 'topic'
+              ? '8 项指标里当前可判断且命中的数量（细分逻辑口径下成交额 / 市场影响力不可用）'
+              : '8 项指标里当前可判断且命中的数量（旧口径，只作观察，不决定主线 / 支线）'
+          }
+        >
+          {theme.source === 'topic' ? '指标' : '旧口径'} <b>{theme.score}/8</b>
+        </span>
+      )}
     </span>
     {theme.classificationReasons.length > 0 ? (
       <span className="theme-card__reason">{theme.classificationReasons.join('；')}</span>
     ) : null}
     <span className="theme-card__foot">
-      <MetricDots theme={theme} />
-      <span className="theme-card__leader">
-        {theme.leader ? `高度标杆 ${theme.leader.name}` : '高度标杆 —'}
-      </span>
+      {theme.source === 'ths' ? null : (
+        <>
+          <MetricDots theme={theme} />
+          <span className="theme-card__leader">
+            {theme.leader ? `高度标杆 ${theme.leader.name}` : '高度标杆 —'}
+          </span>
+        </>
+      )}
     </span>
   </button>
 );
@@ -112,15 +135,21 @@ export const ThemeBoard = ({ data, isRefreshing, onRefresh, onSelect }: ThemeBoa
         <div className="overview__header">
           <div>
             <p className="eyebrow">
-              {data.scope === 'topic' ? '主线题材 · 当日 ≥5 家且前两日各 ≥2' : '主线题材 · 当日概念家数前 3'}
+              {data.scope === 'ths'
+                ? '主线板块 · 同花顺涨停家数前 3（该榜只有 Top 20）'
+                : data.scope === 'topic'
+                  ? '主线题材 · 当日 ≥5 家且前两日各 ≥2'
+                  : '主线板块 · 当日概念家数前 3'}
             </p>
             <div className="theme-title-row">
-              <h2 id="theme-main-title">主线题材</h2>
+              <h2 id="theme-main-title">
+                {data.scope === 'topic' ? '主线题材' : '主线板块'}
+              </h2>
               {/* 按钮紧跟标题；正文面板在表头外面（见下方），展开不会挤动右侧刷新按钮 */}
               <WarningNotesToggle
                 title="数据说明与限制"
                 count={data.warnings.length}
-                tooltip="题材家数 / 归属缺口与口径限制；覆盖不足的部分不做结论"
+                tooltip="板块家数 / 归属缺口与口径限制；覆盖不足的部分不做结论"
                 open={notes.open}
                 panelId={notes.panelId}
                 onToggle={notes.toggle}
@@ -142,7 +171,7 @@ export const ThemeBoard = ({ data, isRefreshing, onRefresh, onSelect }: ThemeBoa
               onClick={onRefresh}
               disabled={isRefreshing}
             >
-              {isRefreshing ? '刷新中…' : '刷新题材'}
+              {isRefreshing ? '刷新中…' : data.scope === 'topic' ? '刷新题材' : '刷新板块'}
             </button>
           </div>
         </div>
@@ -151,7 +180,9 @@ export const ThemeBoard = ({ data, isRefreshing, onRefresh, onSelect }: ThemeBoa
         <WarningNotesPanel panelId={notes.panelId} open={notes.open}>
           {data.status === 'partial' ? (
             <p className="warning-notes__headline">
-              题材数据部分可用：有家数或归属缺口，覆盖不足的部分不做结论。
+              {data.scope === 'ths'
+                ? '板块数据部分可用：同花顺这个榜只有涨停板块 Top 20，没进榜的板块不在这里，覆盖不足的部分不做结论。'
+                : '板块数据部分可用：有家数或归属缺口，覆盖不足的部分不做结论。'}
             </p>
           ) : null}
           {data.warnings.length > 0 ? (
@@ -163,25 +194,28 @@ export const ThemeBoard = ({ data, isRefreshing, onRefresh, onSelect }: ThemeBoa
           ) : null}
         </WarningNotesPanel>
 
-        <p className="status-note">{THEME_EVIDENCE}</p>
+        {/* 口径说明按当前档切换：板块档讲同花顺 Top 20，细分逻辑档讲涨停原因标签 */}
+        <p className="status-note">
+          {data.scope === 'topic' ? TOPIC_EVIDENCE : THEME_EVIDENCE}
+        </p>
 
         {data.status === 'stale' ? (
           <div className="banner banner--warning" role="status">
-            <p>题材数据已过期，展示的是上一轮成功结果。</p>
+            <p>板块数据已过期，展示的是上一轮成功结果。</p>
             {data.error ? <p className="status-note">{data.error}</p> : null}
           </div>
         ) : null}
 
         {data.status === 'unavailable' ? (
           <div className="banner banner--warning" role="status">
-            <p>题材数据暂不可用。</p>
+            <p>板块数据暂不可用。</p>
             {data.error ? <p className="status-note">{data.error}</p> : null}
           </div>
         ) : null}
 
         {!hasData ? (
           <div className="empty-state empty-state--subtle">
-            <p>{isRefreshing ? '正在扫描题材…' : '暂无题材数据（可能不是交易日）'}</p>
+            <p>{isRefreshing ? '正在扫描板块…' : '暂无板块数据（可能不是交易日）'}</p>
           </div>
         ) : (
           <div className="theme-grid">
@@ -196,11 +230,12 @@ export const ThemeBoard = ({ data, isRefreshing, onRefresh, onSelect }: ThemeBoa
         <section className="card" aria-labelledby="theme-branch-title">
           <div className="overview__header">
             <div>
-              <p className="eyebrow">支线题材</p>
-              <h2 id="theme-branch-title">支线题材</h2>
+              <p className="eyebrow">{data.scope === 'topic' ? '支线题材' : '支线板块'}</p>
+              <h2 id="theme-branch-title">{data.scope === 'topic' ? '支线题材' : '支线板块'}</h2>
             </div>
             <p className="overview__meta">
               共 <span>{data.branch.length} 个</span>
+              {data.scope === 'ths' ? '（同花顺 Top 20 里剩下的）' : null}
             </p>
           </div>
           <div className="theme-branch-list">
@@ -216,7 +251,9 @@ export const ThemeBoard = ({ data, isRefreshing, onRefresh, onSelect }: ThemeBoa
           <div className="overview__header">
             <div>
               <p className="eyebrow">待确认</p>
-              <h2 id="theme-pending-title">待确认题材</h2>
+              <h2 id="theme-pending-title">
+                {data.scope === 'topic' ? '待确认题材' : '待确认板块'}
+              </h2>
             </div>
             <p className="overview__meta">
               共 <span>{data.pending.length} 个</span>（证据或覆盖不足，既不算主线也不自动降为支线）

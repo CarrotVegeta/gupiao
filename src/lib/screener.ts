@@ -2,11 +2,13 @@ import type {
   CheckResult,
   CheckState,
   Evidence,
+  MainlineReport,
   Quote,
   RelationState,
   RoleTag,
   ScanCoverage,
   ScreenerDataStatus,
+  ScreenerSource,
   ThemeDetailResponseV2,
   ThemeItem,
   ThemeMetric,
@@ -18,7 +20,17 @@ import type {
 } from '../types';
 
 const THEMES_ENDPOINT = '/api/themes';
+/**
+ * 选股页「板块」档的数据源：**同花顺涨停板块 Top 20**（`block_top`）。
+ * 东财板块（`/api/themes/boards`）与细分逻辑（`/api/themes`）两个口径的接口都还在，
+ * 只是页面不再使用；三者的差别见 `server/themes/thsBoard.ts` 顶部与页头说明。
+ */
+const THEMES_BOARD_ENDPOINT = `${THEMES_ENDPOINT}/ths`;
+/** 同花顺板块成员详情（成员 = 该板块当日涨停股） */
+const THS_BOARD_DETAIL_ENDPOINT = '/api/ths-boards';
 const TREND_ENDPOINT = '/api/screener/trend';
+/** 选股页「主线」档：四榜 + 反复出现 + 梯队 + 题材 + 评分（多日口径） */
+const MAINLINE_ENDPOINT = '/api/mainline';
 const FORMAT_ERROR = '选股响应数据格式错误';
 
 /**
@@ -39,12 +51,26 @@ export const TREND_EVIDENCE = {
 } as const;
 
 export const THEME_EVIDENCE =
-  '题材口径（2026-09-18 起）：题材单位是**涨停原因里的细分逻辑**（如「光通信」「先进封装」），' +
-  '不是东财宽概念板块——宽概念的家数等于子题材并集，按家数排名必然选出「华为概念 / 人工智能」这种凑数的宽概念。' +
-  '家数与持续性都按各日自己的涨停原因统计，没有「用当前成分股回算历史」的前视偏差；' +
-  'K线形态 / 角色标签 / 风险核验尚未在题材口径接入，按缺失披露。' +
-  '另外，原板块口径的「主线」回测只有微弱正超额（B 档 T+1 +0.059%，t=2.03）、样本外衰减且低于手续费，' +
-  '细分逻辑口径本身尚未回测。以上都只是结构展示，不构成买入建议。';
+  '板块口径（2026-09-18 起）：**同花顺概念板块**（`block_top`），家数 / 连板 / 最高板 / 持续天数' +
+  '都是同花顺自己的口径，成员 = 该板块**当日涨停股**（连涨停原因、首封时间一起给）。' +
+  '**这套榜只看涨停板块 Top 20，参数无效**：第 20 名之后的板块（含只有 2~4 家涨停的支线）看不到，' +
+  '所以它回答的是「今天涨停最集中在哪些同花顺板块」，不是全部板块的全景。' +
+  '同花顺、东财、财联社的板块划分各不相同（同名的不到三分之一），家数不可跨源对齐；' +
+  '这一档也没有「驱动有依据 / 角色标签 / 风险核验」，一律按缺失展示。' +
+  '板块轮动节奏去「轮动」页看（财联社，30 天历史）。以上都只是结构展示，不构成买入建议。';
+
+/**
+ * 「细分逻辑」档的口径说明：这一档不按板块数家数，而是统计**当日涨停原因标签**。
+ * 它回答的是「今天在炒什么」，三张榜里只有它能回答这个；代价是家数天然小
+ * （同一只票的多个标签各自成题），所以经常显示「主线 0 个」——那本身是结论。
+ */
+export const TOPIC_EVIDENCE =
+  '细分逻辑口径（2026-09-18）：单位是**涨停原因标签**（如「上海国资」「人形机器人」），不是板块。' +
+  '板块口径的家数等于子题材并集，按家数排名必然被宽概念占满（同一天「华为概念 16 家」里，' +
+  '各只票的涨停原因彼此无关）。家数与持续性都按各日自己的涨停原因统计，' +
+  '没有「用当前成分股回算历史」的前视偏差；代价是家数天然小，常常只有 2~3 家，' +
+  '所以「主线 0 个」经常出现——那就是结论：今天没有一条集中且连续的逻辑。' +
+  '该口径尚未回测，只作结构观察；不构成买入建议。';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -89,9 +115,12 @@ const isStringArray = (value: unknown): value is string[] =>
 const isThemeItem = (value: unknown): value is ThemeItem =>
   isRecord(value) &&
   typeof value.code === 'string' &&
-  // 板块口径是 BK 代码；细分逻辑口径是 TP: + 涨停原因标签
-  /^(BK\d{4}|TP:.+)$/.test(value.code) &&
-  (value.source === undefined || value.source === 'board' || value.source === 'topic') &&
+  // 同花顺板块是 THS: + 5~6 位数字；东财是 BK****；细分逻辑是 TP: + 标签
+  /^(BK\d{4}|TP:.+|THS:\d{5,6})$/.test(value.code) &&
+  (value.source === undefined ||
+    value.source === 'board' ||
+    value.source === 'topic' ||
+    value.source === 'ths') &&
   typeof value.name === 'string' &&
   (value.kind === 'main' || value.kind === 'branch') &&
   isNullableNumber(value.pct) &&
@@ -219,22 +248,31 @@ const isTrendPick = (value: unknown): value is TrendPick =>
   Array.isArray(value.unmatched);
 
 // ---------------------------------------------------------------------------
-// 题材总览
+// 板块总览（选股页「板块」档）
 // ---------------------------------------------------------------------------
 
-export const unavailableThemes = (error: string | null = FORMAT_ERROR): ThemesResponse => ({
+export const unavailableThemes = (
+  error: string | null = FORMAT_ERROR,
+  // 空壳的 scope 决定页头文案走哪一支（加载中 / 失败时也要显示对的措辞）
+  scope: NonNullable<ThemesResponse['scope']> = 'ths',
+): ThemesResponse => ({
   schemaVersion: 2,
-  scope: 'topic',
+  scope,
   tradeDate: null,
   main: [],
   branch: [],
   pending: [],
   fetchedAt: new Date().toISOString(),
-  source: 'eastmoney+10jqka',
+  source: scope === 'ths' ? '10jqka' : 'eastmoney+10jqka',
   status: 'unavailable',
   warnings: [],
   error,
 });
+
+const readScreenerSource = (value: unknown): ScreenerSource =>
+  value === 'eastmoney' || value === 'eastmoney+10jqka+tencent' || value === '10jqka'
+    ? value
+    : 'eastmoney+10jqka';
 
 export const toThemesResponse = (payload: unknown): ThemesResponse => {
   if (
@@ -251,7 +289,12 @@ export const toThemesResponse = (payload: unknown): ThemesResponse => {
     !isParseableDateTime(payload.fetchedAt) ||
     !isStringArray(payload.warnings) ||
     !(typeof payload.error === 'string' || payload.error === null) ||
-    !(payload.scope === undefined || payload.scope === 'board' || payload.scope === 'topic')
+    !(
+      payload.scope === undefined ||
+      payload.scope === 'board' ||
+      payload.scope === 'topic' ||
+      payload.scope === 'ths'
+    )
   ) {
     return unavailableThemes(FORMAT_ERROR);
   }
@@ -267,28 +310,93 @@ export const toThemesResponse = (payload: unknown): ThemesResponse => {
 
   return {
     schemaVersion: 2,
-    // 缺省按 board 处理：没有 scope 的响应都是题材页切到 TP 口径之前的旧板块快照
-    scope: payload.scope === 'topic' ? 'topic' : 'board',
+    // 缺省按 board 处理：没有 scope 的响应都是更早那两个口径的旧快照
+    scope:
+      payload.scope === 'ths' ? 'ths' : payload.scope === 'topic' ? 'topic' : 'board',
     tradeDate: payload.tradeDate,
     main: payload.main,
     branch: payload.branch,
     pending: payload.pending,
     fetchedAt: payload.fetchedAt,
-    source: 'eastmoney+10jqka',
+    source: readScreenerSource(payload.source),
     status: payload.status,
     warnings: payload.warnings,
     error: payload.error,
   };
 };
 
+/** 选股页「板块」档：同花顺涨停板块 Top 20 */
 export const fetchThemes = async (
   date?: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<ThemesResponse> => {
   const url =
-    typeof date === 'string' ? `${THEMES_ENDPOINT}?date=${encodeURIComponent(date)}` : THEMES_ENDPOINT;
+    typeof date === 'string'
+      ? `${THEMES_BOARD_ENDPOINT}?date=${encodeURIComponent(date)}`
+      : THEMES_BOARD_ENDPOINT;
   const response = await fetchImpl(url);
-  if (!response.ok) throw new Error(`题材请求失败（${response.status}）`);
+  if (!response.ok) throw new Error(`板块请求失败（${response.status}）`);
+
+  try {
+    return toThemesResponse(await response.json());
+  } catch {
+    throw new Error(FORMAT_ERROR);
+  }
+};
+
+/**
+ * 选股页「主线」档：一次拿到四榜 + 反复出现 + 梯队 + 题材 + 评分（`/api/mainline`）。
+ *
+ * 这一档是**多日口径**：`days` 决定回看多少个交易日，用来算「连续上榜」与
+ * 「分歧后回流」——这两件事单日算不出来。
+ */
+export const fetchMainline = async (
+  options: { days?: number; date?: string } = {},
+  fetchImpl: typeof fetch = fetch,
+): Promise<MainlineReport> => {
+  const params = new URLSearchParams();
+  params.set('days', String(options.days ?? 5));
+  if (typeof options.date === 'string' && options.date !== '') params.set('date', options.date);
+
+  const response = await fetchImpl(`${MAINLINE_ENDPOINT}?${params.toString()}`);
+  if (!response.ok) throw new Error(`主线报告请求失败（${response.status}）`);
+
+  const payload: unknown = await response.json();
+  if (typeof payload !== 'object' || payload === null || !Array.isArray((payload as MainlineReport).boards)) {
+    throw new Error(FORMAT_ERROR);
+  }
+  const report = payload as MainlineReport;
+  if (report.tradeDates.length === 0 || typeof report.latestDate !== 'string') {
+    throw new Error(FORMAT_ERROR);
+  }
+  return report;
+};
+
+/** 拉不到数据时用来占位，界面按「不可用」渲染 */
+export const unavailableMainline = (latestDate = '—'): MainlineReport => ({
+  tradeDates: [],
+  latestDate,
+  ranks: [],
+  boards: [],
+  warnings: [],
+  flowAvailable: false,
+});
+
+
+/**
+ * 选股页「细分逻辑」档：**当日涨停原因标签**的家数与持续性（`/api/themes`）。
+ *
+ * 这一档不看板块名，直接回答「今天在炒什么」；代价是家数天然比板块口径小
+ * （同一只票的多个原因标签各自成题），所以它常常显示出「主线为 0」——
+ * 那本身就是结论：今天没有一条集中且连续的逻辑。
+ */
+export const fetchTopicThemes = async (
+  date?: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<ThemesResponse> => {
+  const url = typeof date === 'string' ? `${THEMES_ENDPOINT}?date=${encodeURIComponent(date)}` : THEMES_ENDPOINT;
+  const response = await fetchImpl(url);
+  if (!response.ok) throw new Error(`细分逻辑请求失败（${response.status}）`);
 
   try {
     return toThemesResponse(await response.json());
@@ -320,7 +428,7 @@ export const mergeThemes = (
 };
 
 // ---------------------------------------------------------------------------
-// 题材详情（v2：一张表 + 角色标签）
+// 板块 / 题材详情（v2：一张表 + 角色标签）
 // ---------------------------------------------------------------------------
 
 export const unavailableThemeDetail = (
@@ -386,7 +494,7 @@ export const toThemeDetailResponse = (payload: unknown): ThemeDetailResponseV2 =
   };
 };
 
-/** 题材详情请求：支持 AbortSignal，用于「最新请求保护」 */
+/** 详情请求：支持 AbortSignal，用于「最新请求保护」 */
 export const fetchThemeDetail = async (
   code: string,
   date?: string,
@@ -396,15 +504,18 @@ export const fetchThemeDetail = async (
   const params = new URLSearchParams();
   if (typeof date === 'string') params.set('date', date);
   const query = params.toString();
-  // 细分逻辑题材走 /api/topics/:key/detail；板块口径走 /api/themes/:code/detail
-  const endpoint = code.startsWith('TP:')
-    ? `/api/topics/${encodeURIComponent(code.slice(3))}/detail`
-    : `${THEMES_ENDPOINT}/${encodeURIComponent(code)}/detail`;
+  // 同花顺板块（选股页在用）走 /api/ths-boards/:code/detail；
+  // 细分逻辑走 /api/topics/:key/detail；东财板块走 /api/themes/:code/detail
+  const endpoint = code.startsWith('THS:')
+    ? `${THS_BOARD_DETAIL_ENDPOINT}/${encodeURIComponent(code.slice(4))}/detail`
+    : code.startsWith('TP:')
+      ? `/api/topics/${encodeURIComponent(code.slice(3))}/detail`
+      : `${THEMES_ENDPOINT}/${encodeURIComponent(code)}/detail`;
   const response = await fetchImpl(
     `${endpoint}${query ? `?${query}` : ''}`,
     signal ? { signal } : undefined,
   );
-  if (!response.ok) throw new Error(`题材详情请求失败（${response.status}）`);
+  if (!response.ok) throw new Error(`板块详情请求失败（${response.status}）`);
 
   try {
     return toThemeDetailResponse(await response.json());

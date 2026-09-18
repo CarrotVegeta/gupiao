@@ -147,6 +147,13 @@ const limitUpResponseFixture = (overrides: Partial<LimitUpResponse> = {}): Limit
       lastSealTime: '14:42:10',
       industry: '食品饮料',
       breakCount: 1,
+      // 涨停原因 / 封单 / 换手由同花顺涨停池 join 补上（东财池没有这些字段）
+      reason: '光通信+AI赋能',
+      reasonText: '据公告，公司拟收购光泰通信 100% 股权。',
+      sealAmount: 5e7,
+      openCount: 1,
+      turnoverRate: 7.5,
+      floatMarketCap: 8e9,
     },
     {
       symbol: '000017',
@@ -1494,6 +1501,29 @@ section[aria-labelledby='limit-up-list-title'] tbody td {
   text-align: left;
 }`,
     );
+    /*
+     * 股票列必须显式给 width（值＝原来的 min-width）：表格是 width:100%，
+     * 其它列要么是 nowrap 的数字、要么是定尺的分时图，多出来的宽度只能全落到
+     * 唯一可压缩的股票列上，名称和分时图之间就空出一条。jsdom 不算表格布局，
+     * 所以这条只能靠 CSS 文本断言守住。
+     */
+    expect(styles).toContain(
+      `.quote-table thead th:first-child,
+.quote-table tbody th {
+  width: 132px;
+}`,
+    );
+    // 名称不折行 + 标签可压缩：窄列里先截标签，不折名称（折名称会把行高顶开）
+    expect(styles).toContain(
+      `.quote-table tbody th .stock-identity__name {
+  white-space: nowrap;
+}`,
+    );
+    expect(styles).toContain(
+      `.quote-table tbody th .stock-tag {
+  min-width: 0;
+}`,
+    );
     expect(styles).toContain(
       `section[aria-labelledby='limit-up-list-title'] thead th:first-child,
 section[aria-labelledby='limit-up-list-title'] tbody th {
@@ -1726,6 +1756,12 @@ section[aria-labelledby='limit-up-list-title'] tbody th {
     expect(screen.getAllByText('涨跌额')).toHaveLength(4);
     expect(screen.getAllByText('涨跌幅')).toHaveLength(4);
     expect(screen.queryByText('点位')).not.toBeInTheDocument();
+    // 财联社情绪行（封板率 / 高开率 / 获利率 / 连板梯队）已从这块面板去掉：
+    // 只有当天快照、口径也与这里的自算口径不同，改到「轮动」页看（见 RotationPage.test.tsx）
+    expect(screen.queryByText('封板率')).not.toBeInTheDocument();
+    expect(screen.queryByText('高开率')).not.toBeInTheDocument();
+    expect(screen.queryByText('获利率')).not.toBeInTheDocument();
+    expect(screen.queryByText('连板')).not.toBeInTheDocument();
   });
 
   it('renders stale and unavailable market indices with neutral semantics', () => {
@@ -1830,11 +1866,14 @@ section[aria-labelledby='limit-up-list-title'] tbody th {
     expect(screen.getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([
       '股票',
       '连板',
+      '涨停原因',
       '板块',
       '最新价',
       '涨跌幅',
       '首次封板',
       '最后封板',
+      '封单',
+      '换手',
       '炸板次数',
       '自选',
     ]);
@@ -1847,7 +1886,12 @@ section[aria-labelledby='limit-up-list-title'] tbody th {
     expect(rows[1]).toHaveTextContent('食品饮料');
     expect(rows[1]).toHaveTextContent('12.27');
     expect(rows[1]).toHaveTextContent('+10.04%');
+    // 涨停原因由同花顺补齐（夹具里这只票给了原因）；没有的票显示「—」
+    expect(rows[1]).toHaveTextContent('光通信+AI赋能');
     expect(Array.from(rows[2].querySelectorAll('td')).map((cell) => cell.textContent)).toEqual([
+      '—',
+      '—',
+      '—',
       '—',
       '—',
       '—',
@@ -2095,7 +2139,7 @@ section[aria-labelledby='limit-up-list-title'] tbody th {
 });
 
 // ---------------------------------------------------------------------------
-// 警示按钮：题材页与趋势页共用的「⚠ 标题 ▸」+ 面板
+// 警示按钮：板块页与趋势页共用的「⚠ 标题 ▸」+ 面板
 // ---------------------------------------------------------------------------
 
 describe('WarningNotes', () => {

@@ -167,7 +167,7 @@ const json = (body: unknown): Response =>
     headers: { 'Content-Type': 'application/json' },
   });
 
-/** 可控 deferred：用于断言乱序返回不会串题材 */
+/** 可控 deferred：用于断言乱序返回不会串板块 */
 const deferred = () => {
   let resolve!: (value: Response) => void;
   const promise = new Promise<Response>((res) => {
@@ -297,14 +297,14 @@ describe('ThemeDetail', () => {
     );
     renderDetail(themeItem('BK0900', '新能源车'));
 
-    expect(await screen.findByText('该题材数据暂不可用。')).toBeInTheDocument();
+    expect(await screen.findByText('该板块数据暂不可用。')).toBeInTheDocument();
     expect(
       screen.getByText('数据不可用，无法展示股票明细。'),
     ).toBeInTheDocument();
     expect(screen.queryByText(/硬条件/)).toBeNull();
   });
 
-  it('A→B 切换题材时，A 的请求晚返回不会覆盖 B 的结果', async () => {
+  it('A→B 切换板块时，A 的请求晚返回不会覆盖 B 的结果', async () => {
     const first = deferred();
     const second = deferred();
     const impl = vi.fn(async (input: RequestInfo | URL) => {
@@ -320,7 +320,7 @@ describe('ThemeDetail', () => {
       return (
         <>
           <button type="button" onClick={() => setCode('BK0590')}>
-            切换到另一个题材
+            切换到另一个板块
           </button>
           <ThemeDetail
             theme={themeItem(code, code === 'BK0900' ? '新能源车' : '西部大开发')}
@@ -337,7 +337,7 @@ describe('ThemeDetail', () => {
 
     // 等 A 的请求发出后再切到 B
     await waitFor(() => expect(impl).toHaveBeenCalledTimes(1));
-    await user.click(screen.getByRole('button', { name: '切换到另一个题材' }));
+    await user.click(screen.getByRole('button', { name: '切换到另一个板块' }));
     await waitFor(() => expect(impl).toHaveBeenCalledTimes(2));
 
     // B 先返回，A 后返回：最终必须显示 B 的成员
@@ -351,7 +351,7 @@ describe('ThemeDetail', () => {
     expect(screen.getByText('B题材成员')).toBeInTheDocument();
   });
 
-  it('切换题材时不同键结果不会被当成当前结果（先显示加载态）', async () => {
+  it('切换板块时不同键结果不会被当成当前结果（先显示加载态）', async () => {
     const first = deferred();
     const second = deferred();
     const impl = vi.fn(async (input: RequestInfo | URL) => {
@@ -384,7 +384,7 @@ describe('ThemeDetail', () => {
 
     await user.click(screen.getByRole('button', { name: '切换' }));
     await waitFor(() => expect(screen.queryByText('甲股票')).not.toBeInTheDocument());
-    expect(screen.getByText('该题材数据暂不可用。')).toBeInTheDocument();
+    expect(screen.getByText('该板块数据暂不可用。')).toBeInTheDocument();
 
     second.resolve(
       json(detailPayload('BK0590', '西部大开发', [membershipRow('600002', 'B题材成员')])),

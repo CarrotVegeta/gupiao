@@ -171,7 +171,7 @@ describe('TrendScanner', () => {
     expect(headers).toContain('股票');
     expect(headers).toContain('板块');
     expect(headers.join(' ')).not.toContain('所属主线板块');
-    // 空题材不再冒充板块
+    // 空板块不冒充上游行业归属
     expect(document.body.textContent).not.toContain('全市场口径');
 
     // 股票列只有股票本身，板块列是上游给的行业归属
@@ -218,7 +218,7 @@ describe('TrendScanner', () => {
 
     // 界面上不再有板块范围下拉框
     expect(screen.queryByRole('combobox', { name: '板块范围' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: '仅主线题材' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: '仅主线板块' })).not.toBeInTheDocument();
     expect(screen.queryByRole('option', { name: '全市场（对照）' })).not.toBeInTheDocument();
     // 「候选范围」与「生效条件」在折叠的条件区里；拉日K深度是另一档（默认 260 只）
     const settings = document.querySelector('.trend-settings');

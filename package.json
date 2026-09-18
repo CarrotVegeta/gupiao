@@ -8,7 +8,8 @@
     "build": "node scripts/clean-dist-server.mjs && tsc -b tsconfig.json tsconfig.server.json && vite build",
     "typecheck": "tsc -b --pretty false tsconfig.json tsconfig.server.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "mainline": "tsx scripts/mainline-report.ts"
   },
   "dependencies": {
     "express": "latest",

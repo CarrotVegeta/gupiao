@@ -42,6 +42,7 @@ const row = (
   floatMarketCap: 5e9,
   turnoverRate: 8,
   reasonTags: tags,
+  reasonText: `原因：${tags.join('+')}`,
   intraday: [],
 });
 

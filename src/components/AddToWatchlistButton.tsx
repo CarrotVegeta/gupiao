@@ -2,7 +2,7 @@
  * 选股列表每行末尾的「添加自选」按钮。
  *
  * 已经在自选里的股票按钮置灰并显示「已在自选」，重复添加没有意义；
- * 点击时要 stopPropagation：题材详情的整行本身就是展开开关，
+ * 点击时要 stopPropagation：板块详情的整行本身就是展开开关，
  * 不加这一句点按钮会连详情一起展开。
  */
 type AddToWatchlistButtonProps = {

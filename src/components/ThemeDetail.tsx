@@ -17,8 +17,8 @@ import { formatPrice } from '../lib/quotes';
 type ThemeDetailProps = {
   theme: ThemeItem;
   /**
-   * 保留但不再使用：详情页的「← 返回题材列表」按钮已去掉，
-   * 回列表改由点「题材」标签页承担（ScreenerPanel 会清掉选中项）。
+   * 保留但不再使用：详情页的「← 返回板块列表」按钮已去掉，
+   * 回列表改由点「板块」标签页承担（ScreenerPanel 会清掉选中项）。
    * 字段留着是为了不打断既有调用方。
    */
   onBack?: () => void;
@@ -60,6 +60,20 @@ const formatSignedPercent = (value: number | null): string =>
 const formatAmount = (value: number | null): string =>
   value === null || !Number.isFinite(value) ? '—' : `${(value / 1e8).toFixed(2)} 亿`;
 
+/** 封单额 / 流通市值：亿 / 万（和行情软件口径一致） */
+const formatMoney = (value: number | null | undefined): string => {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+  if (value >= 100_000_000) return `${(value / 100_000_000).toFixed(2)}亿`;
+  if (value >= 10_000) return `${Math.round(value / 10_000)}万`;
+  return String(Math.round(value));
+};
+
+const formatRatio = (value: number | null | undefined): string =>
+  value === null || value === undefined || !Number.isFinite(value) ? '—' : `${value.toFixed(1)}%`;
+
+const formatCount = (value: number | null | undefined): string =>
+  value === null || value === undefined || !Number.isFinite(value) ? '—' : String(value);
+
 const pctClass = (value: number | null): string =>
   value === null || !Number.isFinite(value) ? '' : value >= 0 ? ' is-up' : ' is-down';
 
@@ -67,6 +81,29 @@ const formatTradeDate = (value: string | null): string =>
   value !== null && /^\d{8}$/.test(value)
     ? `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`
     : '—';
+
+/**
+ * 标题后缀按口径分开写，别混着读：
+ *   - 同花顺：涨停家数（上游 limit_up_num），成员是「该板块当日涨停股」
+ *   - 细分逻辑：涨停家数（当日涨停原因含该逻辑的股票）
+ *   - 东财：概念成员涨停数（含仅概念归属）
+ */
+const detailTitleSuffix = (theme: ThemeItem): string =>
+  theme.source === 'ths'
+    ? ` · 涨停 ${theme.limitUpCount} 家`
+    : theme.source === 'topic'
+      ? ` · 细分逻辑题材 ${theme.limitUpCount} 只`
+      : ` · 概念成员涨停 ${theme.conceptLimitUpCount ?? theme.limitUpCount} 只`;
+
+/**
+ * 上游 `change_tag` → 中文。
+ * FIRST_LIMIT 是「今天第一次封上」（不是「首板」——一只 6天3板 的票今天也可能 FIRST_LIMIT），
+ * LIMIT_BACK 是开板后回封。所以这对标签是 首封 / 回封，不是 首板 / 连板。
+ */
+const SEAL_TAG_LABELS: Record<string, string> = {
+  FIRST_LIMIT: '首封',
+  LIMIT_BACK: '回封',
+};
 
 /** 角色标签：同一股票多标签合并显示在一行，绝不拆成多行 */
 const RoleBadges = ({ roles }: { roles: RoleTag[] }) => {
@@ -317,6 +354,120 @@ const ThemeRow = memo(function ThemeRow({
   );
 });
 
+/**
+ * 同花顺口径的成员行：**没有角色 / 本轮关联 / 风险判定**，所以不摆那几列，
+ * 换成上游真实给了的「连板高度 / 封板 / 首封」+ 从涨停池 join 来的「封单 / 开板 / 换手 / 流通」。
+ *
+ * 这些列是**龙头口径**的输入（高度 → 首封 → 封单），描述的是「谁更强」，
+ * 不是推荐、也不承诺收益；页头把这条口径写在明面上。
+ *
+ * 行可展开：展开的是涨停原因长文（同花顺 `reason_info`，AI 汇总稿，含公告依据），
+ * 不编任何「判断详情」——这个口径里没有那套判定。
+ */
+const ThsMemberRow = ({
+  item,
+  isOpen,
+  onToggle,
+  isTopBoard,
+  watchlistSymbols,
+  onAddToWatchlist,
+}: {
+  item: ThemeStockV2;
+  isOpen: boolean;
+  onToggle: (symbol: string) => void;
+  /** 板块内最高板（机械口径，仅标注） */
+  isTopBoard: boolean;
+  watchlistSymbols: ReadonlySet<string>;
+  onAddToWatchlist: (stock: { symbol: string; name: string }) => void;
+}) => (
+  <>
+    <tr
+      className={`screener-table__row--toggle${isOpen ? ' is-expanded' : ''}`}
+      tabIndex={0}
+      aria-expanded={isOpen}
+      onClick={() => onToggle(item.symbol)}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        if (event.target !== event.currentTarget) return;
+        event.preventDefault();
+        onToggle(item.symbol);
+      }}
+    >
+      <th scope="row" className="is-left">
+        <span className="screener-table__toggle-cell">
+          <span className="screener-table__caret" aria-hidden="true">
+            {isOpen ? '▾' : '▸'}
+          </span>
+          <StockIdentity
+            name={item.name}
+            code={item.symbol}
+            tag={item.boardCount === null ? null : `${item.boardCount} 连板`}
+          />
+        </span>
+        {isTopBoard ? (
+          <span className="stock-tag" title="该板块当日连板高度最高的一档（机械口径，不是推荐）">
+            板块内最高板
+          </span>
+        ) : null}
+        {item.reason ? <span className="screener-table__sub">{item.reason}</span> : null}
+      </th>
+      <td className="screener-table__num is-right">{item.highLabel ?? '—'}</td>
+      <td className="is-center">
+        {item.sealType === null ? '—' : (SEAL_TAG_LABELS[item.sealType] ?? item.sealType)}
+      </td>
+      <td className="screener-table__num is-right">{item.firstSealTime ?? '—'}</td>
+      <td className="screener-table__num is-right" title="封单额（当天同花顺涨停池）">
+        {formatMoney(item.sealAmount)}
+      </td>
+      <td className="screener-table__num is-right" title="开板次数（当天同花顺涨停池）">
+        {formatCount(item.openCount)}
+      </td>
+      <td className="screener-table__num is-right" title="换手率（当天同花顺涨停池）">
+        {formatRatio(item.turnoverRate)}
+      </td>
+      <td className="screener-table__num is-right" title="流通市值（当天同花顺涨停池）">
+        {formatMoney(item.floatMarketCap)}
+      </td>
+      <td className="is-right">
+        <span className="screener-table__price">{formatPrice(item.price)}</span>
+      </td>
+      <td className="is-right">
+        <span className={`screener-table__pct${pctClass(item.pct)}`}>
+          {formatSignedPercent(item.pct)}
+        </span>
+      </td>
+      <td className="screener-table__action is-center">
+        <AddToWatchlistButton
+          symbol={item.symbol}
+          name={item.name}
+          added={watchlistSymbols.has(item.symbol)}
+          onAdd={onAddToWatchlist}
+        />
+      </td>
+    </tr>
+    {isOpen ? (
+      <tr>
+        <td colSpan={11}>
+          <div className="theme-evidence">
+            <div className="theme-evidence__group">
+              <p className="theme-evidence__title">涨停原因（同花顺）</p>
+              {item.reasonText ? (
+                <p className="status-note theme-evidence__reason">{item.reasonText}</p>
+              ) : (
+                <p className="status-note">上游没有给这只票的涨停原因长文，只看得到标签串。</p>
+              )}
+            </div>
+            <p className="status-note">
+              封单 / 开板 / 换手 / 流通市值来自当天同花顺涨停池 ·
+              同花顺这个口径没有「角色标签 / 本轮关联 / 风险核验」，按缺失展示
+            </p>
+          </div>
+        </td>
+      </tr>
+    ) : null}
+  </>
+);
+
 export const ThemeDetail = ({
   theme,
   tradeDate,
@@ -332,11 +483,11 @@ export const ThemeDetail = ({
   /** 数据说明与限制的开关：按钮在标题行，正文面板在表头下面 */
   const notes = useWarningNotes();
 
-  // 最新请求保护：切题材 / 刷新时旧请求会被 abort，晚返回不会覆盖新结果
+  // 最新请求保护：切板块 / 刷新时旧请求会被 abort，晚返回不会覆盖新结果
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
-    // 加载时清除不同键（不同题材或不同日期）的结果，避免新标题配旧股票
+    // 加载时清除不同键（不同板块或不同日期）的结果，避免新标题配旧股票
     setData((previous) =>
       previous.theme?.code === theme.code && previous.tradeDate !== null
         ? previous
@@ -350,7 +501,7 @@ export const ThemeDetail = ({
       })
       .catch((error: unknown) => {
         if (!active || (error instanceof Error && error.name === 'AbortError')) return;
-        const message = error instanceof Error ? error.message : '题材详情请求失败';
+        const message = error instanceof Error ? error.message : '板块详情请求失败';
         // 只保留当前 code/date 键的缓存并标 stale；无同键缓存才显示 unavailable
         setData((previous) =>
           previous.theme?.code === theme.code && previous.tradeDate !== null
@@ -401,19 +552,23 @@ export const ThemeDetail = ({
     { supported: 0, membershipOnly: 0 },
   );
 
+  /**
+   * 板块内最高连板高度：只用来在表里标一行「板块内最高板」，
+   * 是**机械口径**（谁的高度最高），不是推荐；同花顺口径才用得上。
+   */
+  const topBoardCount = theme.source === 'ths'
+    ? data.items.reduce((max, item) => Math.max(max, item.boardCount ?? 0), 0)
+    : 0;
+
   return (
     <section className="card" aria-labelledby="theme-detail-title">
       <div className="overview__header">
         <div>
-          {/* 「← 返回题材列表」按钮已去掉：切回「题材」标签页即可回到列表，不用两个入口 */}
+          {/* 「← 返回板块列表」按钮已去掉：切回「板块」标签页即可回到列表，不用两个入口 */}
           <div className="theme-title-row">
             <h2 id="theme-detail-title">
               {data.theme?.name ?? theme.name}
-              {theme.source === 'topic' ? ' · 细分逻辑题材 ' : ' · 概念成员涨停 '}
-              {theme.source === 'topic'
-                ? theme.limitUpCount
-                : (theme.conceptLimitUpCount ?? theme.limitUpCount)}{' '}
-              只
+              {detailTitleSuffix(theme)}
             </h2>
             {/*
               警示按钮紧跟在标题后面；正文面板渲染在表头外面（下面），
@@ -432,9 +587,15 @@ export const ThemeDetail = ({
             交易日 {formatTradeDate(data.tradeDate ?? tradeDate ?? null)} · 更新时间{' '}
             {data.asOf} · 数据状态 {data.status} · 规则版本 {data.ruleVersion}
           </p>
+          {theme.source === 'ths' ? (
+            <p className="status-note">
+              排序与列口径：连板高度 → 首封时间 → 封单额；封单 / 开板 / 换手 / 流通来自当天同花顺涨停池。
+              「板块内最高板」只是**描述谁的高度最高**的机械口径，不是推荐，也不代表次日会涨。
+            </p>
+          ) : null}
         </div>
         <div className="overview__actions limit-up-list__actions">
-          {theme.source === 'topic' ? (
+          {theme.source === 'ths' || theme.source === 'topic' ? (
             <p className="overview__meta">
               涨停 <span>{theme.limitUpCount}</span> 家 · 连板{' '}
               <span>{theme.continuousCount}</span> 只 · 最高{' '}
@@ -449,14 +610,19 @@ export const ThemeDetail = ({
             </p>
           )}
           <p className="overview__meta">
-            {theme.source === 'topic' ? '成员：' : '覆盖：总成员 '}
-            <span>{data.coverage.total}</span>
-            {theme.source === 'topic' ? (
-              ' 只（题材成员 = 当日涨停原因含该逻辑的股票）'
+            {theme.source === 'ths' ? (
+              <>
+                成员：<span>{data.items.length}</span> 只（该板块当日涨停股）
+              </>
+            ) : theme.source === 'topic' ? (
+              <>
+                成员：<span>{data.coverage.total}</span> 只（题材成员 = 当日涨停原因含该逻辑的股票）
+              </>
             ) : (
               <>
-                {' '}· 已计算 <span>{data.coverage.succeeded}</span> · 失败{' '}
-                <span>{data.coverage.failed}</span> · 未扫描 <span>{data.coverage.unscanned}</span>
+                覆盖：总成员 <span>{data.coverage.total}</span> · 已计算{' '}
+                <span>{data.coverage.succeeded}</span> · 失败 <span>{data.coverage.failed}</span> · 未扫描{' '}
+                <span>{data.coverage.unscanned}</span>
               </>
             )}
           </p>
@@ -529,45 +695,57 @@ export const ThemeDetail = ({
 
       {data.status === 'stale' ? (
         <div className="banner banner--warning" role="status">
-          <p>本轮刷新失败，展示的是同一题材上一轮成功结果。</p>
+          <p>本轮刷新失败，展示的是同一板块上一轮成功结果。</p>
           {data.error ? <p className="status-note">{data.error}</p> : null}
         </div>
       ) : null}
 
       {data.status === 'unavailable' ? (
         <div className="banner banner--warning" role="status">
-          <p>该题材数据暂不可用。</p>
+          <p>该板块数据暂不可用。</p>
           {data.error ? <p className="status-note">{data.error}</p> : null}
         </div>
       ) : null}
 
       <div className="theme-detail__controls">
-        <label className="trend-filters__check">
-          <input
-            type="checkbox"
-            checked={onlyTagged}
-            onChange={(event) => setOnlyTagged(event.target.checked)}
-          />
-          <span>只看有角色标签</span>
-        </label>
+        {/* 同花顺口径没有角色标签，这个筛选没有意义，直接不摆 */}
+        {theme.source === 'ths' ? null : (
+          <label className="trend-filters__check">
+            <input
+              type="checkbox"
+              checked={onlyTagged}
+              onChange={(event) => setOnlyTagged(event.target.checked)}
+            />
+            <span>只看有角色标签</span>
+          </label>
+        )}
         <p className="overview__meta">
-          {/*
-            分母必须是「本轮参与计算的成员数」而不是 coverage.total：
-            items 只包含扫过的成员，拿 total 当分母会得到「显示 120 / 717」这种永远差 597 的错觉。
-            未扫描数量由 coverage.unscanned 单独说明，覆盖口径不在表里被悄悄改掉。
-          */}
-          显示 <span>{visibleItems.length}</span> / {data.items.length} 只（本轮已计算{' '}
-          <span>{data.coverage.attempted}</span> 只，共 <span>{data.coverage.total}</span>{' '}
-          只成员，
-          {data.coverage.unscanned > 0 ? (
+          {theme.source === 'ths' ? (
             <>
-              另有 <span>{data.coverage.unscanned}</span> 只未扫描
+              显示 <span>{visibleItems.length}</span> / {data.items.length} 只（该板块当日涨停股，
+              口径：同花顺 block_top）
             </>
           ) : (
-            '无未扫描成员'
+            <>
+              {/*
+                分母必须是「本轮参与计算的成员数」而不是 coverage.total：
+                items 只包含扫过的成员，拿 total 当分母会得到「显示 120 / 717」这种永远差 597 的错觉。
+                未扫描数量由 coverage.unscanned 单独说明，覆盖口径不在表里被悄悄改掉。
+              */}
+              显示 <span>{visibleItems.length}</span> / {data.items.length} 只（本轮已计算{' '}
+              <span>{data.coverage.attempted}</span> 只，共 <span>{data.coverage.total}</span>{' '}
+              只成员，
+              {data.coverage.unscanned > 0 ? (
+                <>
+                  另有 <span>{data.coverage.unscanned}</span> 只未扫描
+                </>
+              ) : (
+                '无未扫描成员'
+              )}
+              ） · 驱动有依据 <span>{counts.supported}</span> 只 · 仅概念归属{' '}
+              <span>{counts.membershipOnly}</span> 只
+            </>
           )}
-          ） · 驱动有依据 <span>{counts.supported}</span> 只 · 仅概念归属{' '}
-          <span>{counts.membershipOnly}</span> 只
         </p>
         {/* 搜索框放在最后（靠右），不再占一行；「搜索股票」四个字去掉，只留占位符 */}
         <label className="theme-detail__search">
@@ -594,11 +772,70 @@ export const ThemeDetail = ({
                   : '没有匹配的成员'}
           </p>
         </div>
+      ) : theme.source === 'ths' ? (
+        /* 同花顺口径：成员 = 该板块当日涨停股；列只摆上游真给了的字段 + 涨停池补的四个 */
+        <div className="screener-table-wrap">
+          <table
+            className="screener-table screener-table--stocks"
+            aria-label={`${theme.name} 板块成员`}
+          >
+            <thead>
+              <tr>
+                <th scope="col" className="is-left">
+                  股票 / 涨停原因
+                </th>
+                <th scope="col" className="is-right" title="连板高度，原样取上游（如「6天3板」）">
+                  连板高度
+                </th>
+                <th scope="col" className="is-center" title="上游的封板类型标记">
+                  封板
+                </th>
+                <th scope="col" className="is-right">
+                  首封
+                </th>
+                <th scope="col" className="is-right" title="封单额（当天同花顺涨停池）">
+                  封单
+                </th>
+                <th scope="col" className="is-right" title="开板次数（当天同花顺涨停池）">
+                  开板
+                </th>
+                <th scope="col" className="is-right" title="换手率（当天同花顺涨停池）">
+                  换手
+                </th>
+                <th scope="col" className="is-right" title="流通市值（当天同花顺涨停池）">
+                  流通
+                </th>
+                <th scope="col" className="is-right">
+                  现价
+                </th>
+                <th scope="col" className="is-right">
+                  涨跌幅
+                </th>
+                <th scope="col" className="is-center">
+                  自选
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleItems.map((item) => (
+                <ThsMemberRow
+                  key={item.symbol}
+                  item={item}
+                  isOpen={expanded === item.symbol}
+                  onToggle={toggleExpanded}
+                  isTopBoard={topBoardCount > 0 && item.boardCount === topBoardCount}
+                  watchlistSymbols={watchlistSymbols}
+                  onAddToWatchlist={onAddToWatchlist}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <div className="screener-table-wrap">
           <table
             className="screener-table screener-table--stocks"
-            aria-label={`${theme.name} 题材成员`}
+            aria-label={`${theme.name} 板块成员`}
           >
             <thead>
               <tr>
@@ -608,7 +845,7 @@ export const ThemeDetail = ({
                 <th
                   scope="col"
                   className="is-center"
-                  title="该股票在本题材内的相对位置（v1 一律是「候选」）"
+                  title="该股票在本板块内的相对位置（v1 一律是「候选」）"
                 >
                   角色
                 </th>
