@@ -40,12 +40,22 @@ const formatPrice = (value: number | null): string =>
   value === null ? '—' : value.toFixed(2);
 
 /**
- * 板块成分股展开行。
+ * 板块成分股列表。
+ *
+ * 两种用法：
+ *   - `variant="inline"`：渲染在板块行下面（窄屏 / 单独使用）
+ *   - `variant="panel"`：渲染在右栏卡片里（宽屏下点开板块时，顶掉右栏的「市场情绪」）
  *
  * 三种过滤：全部 / 核心票 / 涨停（`pct ≥ 9.8`，与项目别处一致用「近似阈值」，
  * 不区分 20cm —— 这里只是浏览用的筛选，不做判定）。
  */
-export const PlateStockList = ({ plateCode }: { plateCode: string }) => {
+export const PlateStockList = ({
+  plateCode,
+  variant = 'inline',
+}: {
+  plateCode: string;
+  variant?: 'inline' | 'panel';
+}) => {
   const [state, setState] = useState<PlateStocksState>({ status: 'idle' });
   const [onlyCore, setOnlyCore] = useState(false);
   const [onlyLimitUp, setOnlyLimitUp] = useState(false);
@@ -99,7 +109,7 @@ export const PlateStockList = ({ plateCode }: { plateCode: string }) => {
   const { data } = state;
 
   return (
-    <div className="plate-stocks">
+    <div className={`plate-stocks plate-stocks--${variant}`}>
       <div className="plate-stocks__bar">
         <span className="plate-stocks__count">
           共 {stocks.length} 只

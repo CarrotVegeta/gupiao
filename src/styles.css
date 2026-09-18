@@ -1027,6 +1027,42 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   font-size: 0.7692rem;
 }
 
+/* 右栏卡片里的成分股：撑满卡片高度，表体自己滚（配合卡片「头固定 + 体滚动」的约定） */
+.plate-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.plate-detail > .overview__header {
+  flex: 0 0 auto;
+}
+
+.plate-stocks--panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.plate-stocks--panel .plate-stocks__bar {
+  flex: 0 0 auto;
+}
+
+/* 右栏展开时给足高度：670px 约 20 行，够看又不至于把页面顶太长 */
+.plate-stocks--panel .plate-stocks__table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 41.9231rem;
+}
+
+.plate-stocks--panel .plate-stocks__note,
+.plate-stocks--panel .plate-stocks__warnings {
+  flex: 0 0 auto;
+}
+
 .sector-rotation__rank {
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
@@ -1084,6 +1120,14 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   align-items: start;
 }
 
+/*
+ * 展开板块时右栏换成成分股列表：把右栏放宽，否则 770 只票挤在窄栏里
+ * 一行只剩代码和名字，入选理由完全看不到。
+ */
+.rotation-page--plate {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+}
+
 .rotation-page__column {
   display: flex;
   flex-direction: column;
@@ -1134,7 +1178,9 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 }
 
 @media (max-width: 1180px) {
-  .rotation-page {
+  /* 窄屏降为单列：成分股落到列表下方，此时展开态不再需要把右栏放宽 */
+  .rotation-page,
+  .rotation-page--plate {
     grid-template-columns: minmax(0, 1fr);
   }
 }

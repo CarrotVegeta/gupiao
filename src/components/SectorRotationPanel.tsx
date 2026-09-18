@@ -46,14 +46,36 @@ export type RotationSummary = {
 type SectorRotationPanelProps = {
   /** 每次取数结果变化时回调；用 `useCallback` 稳定引用避免重复触发 */
   onSummary?: (summary: RotationSummary) => void;
+  /**
+   * 当前展开的板块代码，由宿主（`RotationPage`）持有。
+   *
+   * 为什么要提到宿主：展开的成分股列表要渲染在**右栏**（并顶掉右栏的「市场情绪」），
+   * 所以「展开哪个板块」不能只留在本组件内部。
+   * 传 `undefined` 时退化为组件内部状态（单独使用/窄屏时的默认行为）。
+   */
+  expandedPlate?: string | null;
+  /** 展开/收起回调；同时给出板块名，省得宿主再去 DOM 里捞 */
+  onExpandedChange?: (plate: { code: string; name: string } | null) => void;
 };
 
-export const SectorRotationPanel = ({ onSummary }: SectorRotationPanelProps = {}) => {
+export const SectorRotationPanel = ({
+  onSummary,
+  expandedPlate: expandedProp,
+  onExpandedChange,
+}: SectorRotationPanelProps = {}) => {
   const [days, setDays] = useState<RotationDays>(DEFAULT_ROTATION_DAYS);
   const [data, setData] = useState<SectorRotationResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  /** 当前展开的板块（同时只展开一个，避免一次拉几百只股票的接口） */
-  const [expandedPlate, setExpandedPlate] = useState<string | null>(null);
+  /** 内部状态：宿主没接管时用它（同时只展开一个，避免一次拉几百只股票的接口） */
+  const [internalExpanded, setInternalExpanded] = useState<string | null>(null);
+
+  const expandedPlate = expandedProp !== undefined ? expandedProp : internalExpanded;
+  const setExpandedPlate = (next: { code: string; name: string } | null): void => {
+    if (onExpandedChange) onExpandedChange(next);
+    else setInternalExpanded(next?.code ?? null);
+  };
+  /** 由宿主接管展开状态时，成分股列表渲染在右栏，这里不再重复渲染 */
+  const renderInline = onExpandedChange === undefined;
 
   useEffect(() => {
     let cancelled = false;
@@ -159,12 +181,14 @@ export const SectorRotationPanel = ({ onSummary }: SectorRotationPanelProps = {}
           {visible.map((item, index) => {
             const expanded = expandedPlate === item.plateCode;
             return (
-              <div className="sector-rotation__item" key={item.plateCode}>
+              <div className="sector-rotation__item" key={item.plateCode} data-plate-code={item.plateCode}>
                 <button
                   className="sector-rotation__row"
                   type="button"
                   aria-expanded={expanded}
-                  onClick={() => setExpandedPlate(expanded ? null : item.plateCode)}
+                  onClick={() =>
+                    setExpandedPlate(expanded ? null : { code: item.plateCode, name: item.plateName })
+                  }
                 >
                   <span className="sector-rotation__rank">{index + 1}</span>
                   <span className="sector-rotation__name">
@@ -195,7 +219,7 @@ export const SectorRotationPanel = ({ onSummary }: SectorRotationPanelProps = {}
                     {formatDate(item.firstSeen)} → {formatDate(item.lastSeen)}
                   </span>
                 </button>
-                {expanded ? <PlateStockList plateCode={item.plateCode} /> : null}
+                {expanded && renderInline ? <PlateStockList plateCode={item.plateCode} /> : null}
               </div>
             );
           })}

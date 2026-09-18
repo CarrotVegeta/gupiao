@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { MarketEmotion } from '../types';
 import { fetchMarketOverview } from '../lib/market';
 import { SectorRotationPanel, type RotationSummary } from './SectorRotationPanel';
+import { PlateStockList } from './PlateStockList';
 import { WarningNotesPanel, WarningNotesToggle, useWarningNotes } from './WarningNotes';
 
 type RotationPageProps = {
@@ -157,6 +158,39 @@ const EmotionCard = ({
 };
 
 /**
+ * 右栏的板块成分股卡片：宽屏下点开板块时，它**顶掉**「市场情绪」。
+ *
+ * 单独抽出来是为了让「收起」按钮和标题在一处，`PlateStockList` 只管列表本身。
+ */
+const PlateStockPanel = ({
+  plateCode,
+  plateName,
+  onClose,
+}: {
+  plateCode: string;
+  plateName: string;
+  onClose: () => void;
+}) => (
+  <section className="card plate-detail" aria-labelledby="plate-detail-title">
+    <div className="overview__header">
+      <div>
+        <p className="eyebrow">财联社 · 板块成分股</p>
+        <div className="theme-title-row">
+          <h2 id="plate-detail-title">{plateName}</h2>
+          <span className="theme-card__badge">当前快照</span>
+        </div>
+      </div>
+      <div className="overview__actions">
+        <button className="button button--secondary button--compact" type="button" onClick={onClose}>
+          收起
+        </button>
+      </div>
+    </div>
+    <PlateStockList plateCode={plateCode} variant="panel" />
+  </section>
+);
+
+/**
  * 「轮动」一级页：板块轮动（历史口径）+ 市场情绪（当天快照）。
  *
  * 为什么单独开一页而不是塞进选股页的板块档：
@@ -166,6 +200,14 @@ const EmotionCard = ({
 export const RotationPage = ({ onSummary }: RotationPageProps) => {
   const [emotion, setEmotion] = useState<MarketEmotion | null>(null);
   const [isEmotionLoading, setIsEmotionLoading] = useState(true);
+  /**
+   * 当前展开的板块。
+   *
+   * 状态放在页面级而不是 `SectorRotationPanel` 内部：展开的成分股要渲染在**右栏**，
+   * 并且在展开期间**顶掉右栏的「市场情绪」**（用户口径：点开就看成分股，别再挤一屏）。
+   * 窄屏下页面降为单列，成分股会按 DOM 顺序自然落到列表下方。
+   */
+  const [expandedPlate, setExpandedPlate] = useState<{ code: string; name: string } | null>(null);
 
   const refreshEmotion = useCallback(async (): Promise<void> => {
     setIsEmotionLoading(true);
@@ -184,16 +226,28 @@ export const RotationPage = ({ onSummary }: RotationPageProps) => {
   }, [refreshEmotion]);
 
   return (
-    <div className="rotation-page">
+    <div className={`rotation-page${expandedPlate !== null ? ' rotation-page--plate' : ''}`}>
       <div className="rotation-page__column">
-        <SectorRotationPanel onSummary={onSummary} />
+        <SectorRotationPanel
+          onSummary={onSummary}
+          expandedPlate={expandedPlate?.code ?? null}
+          onExpandedChange={setExpandedPlate}
+        />
       </div>
       <div className="rotation-page__column">
-        <EmotionCard
-          emotion={emotion}
-          isLoading={isEmotionLoading}
-          onRefresh={() => void refreshEmotion()}
-        />
+        {expandedPlate !== null ? (
+          <PlateStockPanel
+            plateCode={expandedPlate.code}
+            plateName={expandedPlate.name}
+            onClose={() => setExpandedPlate(null)}
+          />
+        ) : (
+          <EmotionCard
+            emotion={emotion}
+            isLoading={isEmotionLoading}
+            onRefresh={() => void refreshEmotion()}
+          />
+        )}
       </div>
     </div>
   );
