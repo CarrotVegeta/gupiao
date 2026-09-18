@@ -24,25 +24,11 @@ const isAuctionItem = (value: unknown): value is AuctionItem => {
   }
 
   const result = value.result;
-  const probability = value.limitUpProbability;
   const hasValidResult =
-    result === 'qualified' ||
-    result === 'watch' ||
-    result === 'unqualified' ||
-    result === 'insufficient';
-  const hasValidProbability =
-    result === 'insufficient'
-      ? probability === null
-      : typeof probability === 'number' &&
-        Number.isFinite(probability) &&
-        probability >= 0 &&
-        probability <= 1;
+    result === 'qualified' || result === 'unqualified' || result === 'insufficient';
   const sealedAtAuction = value.sealedAtAuction;
   const hasValidSealedAtAuction =
     sealedAtAuction === null || typeof sealedAtAuction === 'boolean';
-  const missing = value.probabilityMissing;
-  const hasValidMissing =
-    typeof missing === 'number' && Number.isInteger(missing) && missing >= 0 && missing <= 8;
   const premium = value.auctionPremium;
   const hasValidPremium =
     premium === null ||
@@ -69,9 +55,7 @@ const isAuctionItem = (value: unknown): value is AuctionItem => {
     isNullableNumber(value.auctionAmount) &&
     isNullableNumber(value.auctionRatio) &&
     hasValidResult &&
-    hasValidProbability &&
     hasValidSealedAtAuction &&
-    hasValidMissing &&
     hasValidPremium &&
     (result !== 'insufficient' || premium === null) &&
     Array.isArray(value.reasons) &&

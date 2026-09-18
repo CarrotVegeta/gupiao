@@ -169,54 +169,75 @@ describe('eastmoney call-auction adapter', () => {
     expect(poolItem).not.toBeNull();
 
     expect(evaluateAuctionCandidate(poolItem!, null, context)).toMatchObject({
-      limitUpProbability: null,
-      probabilityMissing: 0,
       result: 'insufficient',
       auctionPremium: null,
       reasons: ['缺少 09:25 竞价成交数据'],
     });
   });
 
-  it('evaluates a candidate into probability, tier, premium and explanations', () => {
+  it('marks qualified only when both conditions hold', () => {
     const result = evaluateAuctionCandidate(
       mapEastmoneyAuctionPoolItem(strongPoolRow)!,
       { preClose: 10, auctionPrice: 10.4, auctionPct: 4, auctionAmount: 5_200_000 },
       context,
     );
 
-    expect(result.limitUpProbability).toBeCloseTo(0.3172, 3);
-    expect(result.result).toBe('watch');
+    // 高开 4% 在 2%~6% 内，量比 5.2% 达到 5%
+    expect(result.result).toBe('qualified');
     expect(result.auctionPremium).toBe('rich');
     expect(result.auctionRatio).toBe(5.2);
-    expect(result.probabilityMissing).toBe(0);
+    expect(result.reasons[0]).toContain('在');
+    expect(result.reasons[1]).toContain('达到');
     expect(result.reasons.at(-1)).toContain('竞价溢价偏高');
-    expect(result.reasons.length).toBeGreaterThan(1);
   });
 
-  it('separates a weak low-open candidate from a strong high-open one', () => {
+  it('rejects an out-of-range gap even when the volume ratio is large', () => {
     const poolItem = mapEastmoneyAuctionPoolItem(strongPoolRow)!;
-    const weak = evaluateAuctionCandidate(
+    const low = evaluateAuctionCandidate(
       poolItem,
-      { preClose: 10, auctionPrice: 9.8, auctionPct: -2, auctionAmount: 1_000_000 },
+      { preClose: 10, auctionPrice: 9.8, auctionPct: 1, auctionAmount: 20_000_000 },
       context,
     );
-    const strong = evaluateAuctionCandidate(
+    const high = evaluateAuctionCandidate(
       poolItem,
-      { preClose: 10, auctionPrice: 10.9, auctionPct: 9, auctionAmount: 5_200_000 },
+      { preClose: 10, auctionPrice: 10.9, auctionPct: 9, auctionAmount: 20_000_000 },
       context,
     );
 
-    expect(weak.limitUpProbability!).toBeLessThan(0.2);
-    expect(strong.limitUpProbability!).toBeGreaterThan(0.6);
-    expect(strong.limitUpProbability!).toBeGreaterThan(weak.limitUpProbability! * 4);
-    expect(weak.result).toBe('unqualified');
-    expect(strong.result).toBe('qualified');
+    expect(low.result).toBe('unqualified');
+    expect(low.reasons[0]).toContain('不在');
+    expect(high.result).toBe('unqualified');
+    expect(high.reasons[0]).toContain('不在');
   });
 
-  it('withholds a tier when more than one active feature is missing', () => {
+  it('rejects a thin volume ratio even when the gap is in range', () => {
+    const pool = { ...mapEastmoneyAuctionPoolItem(strongPoolRow)!, previousAmount: 1_000_000_000 };
+    const thin = evaluateAuctionCandidate(
+      pool,
+      { preClose: 10, auctionPrice: 10.4, auctionPct: 4, auctionAmount: 5_000_000 },
+      context,
+    );
+    expect(thin.auctionRatio).toBe(0.5);
+    expect(thin.result).toBe('unqualified');
+    expect(thin.reasons[1]).toContain('低于');
+  });
+
+  it('flags heavy volume at the 爆量 threshold', () => {
+    const pool = { ...mapEastmoneyAuctionPoolItem(strongPoolRow)!, previousAmount: 100_000_000 };
+    const heavy = evaluateAuctionCandidate(
+      pool,
+      { preClose: 10, auctionPrice: 10.5, auctionPct: 5, auctionAmount: 11_000_000 },
+      context,
+    );
+    expect(heavy.auctionRatio).toBe(11);
+    expect(heavy.result).toBe('qualified');
+    expect(heavy.reasons[1]).toContain('爆量');
+  });
+
+  it('cannot judge without the auction volume', () => {
     const pool = { ...mapEastmoneyAuctionPoolItem(strongPoolRow)!, turnoverRate: null, floatMarketCap: null };
     expect(evaluateAuctionCandidate(pool, { preClose: 10, auctionPrice: 10.4, auctionPct: 4, auctionAmount: null }, context))
-      .toMatchObject({ result: 'insufficient', limitUpProbability: null, probabilityMissing: 2, auctionPremium: null });
+      .toMatchObject({ result: 'insufficient', auctionPremium: 'rich' });
   });
 
   it('uses the supplied limit price and does not treat a near-limit opening as sealed', () => {
@@ -227,19 +248,21 @@ describe('eastmoney call-auction adapter', () => {
       { preClose: 10, auctionPrice: 10.99, auctionPct: 9.9, auctionAmount: null, limitUpPrice: 10.99 }, context).sealedAtAuction).toBe(true);
   });
 
-  it('sorts by previous board count first and probability second', () => {
+  it('sorts qualified first, then board count, then volume ratio', () => {
     expect(
       sortAuctionItems([
-        { symbol: '000001', boardCount: 2, limitUpProbability: 0.42 },
-        { symbol: '000002', boardCount: 3, limitUpProbability: 0.31 },
-        { symbol: '000003', boardCount: 2, limitUpProbability: 0.65 },
-        { symbol: '000004', boardCount: null, limitUpProbability: null },
+        { symbol: '000001', boardCount: 2, auctionRatio: 8, result: 'qualified' as const },
+        { symbol: '000002', boardCount: 3, auctionRatio: 3, result: 'qualified' as const },
+        { symbol: '000003', boardCount: 2, auctionRatio: 12, result: 'qualified' as const },
+        { symbol: '000004', boardCount: 9, auctionRatio: 99, result: 'unqualified' as const },
+        { symbol: '000005', boardCount: null, auctionRatio: null, result: 'insufficient' as const },
       ]),
     ).toEqual([
-      { symbol: '000002', boardCount: 3, limitUpProbability: 0.31 },
-      { symbol: '000003', boardCount: 2, limitUpProbability: 0.65 },
-      { symbol: '000001', boardCount: 2, limitUpProbability: 0.42 },
-      { symbol: '000004', boardCount: null, limitUpProbability: null },
+      { symbol: '000002', boardCount: 3, auctionRatio: 3, result: 'qualified' },
+      { symbol: '000003', boardCount: 2, auctionRatio: 12, result: 'qualified' },
+      { symbol: '000001', boardCount: 2, auctionRatio: 8, result: 'qualified' },
+      { symbol: '000004', boardCount: 9, auctionRatio: 99, result: 'unqualified' },
+      { symbol: '000005', boardCount: null, auctionRatio: null, result: 'insufficient' },
     ]);
   });
 
@@ -278,14 +301,15 @@ describe('eastmoney call-auction adapter', () => {
       status: 'fresh',
       error: null,
     });
-    expect(body.items[0]).toMatchObject({ symbol: '603000', result: 'watch', probabilityMissing: 0 });
-    expect(body.items[0].limitUpProbability).toBeGreaterThan(0);
-    expect(body.items[0].limitUpProbability).toBeLessThan(1);
+    expect(body.items[0]).toMatchObject({ symbol: '603000', result: 'qualified' });
+    expect(body.items[0].auctionRatio).toBe(5.2);
   });
 
-  it('does not count retired market context fields as missing model features', async () => {
+  it('no longer calls the retired market-context hosts', async () => {
+    const requested: string[] = [];
     const fetchImpl = vi.fn<typeof fetch>((input) => {
       const url = String(input);
+      requested.push(url);
       if (url.includes('/stock/kline/get')) {
         return Promise.resolve(
           new Response(JSON.stringify({ data: { klines: ['2026-08-18', '2026-08-19'] } })),
@@ -293,9 +317,6 @@ describe('eastmoney call-auction adapter', () => {
       }
       if (url.includes('/getTopicZTPool')) {
         return Promise.resolve(new Response(JSON.stringify({ data: { pool: [strongPoolRow], tc: 1 } })));
-      }
-      if (url.includes('/getTopicZBPool') || url.includes('/api/qt/stock/get')) {
-        return Promise.reject(new Error('context host closed'));
       }
       if (url.includes('/stock/details/get')) {
         return Promise.resolve(
@@ -308,8 +329,10 @@ describe('eastmoney call-auction adapter', () => {
     const body = await fetchEastmoneyAuction('20260819', fetchImpl);
 
     expect(body.status).toBe('fresh');
-    expect(body.items[0].probabilityMissing).toBe(0);
-    expect(body.items[0].limitUpProbability).toBeGreaterThan(0);
+    expect(body.items[0].result).toBe('qualified');
+    // 炸板池与大盘缺口已经不再为判定服务，少两个上游请求
+    expect(requested.some((url) => url.includes('/getTopicZBPool'))).toBe(false);
+    expect(requested.some((url) => url.includes('/api/qt/stock/get'))).toBe(false);
   });
 
   it('falls back to the dated limit-up pool when the trading-calendar host is unavailable', async () => {
@@ -332,7 +355,7 @@ describe('eastmoney call-auction adapter', () => {
     await expect(fetchEastmoneyAuction('20260819', fetchImpl)).resolves.toMatchObject({
       status: 'fresh',
       previousTradeDate: '20260818',
-      items: [{ symbol: '603000', result: 'watch' }],
+      items: [{ symbol: '603000', result: 'qualified' }],
     });
   });
 
@@ -361,7 +384,8 @@ describe('eastmoney call-auction adapter', () => {
     await expect(fetchEastmoneyAuction('20260819', fetchImpl)).resolves.toMatchObject({
       status: 'fresh',
       items: [
-        { symbol: '603000', auctionPrice: 10.4, auctionPct: 4, auctionAmount: null, result: 'watch' },
+        // 拿不到竞价成交额就算不出量比，直接判「数据不足」，不再猜测
+        { symbol: '603000', auctionPrice: 10.4, auctionPct: 4, auctionAmount: null, result: 'insufficient' },
       ],
     });
   });
@@ -388,7 +412,7 @@ describe('eastmoney call-auction adapter', () => {
 
     await expect(fetchEastmoneyAuction('20260819', fetchImpl)).resolves.toMatchObject({
       source: 'eastmoney+tencent',
-      items: [{ symbol: '603000', auctionPrice: 10.4, auctionPct: 4, result: 'watch' }],
+      items: [{ symbol: '603000', auctionPrice: 10.4, auctionPct: 4, result: 'insufficient' }],
     });
   });
 
@@ -423,7 +447,7 @@ describe('eastmoney call-auction adapter', () => {
       symbol: '603000',
       auctionAmount: 5_200_000,
       auctionRatio: 5.2,
-      result: 'watch',
+      result: 'qualified',
     });
   });
 
@@ -521,8 +545,8 @@ describe('eastmoney call-auction adapter', () => {
 
     const body = await fetchEastmoneyAuction('20260819', fetchImpl);
 
-    // 大盘缺口拿到了，就不该再有特征缺失
-    expect(body.items[0].probabilityMissing).toBe(0);
+    // 判定只用竞价涨幅和竞价量比，大盘缺口拿不到也不影响
+    expect(body.items[0].result).toBe('qualified');
   });
 
   it('does not retry when the upstream answers without a 09:25 match', async () => {
@@ -549,7 +573,7 @@ describe('eastmoney call-auction adapter', () => {
     const body = await fetchEastmoneyAuction('20260819', fetchImpl);
 
     expect(detailCalls).toBe(1);
-    expect(body.items[0]).toMatchObject({ result: 'insufficient', limitUpProbability: null });
+    expect(body.items[0]).toMatchObject({ result: 'insufficient' });
   });
 
   it('exposes a default market context for callers without environment data', () => {

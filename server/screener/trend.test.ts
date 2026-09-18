@@ -3,6 +3,9 @@ import type { TrendFilters } from '../../src/types.js';
 import { clearThemeKlineCache, type KlineBar } from '../themes/tenjqka.js';
 import {
   DEFAULT_FILTERS,
+  MAX_SCAN,
+  MAX_SCAN_CEILING,
+  SCAN_ALL,
   evaluateScanPattern,
   parseTrendFilters,
   resolveCompletedBars,
@@ -394,6 +397,80 @@ describe('快速扫描的覆盖披露', () => {
     expect(result.truncated).toBe(false);
     expect(result.metricsTradeDate).toBeNull();
     expect(result.quoteAsOf).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4b. 拉日K上限：默认 260 快速扫描，可以放大到 1000 或全市场
+// ---------------------------------------------------------------------------
+
+describe('拉日K上限（scanLimit）', () => {
+  it('不传参数时仍是深度 260 的快速扫描', () => {
+    expect(DEFAULT_FILTERS.scanLimit).toBe(MAX_SCAN);
+    expect(parseTrendFilters({}).scanLimit).toBe(MAX_SCAN);
+  });
+
+  it('0 / all 表示全市场不截断，正数按只数截断，越界值被夹住', () => {
+    expect(parseTrendFilters({ scanLimit: '0' }).scanLimit).toBe(SCAN_ALL);
+    expect(parseTrendFilters({ scanLimit: 'all' }).scanLimit).toBe(SCAN_ALL);
+    expect(parseTrendFilters({ scanLimit: '1000' }).scanLimit).toBe(1000);
+    // 负数按「全部」处理，离谱的大数被参数上限挡住，不让入参把内存打满
+    expect(parseTrendFilters({ scanLimit: '-5' }).scanLimit).toBe(SCAN_ALL);
+    expect(parseTrendFilters({ scanLimit: '999999' }).scanLimit).toBe(MAX_SCAN_CEILING);
+  });
+
+  it('scanLimit=0 时 261 个候选全部拉日K，未扫描为 0', async () => {
+    const stocks: StockFixture[] = Array.from({ length: 261 }, (_, index) => ({
+      symbol: String(600000 + index + 1),
+      amount: 1_000_000_000 - index,
+      bars: makeBars({ amount: 600_000_000 }),
+    }));
+
+    const result = await scanTrend(
+      NEXT_TRADE_DATE,
+      { ...allScope, scanLimit: SCAN_ALL },
+      marketFetch(stocks),
+    );
+
+    expect(result.filters.scanLimit).toBe(SCAN_ALL);
+    expect(result.candidates).toBe(261);
+    expect(result.scanned).toBe(261);
+    expect(result.coverage).toEqual({
+      total: 261,
+      attempted: 261,
+      succeeded: 261,
+      failed: 0,
+      unscanned: 0,
+    });
+    // 261 只都命中了：截断来自「最多显示 120 行」，不是扫描范围没覆盖
+    expect(result.matchedTotal).toBe(261);
+    expect(result.returnedCount).toBe(120);
+    expect(result.truncated).toBe(true);
+  });
+
+  it('scanLimit=1000 只拉前 1000 只，第 1001 只如实计入未扫描', async () => {
+    const stocks: StockFixture[] = Array.from({ length: 1001 }, (_, index) => ({
+      symbol: String(600000 + index + 1),
+      // 成交额降序：保证被截掉的一定是下标 1000 那一只
+      amount: 2_000_000_000 - index,
+      bars: makeBars({ amount: 600_000_000 }),
+    }));
+
+    const result = await scanTrend(
+      NEXT_TRADE_DATE,
+      { ...allScope, scanLimit: 1000 },
+      marketFetch(stocks),
+    );
+
+    expect(result.candidates).toBe(1001);
+    expect(result.scanned).toBe(1000);
+    expect(result.coverage).toEqual({
+      total: 1001,
+      attempted: 1000,
+      succeeded: 1000,
+      failed: 0,
+      unscanned: 1,
+    });
   });
 });
 

@@ -1,15 +1,28 @@
 /**
  * 分组封板概率：竞价已封板与未封板分别拟合，相对竞价强度按涨停幅度归一化。
  * 固定留出验证与参数来源见 docs/auction-model-v2.md。
+ *
+ * **线上竞价判定已不再使用本模块**（改成 src/lib/auction-policy.ts 里的两条件合格判定）。
+ * 这里保留下来供离线研究：scripts/auction-segmented-model.ts 用它生成系数，
+ * scripts/auction-*.ts 用它做走前验证。
  */
 import type { AuctionPremium } from '../../src/types.js';
-import { auctionProbabilityTier } from '../../src/lib/auction-policy.js';
 import { auctionFeatures, FEATURE_LABELS, type ProbabilityInputs } from './model-features.js';
 import { SEGMENTED_MODELS } from './model-parameters.js';
 import { predictLogistic } from './training.js';
 export { isSealedAtAuction, limitUpPct } from './model-features.js';
 export type { ProbabilityInputs } from './model-features.js';
-export const toProbabilityTier = auctionProbabilityTier;
+
+/** 概率分档阈值：只服务于离线研究，线上不再使用。 */
+export const OFFLINE_POLICY = {
+  qualifiedProbability: 0.4,
+  watchProbability: 0.3,
+  maxMissingFeatures: 1,
+} as const;
+
+export const toProbabilityTier = (probability: number): 'qualified' | 'watch' | 'unqualified' =>
+  probability >= OFFLINE_POLICY.qualifiedProbability ? 'qualified'
+    : probability >= OFFLINE_POLICY.watchProbability ? 'watch' : 'unqualified';
 
 export type ProbabilityResult = { probability: number; missingCount: number; reasons: string[] };
 

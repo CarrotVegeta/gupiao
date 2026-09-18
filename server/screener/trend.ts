@@ -15,15 +15,28 @@
  *   1. 「回调缩量」改名「缩量（最近已完成日成交量/此前5日均量）」——量能比较不判断回调；
  *   2. 只用已完成交易日：最后一根日K的完成状态无法确认时不参与计算，不用本机日期盲猜；
  *   3. 去掉「当日成交额 ≥ 门槛×70%」的前置剔除，近5日均额改成日K算完后的独立门槛；
- *   4. 保留 260 只快速上限，但用 coverage / matchedTotal / returnedCount / truncated 如实披露覆盖。
+ *   4. 默认保留 260 只快速上限，但用 coverage / matchedTotal / returnedCount / truncated 如实披露覆盖；
+ *      调用方可以用 `scanLimit` 把拉日K的范围放大到 1000 只或全市场（`scanLimit=0` / `all`），
+ *      全市场扫描照样按成交额优先排序，扫不完时仍如实披露未扫描数。
  */
 import type { QuoteError, TrendFilters, TrendPick, TrendScanResponse } from '../../src/types.js';
 import { fetchMarketSnapshot, type BoardMember } from '../themes/eastmoney.js';
 import { fetchStockKline, type KlineBar } from '../themes/tenjqka.js';
 
 const KLINE_CONCURRENCY = 6;
-/** 快速扫描最多拉多少只日K；未扫描的部分在 coverage.unscanned 里披露，不假装全市场扫完 */
+/**
+ * 大范围扫描（> LARGE_SCAN_THRESHOLD 只）时的并发。
+ * 实测 2026-09-18：同花顺个股日K 在 12 并发下 80 只样本无一条因限流失败（失败的都是不存在的代码），
+ * 吞吐从 6 并发的约 67 只/秒升到约 134 只/秒，所以全市场份额（约 5900 只）从约 90 秒降到约 45 秒。
+ */
+const KLINE_CONCURRENCY_LARGE = 12;
+const LARGE_SCAN_THRESHOLD = 1000;
+/** 默认快速扫描最多拉多少只日K；未扫描的部分在 coverage.unscanned 里披露，不假装全市场扫完 */
 export const MAX_SCAN = 260;
+/** `scanLimit` 的「不截断」哨兵值：拉完全部候选（全市场份额约 5900 只） */
+export const SCAN_ALL = 0;
+/** scanLimit 的参数上限，只用来挡住离谱入参，不是业务默认值 */
+export const MAX_SCAN_CEILING = 20_000;
 /** 单次响应最多返回多少行；被截掉的行数在 matchedTotal - returnedCount 里披露 */
 export const MAX_ITEMS = 120;
 
@@ -71,6 +84,8 @@ export const DEFAULT_FILTERS: TrendFilters = {
   minScore: 5,
   mainOnly: false,
   excludeSt: false,
+  // 默认快速扫描（260 只）；改成 0（或查询串 scanLimit=all）就是全市场拉日K
+  scanLimit: MAX_SCAN,
 };
 
 export const parseTrendFilters = (query: Record<string, unknown>): TrendFilters => {
@@ -81,6 +96,16 @@ export const parseTrendFilters = (query: Record<string, unknown>): TrendFilters 
   const bool = (value: unknown, fallback: boolean): boolean => {
     if (value === undefined) return fallback;
     return value === 'true' || value === '1' || value === true;
+  };
+  /**
+   * 拉日K上限：`all` / `0` = 不截断（全市场），正数按只数截断。
+   * 默认仍是 260 只快速扫描，不传参数的老调用方行为不变。
+   */
+  const scanLimit = (value: unknown): number => {
+    if (value === 'all' || value === 'ALL') return SCAN_ALL;
+    const next = num(value, DEFAULT_FILTERS.scanLimit);
+    if (next <= SCAN_ALL) return SCAN_ALL;
+    return Math.min(Math.round(next), MAX_SCAN_CEILING);
   };
 
   return {
@@ -96,6 +121,7 @@ export const parseTrendFilters = (query: Record<string, unknown>): TrendFilters 
     minScore: Math.min(Math.max(Math.round(num(query.minScore, DEFAULT_FILTERS.minScore)), 1), 5),
     mainOnly: bool(query.mainOnly, DEFAULT_FILTERS.mainOnly),
     excludeSt: bool(query.excludeSt, DEFAULT_FILTERS.excludeSt),
+    scanLimit: scanLimit(query.scanLimit),
   };
 };
 
@@ -392,10 +418,14 @@ const collectCandidates = async (
   }
 
   const total = candidates.length;
-  // 快速扫描：按当日成交额优先取前 MAX_SCAN 只拉日K。这只是排序优先级，不是门槛，
-  // 被截掉的数量在 coverage.unscanned 里如实披露。
+  // 按当日成交额优先取前 scanLimit 只拉日K。这只是排序优先级，不是门槛，
+  // 被截掉的数量在 coverage.unscanned 里如实披露；scanLimit = 0 表示全市场不截断。
   candidates.sort((a, b) => (b.member.amount ?? 0) - (a.member.amount ?? 0));
-  return { candidates: candidates.slice(0, MAX_SCAN), total, errors, quoteAsOf };
+  const limit =
+    filters.scanLimit > SCAN_ALL
+      ? Math.min(filters.scanLimit, MAX_SCAN_CEILING)
+      : candidates.length;
+  return { candidates: candidates.slice(0, limit), total, errors, quoteAsOf };
 };
 
 // ---------------------------------------------------------------------------
@@ -424,7 +454,9 @@ export const scanTrend = async (
       fetchImpl,
     );
 
-    const evaluated = await mapLimit(candidates, KLINE_CONCURRENCY, async (candidate) => {
+    const concurrency =
+      candidates.length > LARGE_SCAN_THRESHOLD ? KLINE_CONCURRENCY_LARGE : KLINE_CONCURRENCY;
+    const evaluated = await mapLimit(candidates, concurrency, async (candidate) => {
       const bars = await fetchStockKline(candidate.symbol, fetchImpl);
       const evaluation = evaluateScanPattern(bars, filters, { tradeDate });
       return evaluation === null ? null : { candidate, evaluation };

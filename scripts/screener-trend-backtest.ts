@@ -52,6 +52,8 @@ const MAIN_MIN_LIMIT_UP = 5;
 const MAIN_MIN_DURATION = 3;
 const MAIN_DAILY_FLOOR = 2;
 /** 纯正板块成员数上限：超过这个规模的「板块」是宽口径属性题材（如央国企改革 1444 只），不是主线 */
+// 注意：线上服务（server/themes/service.ts）2026-09-18 起把宽度上限放宽到 1500，
+// 本回测脚本有意保持 800，以免改变已记录的回测结论。
 const MAX_BOARD_SIZE = 800;
 /** 主线候选的对照档：阈值 / 是否要求当日涨停家数进前 N（null = 不要求） */
 const MAIN_VARIANTS = [
