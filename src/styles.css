@@ -957,6 +957,29 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.8462rem;
+  /* 固定布局 + 只给入选理由列 100% 宽：这一列吃掉所有剩余宽度，
+     否则窄内容列会各自撑开、右边留一条空档（实测右栏 732px 时留了约一半） */
+  table-layout: fixed;
+}
+
+.plate-stocks__table th:nth-child(1),
+.plate-stocks__table td:nth-child(1) {
+  width: 6.7692rem;
+}
+
+.plate-stocks__table th:nth-child(2),
+.plate-stocks__table td:nth-child(2) {
+  width: 8.3077rem;
+}
+
+.plate-stocks__table th:nth-child(3),
+.plate-stocks__table td:nth-child(3) {
+  width: 5.3846rem;
+}
+
+.plate-stocks__table th:nth-child(4),
+.plate-stocks__table td:nth-child(4) {
+  width: 5.3846rem;
 }
 
 .plate-stocks__table th,
@@ -1004,14 +1027,14 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   font-weight: 700;
 }
 
-/* 入选理由通常很长：限制行数，悬停看全文 */
+/* 入选理由通常很长：限 2 行，悬停看全文；宽度由表格固定布局分给这一列 */
 .plate-stocks__desc {
-  max-width: 34rem;
   color: var(--text-secondary);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  word-break: break-word;
 }
 
 .plate-stocks__note {
