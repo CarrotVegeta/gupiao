@@ -1027,13 +1027,21 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   font-weight: 700;
 }
 
-/* 入选理由通常很长：限 2 行，悬停看全文；宽度由表格固定布局分给这一列 */
+/*
+ * 入选理由通常很长（实测一条 200+ 字）：限 3 行 + 省略号，悬停看全文。
+ *
+ * 关键一条是 `text-overflow: ellipsis`：`-webkit-line-clamp` 只有配合它才会在最后
+ * 一行画「…」。只写 line-clamp + overflow:hidden 是把文字**硬切**，末行留半个字，
+ * 看着像布局坏了（2026-09-19 用户反馈）。
+ */
 .plate-stocks__desc {
   color: var(--text-secondary);
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  text-overflow: ellipsis;
   word-break: break-word;
 }
 
