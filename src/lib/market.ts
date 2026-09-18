@@ -1,5 +1,7 @@
 import type {
+  ClsLadderRung,
   MarketBreadth,
+  MarketEmotion,
   MarketIndex,
   MarketOverviewResponse,
   QuoteError,
@@ -96,6 +98,7 @@ export const createUnavailableMarketOverviewResponse = (
 ): MarketOverviewResponse => ({
   turnover: null,
   breadth: null,
+  emotion: null,
   indices: MARKET_INDEX_CONFIG.map(({ symbol, name }) => unavailableIndex(symbol, name)),
   fetchedAt: isParseableDateTime(fetchedAt) ? fetchedAt : new Date().toISOString(),
   source: 'eastmoney',
@@ -115,6 +118,33 @@ const isMarketBreadth = (value: unknown): value is MarketBreadth =>
   isNullableNumber(value.riseCount) &&
   isNullableNumber(value.fallCount) &&
   isStatus(value.status);
+
+const isClsLadderRung = (value: unknown): value is ClsLadderRung =>
+  isRecord(value) &&
+  typeof value.key === 'string' &&
+  typeof value.name === 'string' &&
+  isNullableNumber(value.count) &&
+  isNullableNumber(value.promotionRate);
+
+/**
+ * 财联社情绪是**可选**字段：老版本后端不返回它，上游挂掉时是 null。
+ * 两种情况都必须能正常渲染大盘卡，所以这里缺字段直接降级成 null，不算格式错误。
+ */
+const isMarketEmotion = (value: unknown): value is MarketEmotion =>
+  isRecord(value) &&
+  value.source === 'cls' &&
+  (value.tradeDate === null || typeof value.tradeDate === 'string') &&
+  isNullableNumber(value.marketDegree) &&
+  isNullableNumber(value.sealRate) &&
+  isNullableNumber(value.sealCount) &&
+  isNullableNumber(value.brokenCount) &&
+  isNullableNumber(value.openRate) &&
+  isNullableNumber(value.profitRate) &&
+  isNullableNumber(value.yesterdayLimitUpPerformance) &&
+  isNullableNumber(value.turnover) &&
+  Array.isArray(value.ladder) &&
+  value.ladder.every(isClsLadderRung) &&
+  (value.status === 'fresh' || value.status === 'unavailable');
 
 const toMarketOverviewResponse = (
   payload: unknown,
@@ -158,6 +188,7 @@ const toMarketOverviewResponse = (
   return {
     turnover: typeof payload.turnover === 'number' ? payload.turnover : null,
     breadth: isMarketBreadth(payload.breadth) ? payload.breadth : null,
+    emotion: isMarketEmotion(payload.emotion) ? payload.emotion : null,
     indices,
     fetchedAt: payload.fetchedAt,
     source: payload.source,

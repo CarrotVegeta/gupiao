@@ -8,7 +8,9 @@ import type {
   LimitUpResponse,
   LimitUpLadderResponse,
   MarketOverviewResponse,
+  MinuteSeriesResponse,
   QuotesResponse,
+  SectorRotationResponse,
   SprintLimitUpResponse,
   StockSearchResponse,
   ThemeDetailResponseV2,
@@ -19,20 +21,29 @@ import type {
 import { fetchEastmoneyDragonTiger } from './dragon-tiger/eastmoney.js';
 import { fetchEastmoneyAuction, msUntilCallAuction } from './auction/eastmoney.js';
 import { createAuctionCache } from './auction/cache.js';
+import { appendAuctionSnapshot } from './auction/snapshot-log.js';
 import { mergeMarketIndices, mergeQuoteBundles } from './merge.js';
 import { fetchEastmoneyLimitUp } from './limit-up/eastmoney.js';
 import { fetchLimitUpLadder } from './limit-up/ladder.js';
 import { fetchMarketBreadth } from './market/breadth.js';
+import {
+  DEFAULT_ROTATION_DAYS,
+  fetchClsEmotion,
+  fetchClsSectorRotation,
+  isRotationDays,
+} from './market/cls.js';
 import { fetchEastmoneyMarket } from './market/eastmoney.js';
 import { fetchTencentMarket } from './market/tencent.js';
 import { fetchEastmoneySprintLimitUp } from './sprint-limit-up/eastmoney.js';
 import { buildThemeDetail, buildThemes, buildThemeStocks } from './themes/service.js';
+import { buildTopicDetail, buildTopics } from './themes/topics.js';
 import { parseTrendFilters, scanTrend } from './screener/trend.js';
 import {
   fetchEastmoneyQuotes,
   fetchEastmoneySearch,
   normalizeSymbol,
 } from './quotes/eastmoney.js';
+import { fetchMinuteSeries } from './minute-series.js';
 import { fetchTencentQuotes } from './quotes/tencent.js';
 
 const DIST_DIR = path.resolve(process.cwd(), 'dist');
@@ -89,10 +100,18 @@ export const createApp = () => {
   app.get('/api/market-overview', async (req, res) => {
     const tradeDate = parseTradeDate(req.query.date) ?? toTodayTradeDate();
 
-    // 指数和情绪各走各的源，互不阻塞
-    const [primary, breadth] = await Promise.all([
+    /*
+     * 财联社情绪**没有日期参数**，只有当天实时快照。
+     * 请求历史日期时如果照抓，会把「今天的封板率」贴到历史日期上，
+     * 所以这里直接不请求、也不显示 —— 宁缺勿错。
+     */
+    const wantsToday = tradeDate === toTodayTradeDate();
+
+    // 指数、情绪、财联社各走各的源，互不阻塞
+    const [primary, breadth, emotion] = await Promise.all([
       fetchTencentMarket(),
       fetchMarketBreadth(tradeDate).catch(() => null),
+      wantsToday ? fetchClsEmotion(tradeDate).catch(() => null) : Promise.resolve(null),
     ]);
 
     const merged: MarketIndicesResponse = primary.indices.every(
@@ -107,7 +126,7 @@ export const createApp = () => {
     const turnover =
       shanghai !== null && shenzhen !== null ? shanghai + shenzhen : (shanghai ?? shenzhen);
 
-    const body: MarketOverviewResponse = { ...merged, turnover, breadth };
+    const body: MarketOverviewResponse = { ...merged, turnover, breadth, emotion };
     return res.status(200).json(body);
   });
 
@@ -182,18 +201,79 @@ export const createApp = () => {
         body,
         isPreviousSession ? Math.max(msUntilCallAuction(), 5_000) : undefined,
       );
+      /*
+       * 顺手把 09:25 竞价量能落盘。09:25 的竞价成交额没有历史接口，
+       * 只能从今天开始攒；不记的话「量比/竞价换手率/竞昨比」永远无法回测。
+       * 内部已经按交易日去重，写失败也只会返回 false，不影响响应。
+       */
+      appendAuctionSnapshot(body);
     }
 
     return res.status(200).json(body);
   });
 
+  /*
+   * 题材页主口径：**细分逻辑**（涨停原因标签），不是东财宽概念板块。
+   * 宽概念的家数 = 子题材并集，按家数排名必然选出「华为概念 / 人工智能」这种凑数的宽概念。
+   * 板块口径保留在 /api/themes/boards 作为对照。
+   */
   app.get('/api/themes', async (req, res) => {
     const tradeDate = parseTradeDate(req.query.date);
     if (tradeDate === null) {
       return res.status(400).json({ message: 'date 必须是 YYYYMMDD 格式' });
     }
 
+    const body: ThemesResponse = await buildTopics(tradeDate);
+    return res.status(200).json(body);
+  });
+
+  /*
+   * 板块轮动（财联社）：近 4 / 30 个交易日每日 top10。
+   *
+   * 这是本项目唯一的历史板块口径 —— `server/themes` 只有当日快照
+   * （东财板块 + F10 题材归属），回答不了「这个题材是第几天走强」。
+   * 上游只接受 days=4 / 30，其它值会被回一个说明对象，所以这里直接挡在 400。
+   */
+  app.get('/api/themes/rotation', async (req, res) => {
+    const rawDays = req.query.days;
+    const days =
+      rawDays === undefined
+        ? DEFAULT_ROTATION_DAYS
+        : isRotationDays(Number(rawDays))
+          ? (Number(rawDays) as 4 | 30)
+          : null;
+
+    if (days === null) {
+      return res.status(400).json({ message: 'days 只支持 4 或 30' });
+    }
+
+    const body: SectorRotationResponse = await fetchClsSectorRotation(days);
+    return res.status(200).json(body);
+  });
+
+  // 对照口径：东财板块（宽概念）的题材总览
+  app.get('/api/themes/boards', async (req, res) => {
+    const tradeDate = parseTradeDate(req.query.date);
+    if (tradeDate === null) {
+      return res.status(400).json({ message: 'date 必须是 YYYYMMDD 格式' });
+    }
+
     const body: ThemesResponse = await buildThemes(tradeDate);
+    return res.status(200).json(body);
+  });
+
+  // 细分逻辑题材详情：key 是归一化后的涨停原因标签
+  app.get('/api/topics/:key/detail', async (req, res) => {
+    const tradeDate = parseTradeDate(req.query.date);
+    if (tradeDate === null) {
+      return res.status(400).json({ message: 'date 必须是 YYYYMMDD 格式' });
+    }
+    const key = String(req.params.key ?? '').trim();
+    if (key.length === 0) {
+      return res.status(400).json({ message: 'key 不能为空' });
+    }
+
+    const body: ThemeDetailResponseV2 = await buildTopicDetail(key, tradeDate);
     return res.status(200).json(body);
   });
 
@@ -272,6 +352,47 @@ export const createApp = () => {
       missing.length > 0 ? await fetchEastmoneyQuotes(missing) : { quotes: [], errors: [] };
 
     const body: QuotesResponse = mergeQuoteBundles(primary, fallback, fetchedAt);
+
+    return res.status(200).json(body);
+  });
+
+  /**
+   * 当日分时序列（迷你分时图用）。
+   * 上游一次只给一只票，请求数 = 票数，比 `/api/quotes` 贵得多，
+   * 所以前端只在一轮行情落地后取一次，不跟着 10 秒行情轮询重复刷。
+   */
+  app.get('/api/minute', async (req, res) => {
+    const rawSymbols = req.query.symbols;
+    if (rawSymbols === undefined) {
+      return res.status(400).json({ message: '缺少 symbols 查询参数' });
+    }
+
+    let symbols: string[];
+    try {
+      symbols = parseSymbols(rawSymbols);
+    } catch (error) {
+      return res.status(400).json({
+        message: error instanceof Error ? error.message : '请求参数不合法',
+      });
+    }
+
+    if (symbols.length === 0) {
+      return res.status(400).json({ message: '缺少 symbols 查询参数' });
+    }
+
+    // 昨收从批量行情拿：分时接口本身不返回昨收，而画基准线必须有它
+    const quotes = await fetchTencentQuotes(symbols);
+    const preCloses = new Map(quotes.quotes.map((quote) => [quote.symbol, quote.preClose] as const));
+
+    const series = await fetchMinuteSeries(symbols, preCloses);
+    const resolved = new Set(series.map((item) => item.symbol));
+
+    const body: MinuteSeriesResponse = {
+      series,
+      fetchedAt: new Date().toISOString(),
+      source: 'tencent',
+      missing: symbols.filter((symbol) => !resolved.has(symbol)),
+    };
 
     return res.status(200).json(body);
   });

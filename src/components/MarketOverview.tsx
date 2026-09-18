@@ -1,11 +1,13 @@
 import { formatPercent } from '../lib/quotes';
-import type { MarketBreadth, MarketIndex } from '../types';
+import type { MarketBreadth, MarketEmotion, MarketIndex } from '../types';
 
 type MarketOverviewProps = {
   indices: MarketIndex[];
   /** 两市成交额（元） */
   turnover?: number | null;
   breadth?: MarketBreadth | null;
+  /** 财联社情绪：封板率 / 高开率 / 获利率 / 连板梯队，取不到就是 null */
+  emotion?: MarketEmotion | null;
 };
 
 const getValueToneClass = (value: number | null | undefined): string => {
@@ -92,10 +94,47 @@ const formatCount = (value: number | null): string =>
 const formatRate = (value: number | null): string =>
   value === null || !Number.isFinite(value) ? '—' : `${value.toFixed(1)}%`;
 
+/**
+ * 财联社情绪行：封板率 / 高开率 / 获利率 + 连板梯队。
+ *
+ * 这几个指标是本项目自算口径（`breadth`）拿不到的 —— 自算需要「昨日涨停池」，
+ * 而东财只保留约 15 个交易日。两者并列展示，口径不一致本身就是上游异常信号。
+ */
+const EmotionRow = ({ emotion }: { emotion: MarketEmotion }) => (
+  <div className="market-breadth__row" aria-label="财联社情绪">
+    <span className="market-breadth__item" title="最终封住 / 触及涨停">
+      <span className="visually-hidden">封板率</span>封板率 <b>{formatRate(emotion.sealRate)}</b>
+    </span>
+    <span className="market-breadth__item" title="昨日涨停股今日高开占比">
+      <span className="visually-hidden">高开率</span>高开率 <b>{formatRate(emotion.openRate)}</b>
+    </span>
+    <span className="market-breadth__item" title="昨日涨停股今日获利的占比">
+      <span className="visually-hidden">获利率</span>获利率 <b>{formatRate(emotion.profitRate)}</b>
+    </span>
+    {emotion.ladder.length > 0 ? (
+      <span
+        className="market-breadth__item"
+        title={emotion.ladder
+          .map(
+            (rung) =>
+              `${rung.name} ${rung.count ?? '—'} 家${
+                rung.promotionRate === null ? '' : `（连板率 ${rung.promotionRate}%）`
+              }`,
+          )
+          .join('｜')}
+      >
+        <span className="visually-hidden">连板梯队</span>连板{' '}
+        <b>{emotion.ladder.map((rung) => rung.count ?? '—').join('/')}</b>
+      </span>
+    ) : null}
+  </div>
+);
+
 export const MarketOverview = ({
   indices,
   turnover = null,
   breadth = null,
+  emotion = null,
 }: MarketOverviewProps) => (
   <section className="market-overview" aria-labelledby="market-overview-title">
     <h2 id="market-overview-title" className="visually-hidden">
@@ -170,6 +209,7 @@ export const MarketOverview = ({
             <span className="visually-hidden">晋级率</span>晋级 <b>{formatRate(breadth?.promotionRate ?? null)}</b>
           </span>
         </div>
+        {emotion?.status === 'fresh' ? <EmotionRow emotion={emotion} /> : null}
       </div>
     </dl>
   </section>

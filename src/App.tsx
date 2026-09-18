@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { calculatePortfolioSummary, hasPositionDetails } from './lib/calculations';
 import { DragonTigerList } from './components/DragonTigerList';
 import { AuctionList } from './components/AuctionList';
@@ -10,13 +10,16 @@ import {
 } from './components/MarketOverview';
 import { PrimaryNav, type PrimaryNavPage } from './components/PrimaryNav';
 import { ScreenerPanel, type ScreenerTab } from './components/ScreenerPanel';
-import { fetchQuotes, mergeQuotes } from './lib/quotes';
+import { RotationPage } from './components/RotationPage';
+import type { RotationSummary } from './components/SectorRotationPanel';
+import { fetchMinuteSeries, fetchQuotes, mergeQuotes } from './lib/quotes';
 import { searchStocks } from './lib/search';
 import { loadState, moveHoldingsToGroup, saveState } from './lib/storage';
 import type { GroupDialogValues } from './components/GroupDialog';
 import { GroupManagerDialog } from './components/GroupManagerDialog';
 import { HoldingForm, type HoldingFormValues } from './components/HoldingForm';
 import { HoldingList } from './components/HoldingList';
+import { toMinuteSeriesMap } from './components/MinuteChart';
 import { LimitUpFocus, type LimitUpFocusTab } from './components/LimitUpFocus';
 import { Overview } from './components/Overview';
 import { SprintLimitUpRail } from './components/SprintLimitUpRail';
@@ -44,7 +47,9 @@ import type {
   Holding,
   LimitUpLadderResponse,
   LimitUpResponse,
+  MarketEmotion,
   MarketIndex,
+  MinuteSeriesMap,
   Quote,
   QuoteMap,
   QuotesResponse,
@@ -54,6 +59,8 @@ import type {
 } from './types';
 
 const REFRESH_INTERVAL_MS = 10_000;
+/** 分时刷新最小间隔：上游按票数逐个抓，比行情贵得多 */
+const MINUTE_REFRESH_MIN_MS = 5 * 60 * 1000;
 
 // 分组的增删改都收在「分组管理」面板里，不再有单独的 create-group / edit-group 弹窗
 type ModalState =
@@ -249,11 +256,18 @@ export default function App() {
   const [state, setState] = useState<StorageState>(loadedState.state);
   const [activePage, setActivePage] = useState<PrimaryNavPage>('watchlist');
   const [activeScreenerTab, setActiveScreenerTab] = useState<ScreenerTab>('trend');
+  /** 「轮动」页的板块数，由页面内取数后回报，只用于导航计数 */
+  const [rotationPlateCount, setRotationPlateCount] = useState<number | null>(null);
   const [activeLimitUpTab, setActiveLimitUpTab] = useState<LimitUpFocusTab>('pool');
   const [selectedGroupId, setSelectedGroupId] = useState<string>('all');
   // 自选页表头的筛选：范围（全部 / 持仓）和分组合并成一条分段控件
   const [watchlistScope, setWatchlistScope] = useState<WatchlistScope>('all');
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
+  /**
+   * 当日分时序列（迷你分时图用）。只在自选/持仓列表变化和页面首次加载时取一次：
+   * 服务端为它要逐只打上游，请求数 = 票数，不能跟着 10 秒行情轮询一起刷。
+   */
+  const [minuteSeries, setMinuteSeries] = useState<MinuteSeriesMap>({});
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [marketIndices, setMarketIndices] = useState<Record<string, MarketIndex>>(
@@ -262,6 +276,8 @@ export default function App() {
   const [marketUpdatedAt, setMarketUpdatedAt] = useState<string | null>(null);
   const [marketTurnover, setMarketTurnover] = useState<number | null>(null);
   const [marketBreadth, setMarketBreadth] = useState<MarketBreadth | null>(null);
+  /** 财联社情绪（封板率 / 高开率 / 获利率）：只有当天快照，历史日期后端返回 null */
+  const [marketEmotion, setMarketEmotion] = useState<MarketEmotion | null>(null);
   const [isMarketRefreshing, setIsMarketRefreshing] = useState(false);
   const [limitUp, setLimitUp] = useState<LimitUpResponse>(emptyLimitUpResponse());
   const [isLimitUpRefreshing, setIsLimitUpRefreshing] = useState(false);
@@ -530,6 +546,7 @@ export default function App() {
       setMarketIndices((current) => mergeMarketOverview(current, response));
       setMarketTurnover(response.turnover);
       setMarketBreadth(response.breadth);
+      setMarketEmotion(response.emotion ?? null);
       if (response.indices.some((index) => index.status === 'fresh')) {
         setMarketUpdatedAt(response.fetchedAt);
       }
@@ -752,6 +769,39 @@ export default function App() {
     void refreshQuotes(holdingSymbols);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /** 上次成功取分时的时刻，用来给「切回标签页」那条路径做节流 */
+  const minuteFetchedAtRef = useRef(0);
+
+  /**
+   * 当日分时：上游一次只给一只票，服务端要逐只抓（请求数 = 票数），
+   * 所以**不跟 10 秒行情轮询走**。只在三种时机取：
+   * 1. 首次加载 / 自选·持仓的代码集合变化（含增删股票）
+   * 2. 从其它标签页切回来（下面的 visibilitychange 路径），节流见 MINUTE_REFRESH_MIN_MS
+   *
+   * 分时是增强信息：拿不到就保持「—」，不弹错误、不影响行情与其它列。
+   */
+  const refreshMinuteSeries = useCallback(
+    async (symbols: string[] = holdingSymbols): Promise<void> => {
+      if (symbols.length === 0) {
+        setMinuteSeries({});
+        return;
+      }
+
+      try {
+        const series = await fetchMinuteSeries(symbols);
+        minuteFetchedAtRef.current = Date.now();
+        setMinuteSeries(toMinuteSeriesMap(series));
+      } catch {
+        // 静默失败：这一列显示「—」，行情照旧
+      }
+    },
+    [holdingSymbols],
+  );
+
+  useEffect(() => {
+    void refreshMinuteSeries(holdingSymbols);
+  }, [refreshMinuteSeries, holdingSymbols]);
+
   useEffect(() => {
     let timerId: number | null = null;
 
@@ -777,6 +827,10 @@ export default function App() {
     const handleVisibilityChange = (): void => {
       if (document.visibilityState === 'visible') {
         refreshVisibleData();
+        // 分时另算节流：它比行情贵得多，切标签页不该每次都重打一遍上游
+        if (Date.now() - minuteFetchedAtRef.current >= MINUTE_REFRESH_MIN_MS) {
+          void refreshMinuteSeries();
+        }
         startTimer();
         return;
       }
@@ -1089,7 +1143,6 @@ export default function App() {
           {modal.type === 'create-holding' ? (
             <HoldingForm
               groups={state.groups}
-              defaultGroupId={selectedGroupId}
               isSubmitting={isHoldingSubmitting}
               onSearch={searchStocks}
               onSubmit={handleCreateHolding}
@@ -1115,6 +1168,11 @@ export default function App() {
       </div>
     );
   };
+
+  /** 「轮动」页自己取大盘概览（它只关心 emotion 那部分），这里只接导航计数的摘要 */
+  const handleRotationSummary = useCallback((summary: RotationSummary): void => {
+    setRotationPlateCount(summary.hasData ? summary.plateCount : null);
+  }, []);
 
   const renderHoldingsPage = () => (
     // 持仓页没有右侧竞价栏，用 --solo 让列表占满整行，否则第二列会空出一条导轨槽
@@ -1156,6 +1214,7 @@ export default function App() {
             <HoldingList
               holdings={filteredHoldings}
               quotes={quotes}
+              minuteSeries={minuteSeries}
               limitUpInfo={limitUpInfo}
               onEdit={(holding) => setModal({ type: 'edit-holding', holdingId: holding.id })}
             />
@@ -1203,6 +1262,7 @@ export default function App() {
             <Watchlist
               holdings={filteredWatchlist}
               quotes={quotes}
+              minuteSeries={minuteSeries}
               limitUpInfo={limitUpInfo}
               onEdit={(holding) => setModal({ type: 'edit-holding', holdingId: holding.id })}
             />
@@ -1246,6 +1306,7 @@ export default function App() {
           dragonTigerCount={
             dragonTiger.status === 'unavailable' ? null : dragonTiger.items.length
           }
+          rotationCount={rotationPlateCount}
           onNavigate={setActivePage}
           isRefreshing={isRefreshing || isMarketRefreshing}
           lastUpdated={lastUpdated ?? marketUpdatedAt}
@@ -1280,6 +1341,7 @@ export default function App() {
                 indices={marketOverview}
                 turnover={marketTurnover}
                 breadth={marketBreadth}
+                emotion={marketEmotion}
               />
             )}
 
@@ -1324,6 +1386,8 @@ export default function App() {
                   void refreshDragonTiger();
                 }}
               />
+            ) : activePage === 'rotation' ? (
+              <RotationPage onSummary={handleRotationSummary} />
             ) : activePage === 'screener' ? (
               <ScreenerPanel
                 activeTab={activeScreenerTab}

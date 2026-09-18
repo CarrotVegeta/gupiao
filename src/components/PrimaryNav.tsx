@@ -4,6 +4,7 @@ export type PrimaryNavPage =
   | 'limit-up'
   | 'auction'
   | 'dragon-tiger'
+  | 'rotation'
   | 'screener';
 
 type PrimaryNavProps = {
@@ -13,6 +14,7 @@ type PrimaryNavProps = {
   limitUpCount: number | null;
   auctionCount?: number | null;
   dragonTigerCount?: number | null;
+  rotationCount?: number | null;
   screenerCount?: number | null;
   onNavigate: (page: PrimaryNavPage) => void;
   isRefreshing?: boolean;
@@ -52,6 +54,11 @@ const navItems: Array<{
     getCount: ({ dragonTigerCount }) => (dragonTigerCount == null ? '—' : dragonTigerCount),
   },
   {
+    page: 'rotation',
+    label: '轮动',
+    getCount: ({ rotationCount }) => (rotationCount == null ? '—' : rotationCount),
+  },
+  {
     page: 'screener',
     label: '选股',
     getCount: ({ screenerCount }) => (screenerCount == null ? '—' : screenerCount),
@@ -65,6 +72,7 @@ export const PrimaryNav = ({
   limitUpCount,
   auctionCount = null,
   dragonTigerCount = null,
+  rotationCount = null,
   screenerCount = null,
   onNavigate,
   isRefreshing = false,
@@ -79,6 +87,7 @@ export const PrimaryNav = ({
     limitUpCount,
     auctionCount,
     dragonTigerCount,
+    rotationCount,
     screenerCount,
     onNavigate,
   };

@@ -5,6 +5,7 @@ import { fetchMarketOverview, mergeMarketOverview } from './market';
 const marketResponse: MarketOverviewResponse = {
   turnover: null,
   breadth: null,
+  emotion: null,
   indices: [
     {
       symbol: '000001',
@@ -55,6 +56,44 @@ describe('market overview fixture', () => {
 
     await expect(fetchMarketOverview(fetchImpl)).resolves.toEqual(marketResponse);
     expect(fetchImpl).toHaveBeenCalledWith('/api/market-overview');
+  });
+
+  it('parses the 财联社 emotion block when the server sends one', async () => {
+    const emotion = {
+      source: 'cls',
+      tradeDate: '20260918',
+      marketDegree: 70,
+      sealRate: 76,
+      sealCount: 78,
+      brokenCount: 25,
+      openRate: 62,
+      profitRate: 68,
+      yesterdayLimitUpPerformance: 2.81,
+      turnover: 2_080_000_000_000,
+      ladder: [{ key: 'yiban', name: '一板', count: 66, promotionRate: 21 }],
+      status: 'fresh',
+    };
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify({ ...marketResponse, emotion })));
+
+    const result = await fetchMarketOverview(fetchImpl);
+    expect(result.emotion).toEqual(emotion);
+  });
+
+  it('degrades emotion to null instead of rejecting the whole response', async () => {
+    // 后端老版本不返回 emotion，上游挂掉时也可能给个残缺对象 —— 都不该影响大盘指数渲染
+    const missing = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify(marketResponse)));
+    await expect((await fetchMarketOverview(missing)).emotion).toBeNull();
+
+    const broken = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ ...marketResponse, emotion: { source: 'cls', sealRate: 'x' } })),
+      );
+    await expect((await fetchMarketOverview(broken)).emotion).toBeNull();
   });
 
   it('keeps three fixed slots when rows are malformed or missing', async () => {
