@@ -946,14 +946,15 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   color: #fff;
 }
 
-/* 筛选按钮上的小计数（如「仅沪深 12」里的北交所只数） */
+/* 筛选按钮上的小计数（如「仅沪深主板+创业板 30」里被排除的北交所只数） */
 .plate-stocks__filter-hint {
-  margin-left: 0.3077rem;
-  padding: 0 0.3077rem;
+  margin-left: 0.5385rem;
+  padding: 0.0769rem 0.3846rem;
   border-radius: 0.4615rem;
   background: rgba(15, 23, 42, 0.08);
   font-size: 0.6923rem;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .plate-stocks__filter[aria-pressed='true'] .plate-stocks__filter-hint {

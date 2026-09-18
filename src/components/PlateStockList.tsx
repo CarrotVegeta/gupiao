@@ -46,27 +46,38 @@ const formatPrice = (value: number | null): string =>
  * `display: -webkit-box` 会被覆盖成 `flow-root`（`-webkit-line-clamp` 随之失效），
  * 结果是**不画省略号、文字被硬切**；而是否画省略号还取决于文本正好断在哪个字上，
  * 表现为「有的行有省略号、有的行没有」。用户明确要求「展示不完就省略」，
- * 所以改成在渲染前按字符预算截断，结果稳定可控。
+ * 所以改成在渲染前按字符预算截断。
  *
- * 每行能放多少字由容器宽度估算：中日韩字符按 1 个字宽算，其余按 0.55 算。
+ * 权重口径：中日韩字符（含全角标点）按 1、其余按 0.55 —— 与 `font-size` 的 em 宽度对应，
+ * 这样 `预算 = 每行字数 × 行数` 的单位就一致了。
+ *
+ * ⚠ 预算必须留安全余量：实测按 `width/fontSize × 行数` 直接取整会**多出约一行**
+ * （中文字宽≈1em 但英文数字偏宽，加权后仍不够）。所以乘 0.9，并且截断后再实测一次行数，
+ * 超了就把预算按比例收紧重算，最多退 6 轮。
  */
 const CJK = /[\u3000-\u9fff\uff00-\uffef]/;
-const charWidth = (char: string): number => (CJK.test(char) ? 1 : 0.55);
+const charWeight = (char: string): number => (CJK.test(char) ? 1 : 0.55);
 
+/** 累计权重不超过 budget 的最长前缀长度 */
 const fitChars = (text: string, budget: number): number => {
   let used = 0;
   for (let index = 0; index < text.length; index += 1) {
-    used += charWidth(text[index]);
+    used += charWeight(text[index]);
     if (used > budget) return index;
   }
   return text.length;
 };
 
+const SAFETY = 0.9;
+
 /** 文本在给定像素宽度下最多能显示多少「字宽」 */
 const budgetFor = (widthPx: number, fontSizePx: number, lineCount: number): number =>
-  Math.max(8, Math.floor((widthPx / Math.max(fontSizePx, 1)) * lineCount));
+  Math.max(6, Math.floor((widthPx / Math.max(fontSizePx, 1)) * lineCount * SAFETY));
 
-const useTruncate = (text: string, lineCount: number): { text: string; ref: React.RefObject<HTMLSpanElement | null> } => {
+const useTruncate = (
+  text: string,
+  lineCount: number,
+): { text: string; ref: React.RefObject<HTMLSpanElement | null> } => {
   const ref = useRef<HTMLSpanElement | null>(null);
   const [budget, setBudget] = useState(60);
 
@@ -74,9 +85,9 @@ const useTruncate = (text: string, lineCount: number): { text: string; ref: Reac
     const node = ref.current;
     if (!node) return;
     const measure = (): void => {
-      const style = getComputedStyle(node);
       const width = node.clientWidth > 0 ? node.clientWidth : node.parentElement?.clientWidth ?? 0;
-      setBudget(budgetFor(width, Number.parseFloat(style.fontSize) || 13, lineCount));
+      const fontSize = Number.parseFloat(getComputedStyle(node).fontSize) || 13;
+      setBudget(budgetFor(width, fontSize, lineCount));
     };
     measure();
     if (typeof ResizeObserver === 'undefined') return;
@@ -89,6 +100,21 @@ const useTruncate = (text: string, lineCount: number): { text: string; ref: Reac
     const keep = fitChars(text, budget);
     return keep >= text.length ? text : `${text.slice(0, Math.max(1, keep - 1))}…`;
   }, [text, budget]);
+
+  /*
+   * 实测兜底：渲染完量一下行数，超过 lineCount 就把预算按「实际占了几行」收紧重算。
+   * 只靠宽度估算在这类中英混排里不够准（实测会多放一行）。
+   */
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!node || truncated === text) return;
+    const style = getComputedStyle(node);
+    const lineHeight = Number.parseFloat(style.lineHeight) || 16;
+    const rendered = Math.round(node.clientHeight / lineHeight);
+    if (rendered > lineCount) {
+      setBudget((current) => Math.max(6, Math.floor((current * lineCount) / rendered) - 1));
+    }
+  }, [truncated, text, lineCount]);
 
   return { text: truncated, ref };
 };
@@ -117,12 +143,13 @@ export const PlateStockList = ({
   const [onlyCore, setOnlyCore] = useState(false);
   const [onlyLimitUp, setOnlyLimitUp] = useState(false);
   /**
-   * 只看沪深两市（排除北交所）。
+   * 只看沪深主板 + 创业板（排除北交所与科创板？—— 不排科创板）。
    *
-   * 财联社的成分股里混着北交所（`920298.BJ` 这类），涨跌幅是 30cm 一档，
-   * 和沪深主板/创业板放在一张表里比涨跌幅没有可比性，所以给一个开关而不是默认排除。
+   * 口径就是**排除北交所**：北交所（`920xxx` / `8xxxxx` / `4xxxxx`）涨跌幅是 30cm 一档，
+   * 和沪深主板/创业板放在一张表里比涨跌幅没有可比性。
+   * **默认开启**（用户口径）：一打开看的就是可比的沪深票，需要看北交所时点掉即可。
    */
-  const [onlyMainBoard, setOnlyMainBoard] = useState(false);
+  const [onlyMainBoard, setOnlyMainBoard] = useState(true);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -216,15 +243,15 @@ export const PlateStockList = ({
             aria-pressed={onlyMainBoard}
             title={
               beijingCount > 0
-                ? `排除北交所 ${beijingCount} 只（30cm 涨跌幅，与沪深不可直接比较）`
-                : '该板块没有北交所成分股'
+                ? `排除北交所 ${beijingCount} 只（30cm 涨跌幅，与沪深主板/创业板不可直接比较）。默认开启`
+                : '该板块没有北交所成分股（此开关无影响）'
             }
             onClick={(event) => {
               event.stopPropagation();
               setOnlyMainBoard((value) => !value);
             }}
           >
-            仅沪深
+            仅沪深主板+创业板
             {beijingCount > 0 ? <span className="plate-stocks__filter-hint">{beijingCount}</span> : null}
           </button>
         </div>
