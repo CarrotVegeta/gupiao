@@ -1,9 +1,17 @@
 import { useCallback } from 'react';
+import { MinuteChart } from './MinuteChart';
 import { StockIdentity } from './StockIdentity';
 import { SortableHeader } from './SortableHeader';
 import { formatLimitUpTag, type LimitUpInfoMap } from '../lib/limitUpInfo';
 import { formatPercent, formatPrice } from '../lib/quotes';
 import { useSortedRows, type SortValue } from '../lib/tableSort';
+import {
+  tierClassNames,
+  tierOfChange,
+  turnoverLevel,
+  volumeRatioLevel,
+  wordClassNames,
+} from '../lib/valueTier';
 import {
   calculateWatchReturn,
   formatWatchDate,
@@ -11,7 +19,7 @@ import {
   formatWatchReturn,
   watchDateSortValue,
 } from '../lib/watchlist';
-import type { Holding, QuoteMap } from '../types';
+import type { Holding, MinuteSeriesMap, QuoteMap } from '../types';
 
 type WatchlistSortKey =
   | 'stock'
@@ -29,6 +37,8 @@ type WatchlistProps = {
   holdings: Holding[];
   quotes: QuoteMap;
   onEdit: (holding: Holding) => void;
+  /** 当日分时序列，按代码索引；缺省表示还没取到（该列显示「—」） */
+  minuteSeries?: MinuteSeriesMap;
   /** 涨停池换算出的连板标识；缺省表示没有涨停数据（不显示连板标签） */
   limitUpInfo?: LimitUpInfoMap;
 };
@@ -98,7 +108,13 @@ const formatAmount = (value: number | null): string => {
 const formatRatio = (value: number | null): string =>
   value === null || !Number.isFinite(value) ? '—' : value.toFixed(2);
 
-export const Watchlist = ({ holdings, quotes, onEdit, limitUpInfo = {} }: WatchlistProps) => {
+export const Watchlist = ({
+  holdings,
+  quotes,
+  onEdit,
+  minuteSeries = {},
+  limitUpInfo = {},
+}: WatchlistProps) => {
   const { rows, sort, toggle } = useSortedRows<Holding, WatchlistSortKey>({
     rows: holdings,
     getValueFor: useCallback(
@@ -130,6 +146,9 @@ export const Watchlist = ({ holdings, quotes, onEdit, limitUpInfo = {} }: Watchl
           <thead>
             <tr>
               {header('stock', '股票')}
+              <th scope="col" title="当日分时（09:30~15:00，价格线 + 昨收基准虚线，按末点相对昨收染色）">
+                分时图
+              </th>
               {header('price', '最新价')}
               {header('pct', '涨跌幅')}
               {header('change', '涨跌额')}
@@ -144,6 +163,7 @@ export const Watchlist = ({ holdings, quotes, onEdit, limitUpInfo = {} }: Watchl
           <tbody>
             {rows.map((holding) => {
               const quote = quotes[holding.symbol];
+              const minute = minuteSeries[holding.symbol];
               const pct = quote?.pct ?? null;
               const isUp = pct !== null && pct > 0;
               /* 显示用行情名（拿不到行情时退回本地名），首字头像仍取本地名 */
@@ -155,6 +175,11 @@ export const Watchlist = ({ holdings, quotes, onEdit, limitUpInfo = {} }: Watchl
                */
               const watchReturn = calculateWatchReturn(holding, quote);
               const watchDateSource = holding.watchPriceAt ?? holding.createdAt;
+              /* 涨跌幅按档变色（涨停红底等），换手与量比各带一个档位词；
+               * 自选收益不加底色块——它本来就带红绿文字色，加底反而和涨跌幅抢眼 */
+              const pctTier = tierOfChange(pct);
+              const turnover = turnoverLevel(quote?.turnover ?? null);
+              const volumeRatio = volumeRatioLevel(quote?.volumeRatio ?? null);
 
               return (
                 <tr key={holding.id} className="quote-table__row">
@@ -176,12 +201,21 @@ export const Watchlist = ({ holdings, quotes, onEdit, limitUpInfo = {} }: Watchl
                       />
                     </button>
                   </th>
+                  <td className="quote-table__minute-cell">
+                    {minute ? (
+                      <MinuteChart points={minute.points} preClose={minute.preClose ?? quote?.preClose ?? null} />
+                    ) : (
+                      <span className="minute-chart minute-chart--empty">—</span>
+                    )}
+                  </td>
                   <td>{formatPrice(quote?.price ?? null)}</td>
                   <td>
                     {pct === null ? (
                       '—'
                     ) : (
-                      <span className={`watch-pct ${isUp ? 'watch-pct--up' : 'watch-pct--down'}`}>
+                      <span
+                        className={`watch-pct ${isUp ? 'watch-pct--up' : 'watch-pct--down'}${pctTier === null ? '' : ` ${tierClassNames(pctTier, { pad: true })}`}`}
+                      >
                         {formatSignedPercent(pct)}
                       </span>
                     )}
@@ -191,8 +225,19 @@ export const Watchlist = ({ holdings, quotes, onEdit, limitUpInfo = {} }: Watchl
                       ? '—'
                       : formatSignedPrice(quote.change)}
                   </td>
-                  <td>{formatPercent(quote?.turnover ?? null)}</td>
-                  <td>{formatRatio(quote?.volumeRatio ?? null)}</td>
+                  {/* 换手/量比：数值下面挂一个档位词（绝对定位，不加宽列也不撑高行） */}
+                  <td className={turnover === null ? undefined : 'value-word-host'}>
+                    {formatPercent(quote?.turnover ?? null)}
+                    {turnover === null ? null : (
+                      <span className={wordClassNames(turnover)}>{turnover.word}</span>
+                    )}
+                  </td>
+                  <td className={volumeRatio === null ? undefined : 'value-word-host'}>
+                    {formatRatio(quote?.volumeRatio ?? null)}
+                    {volumeRatio === null ? null : (
+                      <span className={wordClassNames(volumeRatio)}>{volumeRatio.word}</span>
+                    )}
+                  </td>
                   <td>{formatAmount(quote?.amount ?? null)}</td>
                   {/* 只到日；完整时刻（含秒）挂在悬停提示里，不占列宽 */}
                   <td className="quote-table__watch-date" title={formatWatchDateTime(watchDateSource)}>

@@ -807,6 +807,198 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   color: var(--fall);
 }
 
+/*
+ * 财联社情绪行：封板率 / 高开率 / 获利率 / 连板梯队。
+ * 与上面的自算口径（涨跌数 / 涨停 / 炸板 / 晋级）并列，口径不一致本身就是上游异常信号。
+ */
+.market-breadth__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3077rem 0.9231rem;
+  padding-top: 0.3077rem;
+  margin-top: 0.3077rem;
+  border-top: 1px dashed var(--border-color);
+}
+
+.sector-rotation__controls {
+  display: flex;
+  align-items: center;
+  gap: 0.9231rem;
+  flex-wrap: wrap;
+}
+
+.sector-rotation__tabs {
+  display: inline-flex;
+  padding: 0.1538rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  gap: 0.1538rem;
+}
+
+.sector-rotation__tab {
+  padding: 0.3077rem 0.7692rem;
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 0.0769rem);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.9231rem;
+  cursor: pointer;
+}
+
+.sector-rotation__tab.is-active {
+  background: var(--accent-soft);
+  color: var(--accent-primary);
+  font-weight: 600;
+}
+
+/* 轮动榜单：一行一个板块，「上榜次数」是最主要的排序依据 */
+.sector-rotation__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1538rem;
+  margin-top: var(--space-2);
+}
+
+.sector-rotation__row {
+  display: grid;
+  grid-template-columns: 1.6923rem minmax(6.1538rem, 1fr) 4.9231rem 5.5385rem 7.3846rem 7.3846rem 8.3077rem;
+  align-items: center;
+  gap: 0.6154rem;
+  padding: 0.4615rem 0.6154rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.9231rem;
+}
+
+.sector-rotation__row:nth-child(odd) {
+  background: var(--bg-muted);
+}
+
+.sector-rotation__rank {
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.sector-rotation__name {
+  color: var(--text-primary);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sector-rotation__pct {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.sector-rotation__pct.is-up {
+  color: var(--rise);
+}
+
+.sector-rotation__pct.is-down {
+  color: var(--fall);
+}
+
+.sector-rotation__stat,
+.sector-rotation__span {
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sector-rotation__stat b {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.overview__empty {
+  margin-top: var(--space-2);
+  color: var(--text-tertiary);
+  font-size: 0.9231rem;
+}
+
+/*
+ * 「轮动」页：左轮动榜 + 右情绪卡。
+ * 页头是两列，宽屏时右列窄一些（情绪是信息卡，几条数字；轮动才是主内容）。
+ */
+.rotation-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.rotation-page__column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.rotation-emotion {
+  margin-top: var(--space-2);
+}
+
+.rotation-emotion__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.4615rem, 1fr));
+  gap: 0.6154rem;
+  margin: 0;
+}
+
+.rotation-emotion__cell {
+  padding: 0.6154rem 0.7692rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+}
+
+/* 连板梯队是长文本，独占一整行 */
+.rotation-emotion__cell--wide {
+  grid-column: 1 / -1;
+}
+
+.rotation-emotion__cell dt {
+  color: var(--text-tertiary);
+  font-size: 0.8462rem;
+}
+
+.rotation-emotion__cell dd {
+  margin: 0.2308rem 0 0;
+  color: var(--text-primary);
+  font-size: 1.1538rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.rotation-emotion__cell--wide dd {
+  font-size: 0.9231rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+@media (max-width: 1180px) {
+  .rotation-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  /* 窄屏：拆掉固定栅格，改成可换行的一行信息 */
+  .sector-rotation__row {
+    grid-template-columns: 1.6923rem 1fr auto;
+    row-gap: 0.3077rem;
+  }
+
+  .sector-rotation__span {
+    grid-column: 1 / -1;
+  }
+}
+
 .market-index-card--fresh {
   border-top-color: var(--border-color);
 }
@@ -2026,37 +2218,22 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   cursor: pointer;
 }
 
-.auction-probability {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 3.6923rem;
-  padding: 0.3077rem 0.6154rem;
-  border: 1px solid transparent;
-  border-radius: 0.6154rem;
-  font-size: 0.86rem;
+/* 合格判定的两个条件：✓/✗ 直接标在数值前，避免再去比对阈值 */
+.auction-check__mark {
+  display: inline-block;
+  min-width: 0.9231rem;
+  margin-right: 0.3077rem;
   font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.2;
+  line-height: 1;
+  text-align: center;
 }
 
-.auction-probability--high {
-  border-color: rgba(220, 47, 53, 0.3);
-  background: rgba(220, 47, 53, 0.14);
-  color: var(--rise);
+.auction-check--pass .auction-check__mark {
+  color: var(--success);
 }
 
-.auction-probability--mid {
-  border-color: var(--warn-border);
-  background: var(--warn-surface);
-  color: var(--warn);
-}
-
-.auction-probability--low,
-.auction-probability--unknown {
-  border-color: rgba(138, 147, 165, 0.24);
-  background: rgba(138, 147, 165, 0.08);
-  color: var(--text-secondary);
+.auction-check--fail .auction-check__mark {
+  color: var(--danger);
 }
 
 .auction-premium {
@@ -2173,8 +2350,9 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   font-weight: 500;
 }
 
-/* 昨日连板 / 竞价结论 / 溢价 / 竞价涨幅 / 涨跌幅（现价）/ 竞价金额：数字列统一等宽加粗 */
+/* 昨日连板 / 竞价高开 / 竞价量比 / 竞价结论 / 溢价 / 涨跌幅（现价）/ 竞价金额：数字列统一等宽加粗 */
 .auction-list tbody td:nth-child(2),
+.auction-list tbody td:nth-child(3),
 .auction-list tbody td:nth-child(4),
 .auction-list tbody td:nth-child(5),
 .auction-list tbody td:nth-child(6),
@@ -2183,6 +2361,30 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* 竞价分时形态：迷你走势 + 一句话形状描述。不参与判定，只做过程观察。 */
+.auction-list__minute {
+  min-width: 9.5rem;
+  white-space: nowrap;
+}
+
+.auction-sparkline {
+  display: block;
+}
+
+.auction-sparkline polyline {
+  stroke: var(--accent-primary);
+}
+
+.auction-list__minute-text {
+  display: block;
+  margin-top: 0.1538rem;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-weight: 500;
+  white-space: normal;
+  max-width: 11rem;
 }
 
 .auction-list__reasons {
@@ -2333,13 +2535,96 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   white-space: normal;
 }
 
+/*
+ * 自选 / 持仓两张列表：股票列不动，其余列（表头 + 数据格）字号抬一号。
+ * 字号大了要多占宽度，用列间距补回来（18px → 13px）；首列的左内边距仍是 18px，
+ * 它和卡片标题对齐，由下面 `.quote-table thead th:first-child, .quote-table tbody th`
+ * 那条更高优先级的选择器兜住。
+ * 涨停池 / 竞价 / 龙虎榜 / 选股那些表不在这次口径里，保持原字号。
+ */
+.quote-table--watchlist tbody td,
+.quote-table--holdings tbody td {
+  font-size: 1.0769rem;
+}
+
+.quote-table--watchlist thead th,
+.quote-table--holdings thead th {
+  font-size: 0.9231rem;
+}
+
+/* min-width 已含插入的「分时图」列，避免把数字列挤到换行 */
 .quote-table--holdings {
-  min-width: 75.3846rem;
+  min-width: 82.3077rem;
 }
 
 .quote-table--watchlist {
   /* 比通用 min-width 窄一档，但加了三列自选数据（自选日 / 自选价 / 自选收益）后要 1000 才不挤 */
-  min-width: 76.9231rem;
+  min-width: 83.8462rem;
+}
+
+.quote-table--watchlist th,
+.quote-table--watchlist td,
+.quote-table--holdings th,
+.quote-table--holdings td {
+  padding-right: 1rem;
+  padding-left: 1rem;
+}
+
+
+/*
+ * 迷你分时图（当日 09:30~15:00）。
+ *
+ * 逻辑坐标固定 96×26，渲染尺寸走 rem，跟全站根字号一起缩放；
+ * 颜色只表达「末点相对昨收的方向」，与右侧涨跌幅列同一套语义。
+ * 画法与取舍见 src/components/MinuteChart.tsx 顶部说明。
+ */
+.minute-chart {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  color: var(--neutral);
+}
+
+.minute-chart svg {
+  display: block;
+  width: 7.3846rem;
+  height: 2rem;
+}
+
+.minute-chart--empty {
+  color: var(--text-secondary);
+}
+
+.minute-chart--rise {
+  color: var(--rise);
+}
+
+.minute-chart--fall {
+  color: var(--fall);
+}
+
+.minute-chart--flat {
+  color: var(--neutral);
+}
+
+.minute-chart__line {
+  stroke: currentColor;
+  stroke-width: 1.25;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.minute-chart__dot {
+  fill: currentColor;
+}
+
+/* 昨收基准：中性色 + 半透明，不能跟行情线抢，也不能参与涨跌染色 */
+.minute-chart__baseline {
+  stroke: var(--text-tertiary);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+  opacity: 0.5;
 }
 
 .quote-table thead th:last-child,
@@ -3144,7 +3429,7 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
  * 列宽交给内容 + 表头的 padding 决定，和其它数字列一样。
  */
 .watch-pct {
-  font-size: 0.9231rem;
+  font-size: 1.0769rem;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
@@ -3158,11 +3443,129 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
   color: var(--fall);
 }
 
+/* ---------------------------------------------------------------------------
+ * 字段值分档：涨跌幅 / 自选收益 / 持仓收益 按档变色（极端档加底），换手与量比带档位词。
+ *
+ * 两条约束，都是为了「除了这两处，界面别的地方一律不动」：
+ * 1. 档位色只加在「装数字的那个元素」上；`.value-tier--pad` 用 padding 配等量负 margin
+ *    把底色垫出来，不占布局（纯文字那层没有内边距，不垫就会糊住数字）。
+ * 2. 档位词绝对定位在值的正下方，脱离文档流 —— 不加宽列，也不撑高行。
+ *
+ * 选择器写成两个类（`.value-tier.value-tier--x`）是为了压过界面里自带的
+ * `.watch-pct--up` / `.quote-row__chg.value--rise`，所以这一段必须排在那两条之后。
+ * 恰好 0 的涨跌幅/收益不分档，保持原样。
+ */
+.value-tier {
+  border-radius: 0.3077rem;
+  font-weight: 700;
+}
+
+.value-tier--pad {
+  padding: 0.2308rem 0.5385rem;
+  margin: 0 -0.5385rem;
+}
+
+.value-tier.value-tier--limit {
+  background: var(--rise);
+  color: #fff;
+}
+
+.value-tier.value-tier--limit strong,
+.value-tier.value-tier--limit span {
+  color: #fff;
+}
+
+.value-tier.value-tier--limitDown {
+  background: var(--fall);
+  color: #fff;
+}
+
+.value-tier.value-tier--limitDown strong,
+.value-tier.value-tier--limitDown span {
+  color: #fff;
+}
+
+.value-tier.value-tier--bigUp {
+  background: var(--danger-soft);
+  box-shadow: inset 0 0 0 1px rgba(220, 47, 53, 0.22);
+  color: var(--rise);
+}
+
+.value-tier.value-tier--bigUp strong,
+.value-tier.value-tier--bigUp span {
+  color: var(--rise);
+}
+
+.value-tier.value-tier--bigDown {
+  background: var(--success-surface);
+  box-shadow: inset 0 0 0 1px rgba(14, 159, 82, 0.22);
+  color: var(--fall);
+}
+
+.value-tier.value-tier--bigDown strong,
+.value-tier.value-tier--bigDown span {
+  color: var(--fall);
+}
+
+.value-tier.value-tier--up,
+.value-tier.value-tier--up strong,
+.value-tier.value-tier--up span {
+  color: var(--rise);
+}
+
+.value-tier.value-tier--down,
+.value-tier.value-tier--down strong,
+.value-tier.value-tier--down span {
+  color: var(--fall);
+}
+
+/* 持仓页涨跌幅用的 .quote-row__chg 自带内边距和高度，带档位色时把它整个放大一档 */
+.value-tier.quote-row__chg {
+  height: 1.9231rem;
+  padding: 0 0.6923rem;
+  border-radius: 0.6154rem;
+}
+
+/* 档位词的落点：td 自己当定位参考，词挂在数值正下方 */
+.quote-table tbody td.value-word-host {
+  position: relative;
+}
+
+.value-word {
+  position: absolute;
+  right: 1.3846rem;
+  bottom: 0.1538rem;
+  font-size: 0.7692rem;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.value-word--dim {
+  color: var(--text-tertiary);
+}
+
+.value-word--ink {
+  color: var(--text-secondary);
+}
+
+.value-word--amber {
+  color: var(--warn);
+}
+
+.value-word--rise {
+  color: var(--rise);
+}
+
+.value-word--fall {
+  color: var(--fall);
+}
+
 /* 稿子 F 的 .dlt：涨跌额和涨跌幅都是 12px / 650，比其它数字列更重一点
  * 必须带 .quote-table 前缀，否则会被 `.quote-table th, .quote-table td` 的 13px 压过去
  */
 .quote-table .watch-delta {
-  font-size: 0.9231rem;
+  font-size: 1.0769rem;
   font-weight: 650;
 }
 
@@ -3321,8 +3724,9 @@ section[aria-labelledby='limit-up-list-title'] tbody td.limit-up-list__action {
     flex: 0 0 auto;
   }
 
-  /* 页面主体吃掉剩余高度（自选 / 持仓的左列表 + 右竞价栏 / 涨停页签面板） */
+  /* 页面主体吃掉剩余高度（自选 / 持仓的左列表 + 右竞价栏 / 涨停页签面板 / 轮动页） */
   .dashboard-main--fill > .workbench,
+  .dashboard-main--fill > .rotation-page,
   .dashboard-main--fill > #limit-up-focus-panel {
     flex: 1 1 auto;
     min-height: 0;
@@ -3809,7 +4213,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 .trend-settings__summary-note {
   color: var(--text-tertiary);
-  font-size: 0.9231rem;
+  font-size: 0.8462rem;
 }
 
 .trend-settings__body {
@@ -3839,7 +4243,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 .trend-filters__field > span {
   color: var(--text-tertiary);
-  font-size: 0.9231rem;
+  font-size: 0.8462rem;
 }
 
 .trend-filters__field select,
@@ -3936,7 +4340,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
   align-items: center;
   justify-content: space-between;
   color: var(--text-tertiary);
-  font-size: 0.9231rem;
+  font-size: 0.8462rem;
 }
 
 .theme-card__leader {
@@ -3993,7 +4397,7 @@ section[aria-labelledby='dragon-tiger-list-title'] tbody th .stock-identity .sto
 
 .theme-detail__metric-label {
   color: var(--text-tertiary);
-  font-size: 0.9231rem;
+  font-size: 0.8462rem;
 }
 
 .theme-detail__metric-value {

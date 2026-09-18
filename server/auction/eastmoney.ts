@@ -1,14 +1,9 @@
-import type { AuctionItem, AuctionResponse } from '../../src/types.js';
-import { AUCTION_POLICY } from '../../src/lib/auction-policy.js';
+import type { AuctionItem, AuctionMinuteTrend, AuctionResponse } from '../../src/types.js';
+import { evaluateAuctionQualification } from '../../src/lib/auction-policy.js';
 import { toEastmoneySecId } from '../quotes/eastmoney.js';
 import { TENCENT_FIELD, fetchTencentQuoteFields, toTencentSymbol } from '../tencent/client.js';
-import {
-  classifyAuctionPremium,
-  isSealedAtAuction,
-  limitUpPct,
-  predictLimitUpProbability,
-  toProbabilityTier,
-} from './model.js';
+import { fetchAuctionMinutes } from './minute.js';
+import { classifyAuctionPremium, isSealedAtAuction } from './model.js';
 
 type AuctionPoolItem = Pick<
   AuctionItem,
@@ -30,11 +25,18 @@ type AuctionDetail = {
   auctionPrice: number;
   auctionPct: number;
   auctionAmount: number | null;
+  /** 竞价分时形态；只有分时链路能提供 */
+  minuteTrend?: AuctionMinuteTrend | null;
+  /** 竞价价/量由谁提供，用于观测链路命中情况 */
+  amountSource?: 'tick' | 'minute' | null;
 };
 
-type SortableAuctionItem = Pick<AuctionItem, 'symbol' | 'boardCount' | 'limitUpProbability'>;
+type SortableAuctionItem = Pick<AuctionItem, 'symbol' | 'boardCount' | 'auctionRatio' | 'result'>;
 
-/** 09:25 时刻可知的市场环境，用于概率模型 */
+/**
+ * 09:25 时刻可知的市场环境。
+ * 新版判定只看竞价高开幅度和竞价量比，这里的市场家数/大盘缺口暂时不参与。
+ */
 export type AuctionMarketContext = {
   /** 昨日涨停家数（= 候选池规模） */
   previousLimitUpCount: number;
@@ -394,12 +396,14 @@ const fetchTencentAuctionDetails = async (
   );
 
   targets.forEach((target, index) => {
+    const tickAmount = ticks[index]?.auctionAmount ?? null;
     details.set(target.symbol, {
       preClose: target.preClose,
       limitUpPrice: asNumber(quotes.get(toTencentSymbol(target.symbol))?.[TENCENT_FIELD.limitUpPrice]),
       auctionPrice: target.open,
       auctionPct: Number((((target.open - target.preClose) / target.preClose) * 100).toFixed(2)),
-      auctionAmount: ticks[index]?.auctionAmount ?? null,
+      auctionAmount: tickAmount,
+      amountSource: tickAmount === null ? null : 'tick',
     });
   });
 
@@ -418,14 +422,16 @@ export const isPreviousOneWord = (
 };
 
 /**
- * 判定一只候选票：数值全部来自 09:25 时点信息，
- * 输出「今日收盘继续涨停」的概率档位 + 买入溢价档位。
+ * 判定一只候选票：数值全部来自 09:25 时点信息。
+ * 合格只看两个条件 —— 竞价高开幅度落在策略区间内、竞价量比达到门槛；
+ * 不再计算「今日收盘继续涨停」的概率。溢价档位只描述价格位置，不参与判定。
  */
 export const evaluateAuctionCandidate = (
   poolItem: AuctionPoolItem,
   detail: AuctionDetail | null,
   context: AuctionMarketContext,
 ): AuctionItem => {
+  void context;
   if (detail === null) {
     return {
       ...poolItem,
@@ -434,9 +440,9 @@ export const evaluateAuctionCandidate = (
       auctionAmount: null,
       auctionRatio: null,
       auctionPremium: null,
-      limitUpProbability: null,
       sealedAtAuction: null,
-      probabilityMissing: 0,
+      minuteTrend: null,
+      auctionAmountSource: null,
       result: 'insufficient',
       reasons: ['缺少 09:25 竞价成交数据'],
     };
@@ -450,22 +456,8 @@ export const evaluateAuctionCandidate = (
       : null;
   const sealedAtAuction = isSealedAtAuction(poolItem.symbol, poolItem.name,
     detail.auctionPrice, detail.preClose, detail.limitUpPrice);
-  const prediction = predictLimitUpProbability({
-    limitPct: limitUpPct(poolItem.symbol, poolItem.name),
-    sealedAtAuction: sealedAtAuction === true,
-    gapPct: detail.auctionPct,
-    board: poolItem.boardCount,
-    previousOneWord: isPreviousOneWord(poolItem.firstSealTime, poolItem.breakCount),
-    previousTurnover: poolItem.turnoverRate,
-    floatMarketCapYi:
-      poolItem.floatMarketCap !== null ? poolItem.floatMarketCap / 100_000_000 : null,
-    previousLimitUpCount: context.previousLimitUpCount,
-    previousBrokenCount: context.previousBrokenCount,
-    indexGapPct: context.indexGapPct,
-  });
   const premium = classifyAuctionPremium(detail.auctionPct);
-  const insufficient = sealedAtAuction === null || prediction.missingCount > AUCTION_POLICY.maxMissingFeatures;
-  const probability = Number(prediction.probability.toFixed(4));
+  const qualification = evaluateAuctionQualification(detail.auctionPct, auctionRatio);
 
   return {
     ...poolItem,
@@ -473,85 +465,43 @@ export const evaluateAuctionCandidate = (
     auctionPct: detail.auctionPct,
     auctionAmount: detail.auctionAmount,
     auctionRatio,
-    auctionPremium: insufficient ? null : premium.level,
-    limitUpProbability: insufficient ? null : probability,
+    auctionPremium: premium.level,
     sealedAtAuction,
-    probabilityMissing: prediction.missingCount,
-    result: insufficient ? 'insufficient' : toProbabilityTier(probability),
-    reasons: insufficient ? ['有效价格或模型特征不足，暂停概率分档']
-      : [...prediction.reasons, ...(prediction.missingCount ? ['缺失特征按训练均值代入，概率仅供低置信度参考'] : []), premium.reason],
+    minuteTrend: detail.minuteTrend ?? null,
+    auctionAmountSource: detail.amountSource ?? null,
+    result: qualification.result,
+    reasons: [
+      ...qualification.reasons,
+      ...(sealedAtAuction === null
+        ? ['缺少涨停价，无法判断竞价是否已封板']
+        : sealedAtAuction
+          ? ['竞价已封板，实际上买不到']
+          : []),
+      `竞价价 ${detail.auctionPrice.toFixed(2)} 元（${premium.reason}）`,
+      // 形态只作为观察项附在后面，不参与合格判定
+      ...(detail.minuteTrend ? [`竞价分时：${detail.minuteTrend.label}`] : []),
+    ],
   };
 };
+/**
+ * 排序：合格在前，其次昨日连板数降序，再按竞价量比降序（量能是这套判定的核心），最后按代码。
+ */
 export const sortAuctionItems = <T extends SortableAuctionItem>(items: T[]): T[] =>
   [...items].sort((left, right) => {
+    const rank = (item: T) => (item.result === 'qualified' ? 0 : item.result === 'unqualified' ? 1 : 2);
+    const resultDiff = rank(left) - rank(right);
+    if (resultDiff !== 0) {
+      return resultDiff;
+    }
+
     const boardDiff = (right.boardCount ?? -1) - (left.boardCount ?? -1);
     if (boardDiff !== 0) {
       return boardDiff;
     }
 
-    const probabilityDiff = (right.limitUpProbability ?? -1) - (left.limitUpProbability ?? -1);
-    return probabilityDiff !== 0 ? probabilityDiff : left.symbol.localeCompare(right.symbol);
+    const ratioDiff = (right.auctionRatio ?? -1) - (left.auctionRatio ?? -1);
+    return ratioDiff !== 0 ? ratioDiff : left.symbol.localeCompare(right.symbol);
   });
-
-const BROKEN_POOL_ENDPOINT = 'https://push2ex.eastmoney.com/getTopicZBPool';
-const INDEX_QUOTE_ENDPOINT = 'https://push2.eastmoney.com/api/qt/stock/get';
-
-/** 昨日炸板家数：情绪维度里少数在 09:25 就能拿到的当日环境指标 */
-const fetchBrokenCount = async (
-  tradeDate: string,
-  fetchImpl: typeof fetch,
-): Promise<number | null> => {
-  try {
-    const params = new URLSearchParams({
-      ut: '7eea3edcaed734bea9cbfc24409ed989',
-      dpt: 'wz.ztzt',
-      sort: 'fbt:asc',
-      date: tradeDate,
-      pagesize: '1',
-      Pageindex: '0',
-    });
-    const payload = await fetchJson(`${BROKEN_POOL_ENDPOINT}?${params.toString()}`, fetchImpl);
-    const data = isRecord(payload) && isRecord(payload.data) ? payload.data : null;
-    const total = data ? asInteger(data.tc) : null;
-    return total !== null && total >= 0 ? total : null;
-  } catch {
-    return null;
-  }
-};
-
-/**
- * 上证竞价缺口：开盘相对昨收。
- * 先走腾讯（稳定），东财 push2 只作为备用——它在这台机器上会被上游断连，
- * 一旦失败就会让每只票都少一个模型特征（probabilityMissing +1）。
- */
-const fetchIndexGapPct = async (fetchImpl: typeof fetch): Promise<number | null> => {
-  try {
-    const text = await fetchText(`${TENCENT_QUOTE_ENDPOINT}sh000001`, fetchImpl);
-    const fields = text.match(/v_sh000001="([^"]*)"/i)?.[1]?.split('~') ?? [];
-    const open = asNumber(fields[5]);
-    const preClose = asNumber(fields[4]);
-    if (open !== null && preClose !== null && open > 0 && preClose > 0) {
-      return Number((((open - preClose) / preClose) * 100).toFixed(2));
-    }
-  } catch {
-    // 落到东财源
-  }
-
-  try {
-    // 开盘点位与昨收的缩放系数相同，比值与精度无关，无需按 f59 还原
-    const params = new URLSearchParams({ secid: '1.000001', fields: 'f46,f60' });
-    const payload = await fetchJson(`${INDEX_QUOTE_ENDPOINT}?${params.toString()}`, fetchImpl);
-    const data = isRecord(payload) && isRecord(payload.data) ? payload.data : null;
-    const open = asNumber(data?.f46);
-    const preClose = asNumber(data?.f60);
-    if (open === null || preClose === null || open <= 0 || preClose <= 0) {
-      return null;
-    }
-    return Number((((open - preClose) / preClose) * 100).toFixed(2));
-  } catch {
-    return null;
-  }
-};
 
 const toIsoDate = (date: string): string =>
   `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`;
@@ -905,15 +855,9 @@ export const fetchEastmoneyAuction = async (
       pool = fallback.pool;
     }
 
-    const [previousBrokenCount, indexGapPct] = await Promise.all([
-      fetchBrokenCount(previousTradeDate, fetchImpl),
-      fetchIndexGapPct(fetchImpl),
-    ]);
-    const context: AuctionMarketContext = {
-      previousLimitUpCount: pool.length,
-      previousBrokenCount,
-      indexGapPct,
-    };
+    // 新判定只用竞价高开幅度和竞价量比，不再拉取炸板家数与大盘缺口：
+    // 少两个上游请求，也就少两个可能失败的环节。
+    const context: AuctionMarketContext = createAuctionMarketContext(pool.length);
 
     // 腾讯优先：两个批量请求就能拿到全部候选的 09:25 竞价价，再逐只取分笔补竞价成交额
     const tencentDetails = await fetchTencentAuctionDetails(
@@ -937,6 +881,63 @@ export const fetchEastmoneyAuction = async (
       pending.forEach(({ index }, position) => {
         details[index] = fetched[position];
       });
+    }
+
+    // 第三步：竞价分时。两个作用 ——
+    // 1) 给还缺竞价成交额的票补上量能（分时首个有量点 = 09:25 竞价成交，实测与分笔一致）；
+    //    最典型的是北交所：分笔返回空，分时能拿到。
+    // 2) 给所有拿得到的票补「竞价过程形态」（09:15~09:24 的虚拟匹配价/量轨迹）。
+    const minuteSymbols = pool
+      .map((item, index) => ({ symbol: item.symbol, index }))
+      .filter(({ index }) => details[index]?.auctionAmount == null || details[index]?.minuteTrend == null);
+    if (minuteSymbols.length > 0) {
+      // 涨停价批量行情里已经有了，直接复用，不用让分时链路再猜一次涨停幅度
+      const limitUpPrices = new Map(
+        minuteSymbols.map(({ symbol, index }) => [symbol, details[index]?.limitUpPrice ?? null]),
+      );
+      const minutes = await fetchAuctionMinutes(
+        minuteSymbols.map(({ symbol }) => symbol),
+        fetchImpl,
+        limitUpPrices,
+      );
+      for (const { symbol, index } of minuteSymbols) {
+        const minute = minutes.get(symbol);
+        if (!minute) {
+          continue;
+        }
+        const minuteTrend = {
+          ...minute.features,
+          pricePath: minute.data.points.map((point) => point.matchPrice),
+        };
+        const existing = details[index];
+        const minutePct =
+          minute.data.preClose !== null && minute.data.preClose > 0
+            ? Number(
+                (((minute.data.auctionPrice - minute.data.preClose) / minute.data.preClose) * 100).toFixed(2),
+              )
+            : 0;
+
+        if (existing === undefined || existing === null) {
+          details[index] = {
+            preClose: minute.data.preClose ?? 0,
+            auctionPrice: minute.data.auctionPrice,
+            auctionPct: minutePct,
+            auctionAmount: minute.data.auctionAmount,
+            minuteTrend,
+            amountSource: 'minute',
+          };
+          continue;
+        }
+
+        // 已有分笔结果时只补形态；分笔缺额（北交所等）才用分时兜底
+        const needsAmount = existing.auctionAmount === null;
+        details[index] = {
+          ...existing,
+          auctionAmount: needsAmount ? minute.data.auctionAmount : existing.auctionAmount,
+          amountSource: needsAmount ? 'minute' : existing.amountSource ?? null,
+          minuteTrend,
+        };
+      }
     }
 
     const missingSymbols = pool

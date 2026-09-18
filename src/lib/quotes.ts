@@ -1,4 +1,11 @@
-import type { Quote, QuoteMap, QuotesResponse, QuoteSource } from '../types';
+import type {
+  MinuteSeriesItem,
+  MinuteSeriesResponse,
+  Quote,
+  QuoteMap,
+  QuotesResponse,
+  QuoteSource,
+} from '../types';
 
 const CURRENCY_FORMATTER = new Intl.NumberFormat('zh-CN', {
   minimumFractionDigits: 2,
@@ -193,4 +200,38 @@ export const formatQuoteTime = (value: string | null): string => {
   const formatted = formatDateParts(value);
 
   return formatted ?? '—';
+};
+
+/**
+ * 当日分时序列。服务端 `/api/minute` 与 `/api/quotes` 用同一个 `parseSymbols`，
+ * 同样单次最多 50 个代码，所以这里按同一批次大小分批。
+ *
+ * 上游一次只给一只票，服务端要逐只抓，**不要在 10 秒行情轮询里调它**。
+ */
+export const fetchMinuteSeries = async (
+  symbols: string[],
+  fetchImpl: typeof fetch = fetch,
+): Promise<MinuteSeriesItem[]> => {
+  const dedupedSymbols = uniqueSymbols(symbols);
+  if (dedupedSymbols.length === 0) {
+    return [];
+  }
+
+  const batches: string[][] = [];
+  for (let offset = 0; offset < dedupedSymbols.length; offset += QUOTES_BATCH_SIZE) {
+    batches.push(dedupedSymbols.slice(offset, offset + QUOTES_BATCH_SIZE));
+  }
+
+  const settled = await Promise.allSettled(
+    batches.map(async (batch) => {
+      const response = await fetchImpl(`/api/minute?symbols=${encodeURIComponent(batch.join(','))}`);
+      if (!response.ok) {
+        throw new Error(`分时请求失败（${response.status}）`);
+      }
+      return (await response.json()) as MinuteSeriesResponse;
+    }),
+  );
+
+  // 分时是增强信息：部分批次失败就少画几行，不抛错、不阻塞行情
+  return settled.flatMap((entry) => (entry.status === 'fulfilled' ? entry.value.series : []));
 };

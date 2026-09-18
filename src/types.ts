@@ -92,6 +92,94 @@ export type MarketBreadth = {
   status: Quote["status"];
 };
 
+/**
+ * 财联社的连板梯队（`limit_up_board`）：各板位的家数与连板率。
+ *
+ * 注意：`up_ratio`（封板率）与这里的「连板率」是两个不同口径 ——
+ * 封板率 = 最终封住 / 触及涨停，连板率 = 该板位晋级到下一板的比例。
+ */
+export type ClsLadderRung = {
+  /** 归一化后的板位键，如 yiban / erban / sanban / gaoduban */
+  key: string;
+  /** 原始板位名，如「一板」「高度板」 */
+  name: string;
+  /** 该板位家数 */
+  count: number | null;
+  /** 该板位的连板率 %（首项是表头「连板率」，无值时 null） */
+  promotionRate: number | null;
+};
+
+/**
+ * 财联社市场情绪（`x-quote.cls.cn/v2/quote/a/stock/emotion`）。
+ *
+ * 补齐本项目自算口径（`MarketBreadth`）拿不到的四个情绪周期指标：
+ * 封板率 / 高开率 / 获利率 / 分档连板率。
+ * ⚠️ 该接口**只有当天实时快照，没有历史日期参数**，因此不能做回测。
+ */
+export type MarketEmotion = {
+  source: 'cls';
+  /** 交易日 YYYYMMDD；接口不返回日期，由调用方按请求日回填 */
+  tradeDate: string | null;
+  /** 市场热度 0-100 */
+  marketDegree: number | null;
+  /** 封板率 %（最终封住 / 触及涨停） */
+  sealRate: number | null;
+  /** 封板家数 */
+  sealCount: number | null;
+  /** 炸板家数（触及涨停未封住） */
+  brokenCount: number | null;
+  /** 高开率 %（昨日涨停股今日高开占比） */
+  openRate: number | null;
+  /** 获利率 %（昨日涨停股今日获利占比） */
+  profitRate: number | null;
+  /** 昨涨停今表现 % */
+  yesterdayLimitUpPerformance: number | null;
+  /** 两市成交额（元） */
+  turnover: number | null;
+  /** 连板梯队（板位 → 家数 / 连板率） */
+  ladder: ClsLadderRung[];
+  status: 'fresh' | 'unavailable';
+};
+
+/** 某个板块在轮动窗口内的表现汇总 */
+export type SectorRotationItem = {
+  plateCode: string;
+  plateName: string;
+  /** 最近一个交易日的涨跌幅 % */
+  latestChange: number | null;
+  /** 窗口内进入「当日 top10」的次数 */
+  appearCount: number;
+  /** 窗口内单日最大涨幅 % */
+  maxChange: number | null;
+  /** 窗口内上榜日的平均涨幅 % */
+  avgChange: number | null;
+  /** 首次上榜日 YYYYMMDD */
+  firstSeen: string;
+  /** 最近一次上榜日 YYYYMMDD */
+  lastSeen: string;
+  /** 窗口内上榜的交易日（升序） */
+  days: string[];
+};
+
+/**
+ * 板块轮动（财联社 `/v2/quote/a/plate/rotation`）。
+ *
+ * 上游只接受 `days=4` 或 `days=30`，返回窗口内每个交易日涨幅前 10 的板块。
+ * 这是本项目唯一能拿到的**历史**板块口径（现有 `server/themes` 只有当日快照）。
+ */
+export type SectorRotationResponse = {
+  /** 上游支持的窗口：4 或 30 */
+  days: number;
+  /** 覆盖的交易日，升序 */
+  tradeDates: string[];
+  /** 按出现次数、最近上榜日降序汇总的板块 */
+  items: SectorRotationItem[];
+  fetchedAt: string;
+  source: 'cls';
+  status: ScreenerDataStatus;
+  error: string | null;
+};
+
 /** 指数部分：各数据源适配器统一返回这个形状 */
 export type MarketIndicesResponse = {
   indices: MarketIndex[];
@@ -104,6 +192,8 @@ export type MarketOverviewResponse = MarketIndicesResponse & {
   /** 两市成交额（元）= 沪市 + 深市 */
   turnover: number | null;
   breadth: MarketBreadth | null;
+  /** 财联社情绪（封板率 / 高开率 / 获利率 / 连板梯队）；取不到就是 null */
+  emotion?: MarketEmotion | null;
 };
 
 export type LimitUpItem = {
@@ -235,12 +325,40 @@ export type DragonTigerResponse = {
   error: string | null;
 };
 
-export type AuctionResult = 'qualified' | 'watch' | 'unqualified' | 'insufficient';
+export type AuctionResult = 'qualified' | 'unqualified' | 'insufficient';
 
 /**
- * 竞价溢价分档：衡量「按竞价价买入」的性价比，与「连板概率」是两个独立维度。
+ * 竞价分时形态：09:15~09:24 的虚拟匹配价与虚拟匹配量。
+ * 只描述「竞价是怎么走到这个价的」，**不参与合格判定**（样本量还不足以验证阈值）。
+ * 口径与实测证据见 `server/auction/minute.ts`。
+ */
+export type AuctionMinuteTrend = {
+  /** 整体方向：首点到尾点 */
+  trend: 'rising' | 'falling' | 'flat';
+  /** 首点到尾点涨跌幅（%） */
+  trendPct: number;
+  /** 尾段偏移（%）= 竞价成交价 相对 09:24 虚拟匹配价；负值表示尾段被砸下来 */
+  lateShiftPct: number;
+  /** 虚拟匹配量峰值 */
+  maxMatchedVolume: number;
+  /** 峰值出现的分钟 */
+  peakMatchedTime: string | null;
+  /** 虚拟匹配量高点是否落在尾段 */
+  lateRush: boolean | null;
+  /** 峰值匹配量 ÷ 竞价成交量（%），撮合价上的厚度 */
+  matchedSharePct: number | null;
+  /** 竞价过程中虚拟匹配价摸到过涨停价、但最终没封在上面 */
+  touchedLimitUp: boolean | null;
+  /** 形状描述，例如「竞价走高 10.01%，尾段下砸 4.07%」 */
+  label: string;
+  /** 竞价时段的虚拟匹配价轨迹（用于迷你走势图） */
+  pricePath: number[];
+};
+
+/**
+ * 竞价溢价分档：衡量「按竞价价买入」的性价比，与「是否合格」是两个独立维度。
  * 140 个交易日回测显示：竞价溢价越高，当日涨停率越高，
- * 但「按竞价价买入」的平均收益越低，因此单独展示而不是混进概率档位。
+ * 但「按竞价价买入」的平均收益越低，因此单独展示而不是混进合格判定。
  */
 export type AuctionPremium = 'discount' | 'mild' | 'rich' | 'chase';
 
@@ -259,14 +377,19 @@ export type AuctionItem = {
   auctionPrice: number | null;
   auctionPct: number | null;
   auctionAmount: number | null;
+  /** 竞价量比（%）= 竞价成交额 ÷ 昨日全天成交额 */
   auctionRatio: number | null;
   auctionPremium: AuctionPremium | null;
-  /** 09:25 时点信息算出的「今日收盘继续涨停」概率，0~1 */
-  limitUpProbability: number | null;
   /** 竞价价是否达到实际涨停价；false不保证成交，null表示价格数据不足 */
   sealedAtAuction: boolean | null;
-  /** 五项有效特征中的缺失数；缺1项按均值代入，缺2项及以上暂停分档 */
-  probabilityMissing: number;
+  /** 竞价分时形态；拿不到就是 null，不影响判定与排序 */
+  minuteTrend: AuctionMinuteTrend | null;
+  /**
+   * 竞价成交额由谁提供：`tick` = 腾讯/东财分笔，`minute` = 分时首个有量点（北交所等分笔拿不到的票）。
+   * `null` 表示没有成交额。只用于观测链路命中情况。
+   */
+  auctionAmountSource: 'tick' | 'minute' | null;
+  /** 只看「竞价高开幅度」和「竞价量比」两个条件，不再输出封板概率 */
   result: AuctionResult;
   reasons: string[];
 };
@@ -359,7 +482,11 @@ export type ThemeLeader = {
 };
 
 export type ThemeItem = {
-  /** 东财板块代码，如 BK0900 */
+  /**
+   * 题材标识：
+   *   - 板块口径：东财板块代码，如 `BK0900`
+   *   - 细分逻辑口径：`TP:` + 归一化后的涨停原因标签，如 `TP:光通信`
+   */
   code: string;
   name: string;
   kind: ThemeKind;
@@ -386,14 +513,25 @@ export type ThemeItem = {
   classificationReasons: string[];
   /** 概念成员涨停数（口径：当日涨停股 ∩ 该板块概念归属） */
   conceptLimitUpCount: number | null;
-  /** 驱动有依据涨停数；基础数据缺失时为已知下界 */
+  /**
+   * 驱动有依据涨停数（涨停原因命中该板块细分逻辑的家数）。
+   * **参考口径**：2026-09-18 起不参与主线 / 支线资格，资格看概念家数；
+   * 基础数据缺失时为已知下界。
+   */
   supportedLimitUpCount: number | null;
   /** 待确认关联涨停数（证据缺失 / 未决） */
   unresolvedLimitUpCount: number | null;
+  /**
+   * 题材口径：`board` = 东财板块（宽概念），`topic` = 涨停原因细分逻辑。
+   * 2026-09-18 起题材页以 `topic` 为主；缺省按 `board` 处理（兼容旧数据）。
+   */
+  source?: 'board' | 'topic';
 };
 
 export type ThemesResponse = {
   schemaVersion: 2;
+  /** 本响应的题材单位；缺省按 `board` 处理（兼容旧数据） */
+  scope?: 'board' | 'topic';
   tradeDate: string | null;
   main: ThemeItem[];
   branch: ThemeItem[];
@@ -586,6 +724,12 @@ export type TrendFilters = {
   minScore: number;
   mainOnly: boolean;
   excludeSt: boolean;
+  /**
+   * 拉日K的上限（只数），决定实际扫描深度：正整数 = 按当日成交额优先取前 N 只，
+   * 0 = 不截断（全市场，首次实测量级约 30~60 秒）。默认 260 只快速扫描；
+   * 候选范围本身一律是全市场（themeScope 已被服务端忽略）。
+   */
+  scanLimit: number;
 };
 
 export type TrendPick = {
@@ -644,6 +788,31 @@ export type QuotesResponse = {
   fetchedAt: string;
   source: QuoteSource;
   errors: QuoteError[];
+};
+
+/**
+ * 当日分时序列，给表格里的迷你分时图用。
+ * 上游只提供最近一个交易日，所以这里没有 tradeDate —— 它就是「今天」。
+ */
+export type MinuteSeriesItem = {
+  symbol: string;
+  /** 昨收（来自批量行情，用来画基准线并给折线染色）；拿不到就是 null */
+  preClose: number | null;
+  /** 逐分钟收盘价（元），时间升序 */
+  points: number[];
+  /** 数据时间戳 `HHMM`，与 points 一一对应 */
+  times: string[];
+};
+
+/** 按代码索引的分时序列，表格按行取用 */
+export type MinuteSeriesMap = Record<string, MinuteSeriesItem>;
+
+export type MinuteSeriesResponse = {
+  series: MinuteSeriesItem[];
+  fetchedAt: string;
+  source: 'tencent';
+  /** 没取到分时的代码；与 series 互补，前端据此显示「—」 */
+  missing: string[];
 };
 
 export type HoldingPerformance = {

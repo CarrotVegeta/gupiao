@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { StockIdentity } from './StockIdentity';
-import { AUCTION_POLICY, auctionResultLabels } from '../lib/auction-policy';
+import { AUCTION_POLICY, auctionResultLabels, auctionResultOrder } from '../lib/auction-policy';
 import type {
   AuctionItem,
   AuctionPremium,
@@ -29,8 +29,6 @@ const premiumLabels: Record<AuctionPremium, string> = {
   chase: '追高',
 };
 
-const resultOrder: AuctionResult[] = ['qualified', 'watch', 'unqualified', 'insufficient'];
-
 type ResultFilter = AuctionResult | 'all';
 
 const formatTradeDate = (value: string | null): string =>
@@ -54,31 +52,77 @@ const formatAmount = (value: number | null): string => {
   return `${(value / 10_000).toFixed(2)}万`;
 };
 
+const SPARK_WIDTH = 88;
+const SPARK_HEIGHT = 20;
+
+/**
+ * 竞价时段（09:15~09:24）的虚拟匹配价迷你走势。
+ *
+ * 只画形状、不带坐标轴：这一列的作用是让「竞价是怎么走到最终这个价的」一眼可见，
+ * 例如「一路推高、尾段被砸下来」和「低开慢慢抬上来」在数字上都是 +2%，
+ * 但形状完全不同。**它不参与合格判定。**
+ */
+const AuctionMinuteSparkline = ({ path }: { path: number[] }) => {
+  if (path.length < 2) {
+    return null;
+  }
+
+  const min = Math.min(...path);
+  const max = Math.max(...path);
+  // 全部同价时画一条水平线，避免除零
+  const span = max - min || 1;
+  const stepX = SPARK_WIDTH / (path.length - 1);
+  const points = path
+    .map((value, index) => {
+      const x = index * stepX;
+      const y = SPARK_HEIGHT - ((value - min) / span) * SPARK_HEIGHT;
+      // 上下各留 1px，线条不会贴着边框
+      return `${x.toFixed(1)},${(Math.min(SPARK_HEIGHT - 1, Math.max(1, y))).toFixed(1)}`;
+    })
+    .join(' ');
+
+  return (
+    <svg
+      className="auction-sparkline"
+      width={SPARK_WIDTH}
+      height={SPARK_HEIGHT}
+      viewBox={`0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`}
+      role="img"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <polyline points={points} fill="none" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+};
+
+/** 与服务端共用排序：合格优先 → 连板降序 → 竞价量比降序 → 代码。 */
+const resultRank = (result: AuctionResult): number =>
+  result === 'qualified' ? 0 : result === 'unqualified' ? 1 : 2;
+
 const compareItems = (left: AuctionItem, right: AuctionItem): number => {
+  const resultDiff = resultRank(left.result) - resultRank(right.result);
+  if (resultDiff !== 0) {
+    return resultDiff;
+  }
   const boardDiff = (right.boardCount ?? -1) - (left.boardCount ?? -1);
   if (boardDiff !== 0) {
     return boardDiff;
   }
-  const probabilityDiff = (right.limitUpProbability ?? -1) - (left.limitUpProbability ?? -1);
-  return probabilityDiff !== 0 ? probabilityDiff : left.symbol.localeCompare(right.symbol);
+  const ratioDiff = (right.auctionRatio ?? -1) - (left.auctionRatio ?? -1);
+  return ratioDiff !== 0 ? ratioDiff : left.symbol.localeCompare(right.symbol);
 };
-
-const formatProbability = (value: number | null): string =>
-  value === null ? '—' : `${(value * 100).toFixed(0)}%`;
 
 /** 现价涨跌幅：行情没拿到就不上色，避免「—」被染成红/绿 */
 const quotePctClass = (value: number | null): string =>
   value === null || value === 0 ? 'value--neutral' : value > 0 ? 'value--rise' : 'value--fall';
 
-/** 与服务端共用概率分档阈值。 */
-const probabilityClass = (value: number | null): string =>
-  value === null
-    ? 'auction-probability--unknown'
-    : value >= AUCTION_POLICY.qualifiedProbability
-      ? 'auction-probability--high'
-      : value >= AUCTION_POLICY.watchProbability
-        ? 'auction-probability--mid'
-        : 'auction-probability--low';
+/** 与服务端共用两个阈值：高开幅度区间 + 竞价量比门槛。 */
+const gapPasses = (value: number | null): boolean =>
+  value !== null && value >= AUCTION_POLICY.gapMinPct && value <= AUCTION_POLICY.gapMaxPct;
+
+const ratioPasses = (value: number | null): boolean =>
+  value !== null && value >= AUCTION_POLICY.ratioMinPct;
 
 export const AuctionList = ({ data, quotes, isRefreshing, onRefresh }: AuctionListProps) => {
   const [filter, setFilter] = useState<ResultFilter>('all');
@@ -86,7 +130,7 @@ export const AuctionList = ({ data, quotes, isRefreshing, onRefresh }: AuctionLi
   const items = [...data.items].sort(compareItems);
   const counts = items.reduce<Record<AuctionResult, number>>(
     (result, item) => ({ ...result, [item.result]: result[item.result] + 1 }),
-    { qualified: 0, watch: 0, unqualified: 0, insufficient: 0 },
+    { qualified: 0, unqualified: 0, insufficient: 0 },
   );
   const buyableCount = items.filter((item) => item.sealedAtAuction === false).length;
   const filterLabel =
@@ -105,8 +149,13 @@ export const AuctionList = ({ data, quotes, isRefreshing, onRefresh }: AuctionLi
           <h2 id="auction-list-title">竞价连板候选</h2>
           <p className="auction-list__description">
             <span>固定快照：09:25</span>
-            <span>概率＝今日收盘封板概率；已封板与未封板分别估计，溢价仅表示价格位置</span>
-            <span>较高概率 ≥{AUCTION_POLICY.qualifiedProbability * 100}% · 观察 ≥{AUCTION_POLICY.watchProbability * 100}% · 其余低概率</span>
+            <span>
+              合格只看两条：竞价高开 {AUCTION_POLICY.gapMinPct}%~{AUCTION_POLICY.gapMaxPct}%
+              ，且竞价量比 ≥{AUCTION_POLICY.ratioMinPct}%（量比＝竞价成交额 ÷ 昨日全天成交额）
+            </span>
+            <span>两条都满足才合格，其余一律不合格；不再输出封板概率</span>
+            <span>量比 ≥{AUCTION_POLICY.ratioHeavyPct}% 额外标「爆量」</span>
+            <span>阈值是经验规则，尚未在本地历史样本上验证；溢价仅表示价格位置</span>
             <span>竞价未涨停仅表示开盘价低于涨停价，不保证成交或收益</span>
             <span>涨跌幅＝现价相对昨收（盘中实时）</span>
             {/* 09:15 前集合竞价还没开始，服务端会把整卡退回上一个完整竞价日 */}
@@ -140,7 +189,7 @@ export const AuctionList = ({ data, quotes, isRefreshing, onRefresh }: AuctionLi
         >
           全部 {items.length}
         </button>
-        {resultOrder.map((result) => (
+        {auctionResultOrder.map((result) => (
           <button
             key={result}
             type="button"
@@ -183,7 +232,8 @@ export const AuctionList = ({ data, quotes, isRefreshing, onRefresh }: AuctionLi
       </div>
 
       <p className="status-note">
-        概率分档用于观察收盘封板可能性，不是买入信号。缺失两项及以上有效特征时暂停分档。
+        合格＝竞价高开落在 {AUCTION_POLICY.gapMinPct}%~{AUCTION_POLICY.gapMaxPct}% 且竞价量比 ≥{AUCTION_POLICY.ratioMinPct}%，
+        不是买入信号；竞价成交额或昨日成交额缺失时无法判定。
       </p>
 
       {data.status === 'stale' ? (
@@ -232,15 +282,24 @@ export const AuctionList = ({ data, quotes, isRefreshing, onRefresh }: AuctionLi
               <tr>
                 <th scope="col">股票</th>
                 <th scope="col">昨日连板</th>
-                <th scope="col">收盘封板概率</th>
+                <th scope="col" title={`合格条件一：竞价高开落在 ${AUCTION_POLICY.gapMinPct}%~${AUCTION_POLICY.gapMaxPct}%`}>
+                  竞价高开
+                </th>
+                <th scope="col" title={`合格条件二：竞价量比 ≥${AUCTION_POLICY.ratioMinPct}%`}>
+                  竞价量比
+                </th>
+                <th
+                  scope="col"
+                  title="09:15~09:24 集合竞价的虚拟匹配价轨迹与匹配量峰值。只描述过程形态，不参与合格判定（样本还不足以验证阈值）"
+                >
+                  竞价分时
+                </th>
                 <th scope="col">竞价结论</th>
                 <th scope="col">溢价</th>
-                <th scope="col">竞价涨幅</th>
                 <th scope="col" title="现价相对昨收的涨跌幅，盘中实时刷新（09:25 快照里没有现价）">
                   涨跌幅
                 </th>
                 <th scope="col">竞价金额</th>
-                <th scope="col">竞价/昨成交</th>
                 <th scope="col">昨日封板</th>
                 <th scope="col">研判依据</th>
               </tr>
@@ -249,6 +308,9 @@ export const AuctionList = ({ data, quotes, isRefreshing, onRefresh }: AuctionLi
               {visibleItems.map((item) => {
                 const currentQuote = quotes[item.symbol];
                 const currentPct = currentQuote?.pct ?? null;
+                const gapOk = gapPasses(item.auctionPct);
+                const ratioOk = ratioPasses(item.auctionRatio);
+                const heavy = item.auctionRatio !== null && item.auctionRatio >= AUCTION_POLICY.ratioHeavyPct;
 
                 return (
                   <tr key={item.symbol}>
@@ -260,15 +322,40 @@ export const AuctionList = ({ data, quotes, isRefreshing, onRefresh }: AuctionLi
                       />
                     </th>
                     <td>{item.boardCount === null ? '—' : `${item.boardCount} 连板`}</td>
-                    <td>
-                      <span className={`auction-probability ${probabilityClass(item.limitUpProbability)}`}>
-                        {formatProbability(item.limitUpProbability)}
+                    <td className={item.auctionPct === null ? undefined : gapOk ? 'auction-check--pass' : 'auction-check--fail'}>
+                      <span className="auction-check__mark" aria-hidden="true">{item.auctionPct === null ? '—' : gapOk ? '✓' : '✗'}</span>
+                      <span className={item.auctionPct !== null && item.auctionPct >= 0 ? 'value--rise' : 'value--fall'}>
+                        {formatPercent(item.auctionPct)}
                       </span>
-                      {item.probabilityMissing > 0 ? (
-                        <span className="auction-list__subvalue">
-                          {item.probabilityMissing} 项特征缺失
-                        </span>
+                    </td>
+                    <td className={item.auctionRatio === null ? undefined : ratioOk ? 'auction-check--pass' : 'auction-check--fail'}>
+                      <span className="auction-check__mark" aria-hidden="true">{item.auctionRatio === null ? '—' : ratioOk ? '✓' : '✗'}</span>
+                      <span>{formatRatio(item.auctionRatio)}</span>
+                      {heavy ? <span className="auction-list__subvalue">爆量</span> : null}
+                      {item.auctionRatio === null ? (
+                        <span className="auction-list__subvalue">量能缺失</span>
                       ) : null}
+                    </td>
+                    <td
+                      className="auction-list__minute"
+                      title={
+                        item.minuteTrend === null
+                          ? '未取到竞价分时（停牌或上游未返回）'
+                          : `峰值匹配量 ${item.minuteTrend.maxMatchedVolume}（${item.minuteTrend.peakMatchedTime ?? '—'}）${
+                              item.minuteTrend.matchedSharePct === null
+                                ? ''
+                                : `，为竞价成交量的 ${item.minuteTrend.matchedSharePct.toFixed(0)}%`
+                            }`
+                      }
+                    >
+                      {item.minuteTrend === null ? (
+                        <span className="auction-list__subvalue">—</span>
+                      ) : (
+                        <>
+                          <AuctionMinuteSparkline path={item.minuteTrend.pricePath} />
+                          <span className="auction-list__minute-text">{item.minuteTrend.label}</span>
+                        </>
+                      )}
                     </td>
                     <td>
                       <span className={`auction-status auction-status--${item.result}`}>
@@ -283,9 +370,6 @@ export const AuctionList = ({ data, quotes, isRefreshing, onRefresh }: AuctionLi
                           {premiumLabels[item.auctionPremium]}
                         </span>
                       )}
-                    </td>
-                    <td className={item.auctionPct !== null && item.auctionPct >= 0 ? 'value--rise' : 'value--fall'}>
-                      {formatPercent(item.auctionPct)}
                     </td>
                     <td
                       className={quotePctClass(currentPct)}
@@ -305,7 +389,6 @@ export const AuctionList = ({ data, quotes, isRefreshing, onRefresh }: AuctionLi
                         <span className="auction-list__subvalue">量能缺失</span>
                       ) : null}
                     </td>
-                    <td>{formatRatio(item.auctionRatio)}</td>
                     <td>
                       {item.firstSealTime ?? '—'}
                       <span className="auction-list__subvalue">
