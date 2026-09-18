@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>方案N 翻牌行情墙</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --bg:#04070E; --panel:#0B1120; --panel2:#111A2E; --line:rgba(255,255,255,.07);
+    --ink:#F2F6FF; --ink2:#8E9CBB; --ink3:#556280;
+    --rise:#FF3B4E; --fall:#1FD07C; --amber:#FFC24B; --cyan:#4FC3F7;
+    --mono:'JetBrains Mono','WenQuanYi Zen Hei Mono',ui-monospace,monospace;
+  }
+  html,body{width:1440px;height:900px;overflow:hidden}
+  body{background:
+      radial-gradient(1200px 460px at 50% -12%,rgba(79,195,247,.13),transparent 60%),
+      radial-gradient(900px 420px at 8% 108%,rgba(255,59,78,.10),transparent 60%),
+      var(--bg);
+    color:var(--ink);font:400 13px/1.4 -apple-system,'Segoe UI','WenQuanYi Zen Hei',sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .rise{color:var(--rise)}.fall{color:var(--fall)}.dim{color:var(--ink3)}.muted{color:var(--ink2)}
+  .shell{height:100%;display:flex;flex-direction:column;padding:12px 14px 12px;gap:12px}
+
+  header{height:46px;display:flex;align-items:center;gap:14px;flex:none}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:16px;letter-spacing:1px}
+  .mark{width:26px;height:26px;border-radius:6px;background:var(--rise);display:grid;place-items:center;
+    font-size:12px;font-weight:900;color:#fff;box-shadow:0 0 22px rgba(255,59,78,.55)}
+  .live{margin-left:auto;display:flex;align-items:center;gap:9px;font-size:12px;color:var(--ink2);
+    border:1px solid var(--line);border-radius:999px;padding:5px 12px;background:rgba(255,255,255,.03)}
+  .live i{width:7px;height:7px;border-radius:50%;background:var(--fall);box-shadow:0 0 10px var(--fall);
+    animation:bl 1.6s ease-in-out infinite}
+  @keyframes bl{0%,100%{opacity:1}50%{opacity:.2}}
+  @media (prefers-reduced-motion:reduce){.live i{animation:none}}
+  .clock{font-family:var(--mono);font-size:19px;font-weight:700;letter-spacing:1px}
+
+  /* 翻牌数字 */
+  .flip{display:flex;gap:4px}
+  .fl{position:relative;display:grid;place-items:center;width:38px;height:54px;border-radius:6px;
+    background:linear-gradient(180deg,#16203A 0 49.4%,#0D1424 50.6% 100%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.10),inset 0 -1px 0 rgba(0,0,0,.5),0 3px 8px rgba(0,0,0,.4);
+    font:800 29px/1 var(--mono);color:#EDF3FF;text-shadow:0 0 14px rgba(255,255,255,.22)}
+  .fl::after{content:"";position:absolute;left:3px;right:3px;top:50%;height:1px;background:rgba(0,0,0,.55)}
+  .fl.dot{width:16px;background:none;box-shadow:none;text-shadow:none;font-size:26px;color:var(--ink2)}
+  .fl.dot::after{display:none}
+  .fl.s{width:26px;height:38px;font-size:20px;border-radius:5px}
+  .flip.sm{gap:3px}
+  .flip.sm .fl{width:24px;height:36px;font-size:18px;border-radius:4px}
+  .flip.sm .fl.dot{width:9px;font-size:15px}
+  /* 指数条内的翻牌更窄，避免 8 位数字撑破一栏 */
+  .idx .flip{gap:3px}
+  .idx .fl{width:26px;height:42px;font-size:21px}
+  .idx .fl.dot{width:10px;font-size:17px}
+  .idx .meta{min-width:78px}
+  .idx .spark{width:62px;height:30px}
+  .cell .fl{width:36px;height:52px;font-size:27px}
+
+  /* 指数条 */
+  .idxrow{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;flex:none}
+  .idx{padding:13px 18px;border-radius:12px;background:linear-gradient(180deg,var(--panel2),var(--panel));
+    border:1px solid var(--line);display:flex;align-items:center;gap:16px}
+  .idx .meta{display:flex;flex-direction:column;gap:3px;min-width:96px}
+  .idx .nm{font-size:14px;font-weight:700}
+  .idx .cd{font-family:var(--mono);font-size:11px;color:var(--ink3)}
+  .idx .chg{font-family:var(--mono);font-size:13px;font-weight:700}
+  .idx .spark{width:96px;height:34px;margin-left:auto;opacity:.85}
+
+  /* 行情墙 */
+  .wall{display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(3,1fr);gap:10px;flex:1;min-height:0}
+  .cell{position:relative;border-radius:12px;padding:13px 16px 12px;overflow:hidden;
+    background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);
+    display:flex;flex-direction:column;justify-content:space-between}
+  .cell::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--rise)}
+  .cell.down::before{background:var(--fall)}
+  .cell.flat::before{background:var(--ink3)}
+  .cell.limit{box-shadow:0 0 0 1px rgba(255,59,78,.35),0 12px 30px rgba(255,59,78,.14)}
+  .cell .top{display:flex;align-items:center;gap:8px}
+  .cell .nm{font-size:15px;font-weight:750}
+  .cell .cd{font-family:var(--mono);font-size:11px;color:var(--ink3)}
+  .cell .tag{font-size:10.5px;font-weight:800;padding:1.5px 7px;border-radius:5px;background:rgba(255,59,78,.18);
+    color:#FF8A96;border:1px solid rgba(255,59,78,.3)}
+  .cell .tag.crown{background:linear-gradient(135deg,#FF3B4E,#FF8A5B);color:#fff;border-color:transparent}
+  .cell .bot{display:flex;align-items:flex-end;justify-content:space-between;gap:10px}
+  .cell .chg{font-family:var(--mono);font-size:22px;font-weight:800;letter-spacing:-.6px}
+  .cell .amt{font-family:var(--mono);font-size:12px;color:var(--ink3);font-weight:600}
+  .cell .spark{position:absolute;right:12px;top:12px;width:78px;height:30px;opacity:.55}
+
+  footer{display:flex;align-items:center;gap:14px;height:40px;padding:0 16px;border-radius:12px;flex:none;
+    background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);overflow:hidden}
+  .big{display:flex;align-items:baseline;gap:8px;font-family:var(--mono)}
+  .big .k{font-size:11.5px;color:var(--ink3);font-family:inherit}
+  .big .v{font-size:22px;font-weight:800;letter-spacing:-.5px}
+  .vsep{width:1px;height:24px;background:var(--line)}
+  .tk{display:flex;align-items:center;gap:14px;font-family:var(--mono);font-size:13px;white-space:nowrap;overflow:hidden}
+  .tk span b{font-weight:700}
+</style></head><body>
+<div class="shell">
+  <header>
+    <div class="brand"><span class="mark">A</span>A 股行情墙</div>
+    <span class="muted" style="font-size:12px">自选 11 · 涨停 47 · 副屏模式（3 米可读）</span>
+    <div class="live"><i></i>盘中 · <span class="clock num">10:35:22</span></div>
+  </header>
+
+  <div class="idxrow">
+    <div class="idx">
+      <div class="meta"><span class="nm">上证指数</span><span class="cd">000001</span>
+        <span class="chg fall num">-16.00 &nbsp;-0.41%</span></div>
+      <div class="flip"><span class="fl">3</span><span class="fl">8</span><span class="fl">7</span><span class="fl">5</span><span class="fl dot">.</span><span class="fl">6</span><span class="fl">0</span></div>
+      <svg class="spark" viewBox="0 0 96 34" preserveAspectRatio="none"><polyline fill="none" stroke="#1FD07C" stroke-width="1.6" points="0,12 12,10 24,15 36,12 48,19 60,17 72,23 84,21 96,26"/></svg>
+    </div>
+    <div class="idx">
+      <div class="meta"><span class="nm">深证成指</span><span class="cd">399001</span>
+        <span class="chg fall num">-44.83 &nbsp;-0.33%</span></div>
+      <div class="flip"><span class="fl">1</span><span class="fl">3</span><span class="fl">4</span><span class="fl">0</span><span class="fl">9</span><span class="fl dot">.</span><span class="fl">9</span><span class="fl">1</span></div>
+      <svg class="spark" viewBox="0 0 96 34" preserveAspectRatio="none"><polyline fill="none" stroke="#1FD07C" stroke-width="1.6" points="0,14 12,12 24,17 36,13 48,18 60,22 72,19 84,24 96,22"/></svg>
+    </div>
+    <div class="idx">
+      <div class="meta"><span class="nm">创业板指</span><span class="cd">399006</span>
+        <span class="chg fall num">-13.16 &nbsp;-0.40%</span></div>
+      <div class="flip"><span class="fl">3</span><span class="fl">2</span><span class="fl">9</span><span class="fl">8</span><span class="fl dot">.</span><span class="fl">3</span><span class="fl">1</span></div>
+      <svg class="spark" viewBox="0 0 96 34" preserveAspectRatio="none"><polyline fill="none" stroke="#1FD07C" stroke-width="1.6" points="0,11 12,15 24,12 36,18 48,15 60,21 72,19 84,25 96,23"/></svg>
+    </div>
+  </div>
+
+  <div class="wall">
+    <div class="cell limit">
+      <div class="top"><span class="nm">澳弘电子</span><span class="cd">605058</span>
+        <span class="tag crown" style="margin-left:auto">5 连板 · 空间龙</span></div>
+      <svg class="spark" viewBox="0 0 78 30" preserveAspectRatio="none"><polyline fill="none" stroke="#FF3B4E" stroke-width="1.6" points="0,28 12,26 24,24 36,22 48,20 60,16 78,10"/></svg>
+      <div class="bot">
+        <div class="flip"><span class="fl">4</span><span class="fl">8</span><span class="fl dot">.</span><span class="fl">7</span><span class="fl">6</span></div>
+        <div style="text-align:right"><div class="chg rise">+9.99%</div><div class="amt">+4.43 &nbsp;元件</div></div>
+      </div>
+    </div>
+
+    <div class="cell limit">
+      <div class="top"><span class="nm">金健米业</span><span class="cd">600127</span>
+        <span class="tag" style="margin-left:auto">涨停 · 持仓</span></div>
+      <svg class="spark" viewBox="0 0 78 30" preserveAspectRatio="none"><polyline fill="none" stroke="#FF3B4E" stroke-width="1.6" points="0,29 12,27 24,22 36,20 48,17 60,12 78,8"/></svg>
+      <div class="bot">
+        <div class="flip"><span class="fl">1</span><span class="fl">3</span><span class="fl dot">.</span><span class="fl">0</span><span class="fl">2</span></div>
+        <div style="text-align:right"><div class="chg rise">+9.97%</div><div class="amt">+1.18 &nbsp;种植业</div></div>
+      </div>
+    </div>
+
+    <div class="cell limit">
+      <div class="top"><span class="nm">中晶科技</span><span class="cd">003026</span>
+        <span class="tag" style="margin-left:auto">3 连板</span></div>
+      <svg class="spark" viewBox="0 0 78 30" preserveAspectRatio="none"><polyline fill="none" stroke="#FF3B4E" stroke-width="1.6" points="0,26 12,24 24,24 36,19 48,19 60,14 78,10"/></svg>
+      <div class="bot">
+        <div class="flip"><span class="fl">3</span><span class="fl">7</span><span class="fl dot">.</span><span class="fl">0</span><span class="fl">0</span></div>
+        <div style="text-align:right"><div class="chg rise">+9.99%</div><div class="amt">+3.36 &nbsp;半导体</div></div>
+      </div>
+    </div>
+
+    <div class="cell limit">
+      <div class="top"><span class="nm">华瓷股份</span><span class="cd">001216</span>
+        <span class="tag" style="margin-left:auto">3 连板</span></div>
+      <svg class="spark" viewBox="0 0 78 30" preserveAspectRatio="none"><polyline fill="none" stroke="#FF3B4E" stroke-width="1.6" points="0,28 12,25 24,21 36,21 48,18 60,14 78,9"/></svg>
+      <div class="bot">
+        <div class="flip"><span class="fl">1</span><span class="fl">9</span><span class="fl dot">.</span><span class="fl">8</span><span class="fl">8</span></div>
+        <div style="text-align:right"><div class="chg rise">+10.02%</div><div class="amt">+1.81 &nbsp;家居用品</div></div>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="top"><span class="nm">农发种业</span><span class="cd">600313</span>
+        <span class="tag" style="margin-left:auto">持仓</span></div>
+      <svg class="spark" viewBox="0 0 78 30" preserveAspectRatio="none"><polyline fill="none" stroke="#FF3B4E" stroke-width="1.6" points="0,22 12,20 24,24 36,18 48,20 60,14 78,12"/></svg>
+      <div class="bot">
+        <div class="flip"><span class="fl">7</span><span class="fl dot">.</span><span class="fl">1</span><span class="fl">1</span></div>
+        <div style="text-align:right"><div class="chg rise">+5.18%</div><div class="amt">+0.35 &nbsp;种植业</div></div>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="top"><span class="nm">登海种业</span><span class="cd">002041</span>
+        <span class="tag" style="margin-left:auto">持仓</span></div>
+      <svg class="spark" viewBox="0 0 78 30" preserveAspectRatio="none"><polyline fill="none" stroke="#FF3B4E" stroke-width="1.6" points="0,25 12,28 24,21 36,23 48,17 60,19 78,11"/></svg>
+      <div class="bot">
+        <div class="flip"><span class="fl">1</span><span class="fl">0</span><span class="fl dot">.</span><span class="fl">3</span><span class="fl">6</span></div>
+        <div style="text-align:right"><div class="chg rise">+5.50%</div><div class="amt">+0.54 &nbsp;种植业</div></div>
+      </div>
+    </div>
+
+    <div class="cell limit">
+      <div class="top"><span class="nm">内蒙新华</span><span class="cd">603230</span>
+        <span class="tag" style="margin-left:auto">2 连板</span></div>
+      <svg class="spark" viewBox="0 0 78 30" preserveAspectRatio="none"><polyline fill="none" stroke="#FF3B4E" stroke-width="1.6" points="0,27 12,25 24,21 36,21 48,18 60,15 78,12"/></svg>
+      <div class="bot">
+        <div class="flip"><span class="fl">1</span><span class="fl">2</span><span class="fl dot">.</span><span class="fl">2</span><span class="fl">5</span></div>
+        <div style="text-align:right"><div class="chg rise">+9.96%</div><div class="amt">+1.11 &nbsp;出版</div></div>
+      </div>
+    </div>
+
+    <div class="cell limit">
+      <div class="top"><span class="nm">世联行</span><span class="cd">002285</span>
+        <span class="tag" style="margin-left:auto">2 连板</span></div>
+      <svg class="spark" viewBox="0 0 78 30" preserveAspectRatio="none"><polyline fill="none" stroke="#FF3B4E" stroke-width="1.6" points="0,28 12,26 24,22 36,20 48,18 60,16 78,13"/></svg>
+      <div class="bot">
+        <div class="flip"><span class="fl">2</span><span class="fl dot">.</span><span class="fl">6</span><span class="fl">3</span></div>
+        <div style="text-align:right"><div class="chg rise">+10.04%</div><div class="amt">+0.24 &nbsp;房地产服务</div></div>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="top"><span class="nm">贵州茅台</span><span class="cd">600519</span>
+        <span class="tag" style="margin-left:auto;background:rgba(255,255,255,.07);color:#B9C6E4;border-color:rgba(255,255,255,.12)">持仓</span></div>
+      <svg class="spark" viewBox="0 0 78 30" preserveAspectRatio="none"><polyline fill="none" stroke="#FF3B4E" stroke-width="1.6" points="0,17 12,19 24,15 36,17 48,13 60,15 78,11"/></svg>
+      <div class="bot">
+        <div class="flip sm"><span class="fl">1</span><span class="fl">2</span><span class="fl">6</span><span class="fl">6</span><span class="fl dot">.</span><span class="fl">6</span><span class="fl">6</span></div>
+        <div style="text-align:right"><div class="chg rise">+0.69%</div><div class="amt">+8.66 &nbsp;白酒</div></div>
+      </div>
+    </div>
+
+    <div class="cell down">
+      <div class="top"><span class="nm">招金黄金</span><span class="cd">000506</span>
+        <span class="tag" style="margin-left:auto;background:rgba(31,208,124,.16);color:#6FE3AC;border-color:rgba(31,208,124,.3)">持仓 · 走弱</span></div>
+      <svg class="spark" viewBox="0 0 78 30" preserveAspectRatio="none"><polyline fill="none" stroke="#1FD07C" stroke-width="1.6" points="0,8 12,11 24,9 36,15 48,13 60,20 78,25"/></svg>
+      <div class="bot">
+        <div class="flip"><span class="fl">1</span><span class="fl">8</span><span class="fl dot">.</span><span class="fl">5</span><span class="fl">7</span></div>
+        <div style="text-align:right"><div class="chg fall">-5.21%</div><div class="amt">-1.02 &nbsp;黄金</div></div>
+      </div>
+    </div>
+
+    <div class="cell down">
+      <div class="top"><span class="nm">平安银行</span><span class="cd">000001</span>
+        <span class="tag" style="margin-left:auto;background:rgba(31,208,124,.16);color:#6FE3AC;border-color:rgba(31,208,124,.3)">持仓</span></div>
+      <svg class="spark" viewBox="0 0 78 30" preserveAspectRatio="none"><polyline fill="none" stroke="#1FD07C" stroke-width="1.6" points="0,12 12,14 24,13 36,18 48,16 60,21 78,23"/></svg>
+      <div class="bot">
+        <div class="flip"><span class="fl">1</span><span class="fl">1</span><span class="fl dot">.</span><span class="fl">6</span><span class="fl">2</span></div>
+        <div style="text-align:right"><div class="chg fall">-0.68%</div><div class="amt">-0.08 &nbsp;银行</div></div>
+      </div>
+    </div>
+
+    <div class="cell down">
+      <div class="top"><span class="nm">金螳螂</span><span class="cd">002081</span>
+        <span class="tag" style="margin-left:auto;background:rgba(31,208,124,.16);color:#6FE3AC;border-color:rgba(31,208,124,.3)">持仓</span></div>
+      <svg class="spark" viewBox="0 0 78 30" preserveAspectRatio="none"><polyline fill="none" stroke="#1FD07C" stroke-width="1.6" points="0,16 12,20 24,15 36,19 48,14 60,21 78,18"/></svg>
+      <div class="bot">
+        <div class="flip"><span class="fl">4</span><span class="fl dot">.</span><span class="fl">7</span><span class="fl">9</span></div>
+        <div style="text-align:right"><div class="chg fall">-1.44%</div><div class="amt">-0.07 &nbsp;装修装饰</div></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="big"><span class="k">涨停</span><span class="v rise">47</span></div>
+    <div class="vsep"></div>
+    <div class="big"><span class="k">跌停</span><span class="v fall">20</span></div>
+    <div class="vsep"></div>
+    <div class="big"><span class="k">最高连板</span><span class="v" style="color:var(--amber)">5</span></div>
+    <div class="vsep"></div>
+    <div class="big"><span class="k">炸板率</span><span class="v" style="color:var(--amber)">10.1%</span></div>
+    <div class="vsep"></div>
+    <div class="tk" style="margin-left:auto">
+      <span>两市成交 <b class="num">1.82 万亿</b></span>
+      <span class="muted">·</span>
+      <span>半导体 <b class="rise num">+4.62%</b></span>
+      <span class="muted">·</span>
+      <span>种植业 <b class="rise num">+3.85%</b></span>
+      <span class="muted">·</span>
+      <span>白酒 <b class="fall num">-1.18%</b></span>
+      <span class="muted">·</span>
+      <span class="dim num">10:35:22</span>
+    </div>
+  </footer>
+</div>
+</body></html>

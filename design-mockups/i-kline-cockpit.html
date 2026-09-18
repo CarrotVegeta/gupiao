@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>方案I K线驾驶舱</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --bg:#0A0E1A; --panel:#111729; --panel2:#151C33; --line:rgba(255,255,255,.075);
+    --ink:#E9EEFA; --ink2:#9AA6C2; --ink3:#5F6C8A;
+    --rise:#FF4D5E; --fall:#22C77C; --cyan:#4C8DFF; --amber:#F5A524;
+    --mono:'JetBrains Mono','WenQuanYi Zen Hei Mono',ui-monospace,monospace;
+  }
+  html,body{width:1440px;height:900px;overflow:hidden}
+  body{color:var(--ink);font:400 12.5px/1.45 -apple-system,'Segoe UI','WenQuanYi Zen Hei',sans-serif;
+    -webkit-font-smoothing:antialiased;
+    background:radial-gradient(1100px 520px at 20% -10%,rgba(76,141,255,.16),transparent 58%),
+      radial-gradient(820px 420px at 96% 4%,rgba(255,77,94,.10),transparent 60%),var(--bg)}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.3px}
+  .rise{color:var(--rise)}.fall{color:var(--fall)}.muted{color:var(--ink2)}.dim{color:var(--ink3)}
+  .shell{height:100%;display:flex;flex-direction:column;padding:13px 15px 11px;gap:11px}
+
+  header{height:50px;display:flex;align-items:center;gap:15px;padding:0 16px;border-radius:12px;flex:none;
+    background:linear-gradient(180deg,rgba(30,40,70,.85),rgba(17,23,41,.9));border:1px solid var(--line);
+    box-shadow:0 10px 26px rgba(0,0,0,.35)}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:750;font-size:15px;letter-spacing:.3px}
+  .mark{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,#4C8DFF,#7A5BFF);
+    display:grid;place-items:center;font-size:12.5px;font-weight:800;box-shadow:0 0 16px rgba(76,141,255,.5)}
+  nav{display:flex;gap:2px}
+  nav a{padding:6px 12px;border-radius:8px;font-size:12.5px;color:var(--ink2);text-decoration:none;font-weight:500}
+  nav a.on{background:rgba(76,141,255,.16);color:#9CBBFF;font-weight:650}
+  .sp{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .pill{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);
+    background:rgba(255,255,255,.03);font-size:11.5px;color:var(--ink2)}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--fall);box-shadow:0 0 8px var(--fall)}
+  .btn{height:30px;padding:0 13px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.04);
+    color:var(--ink);font:600 12px inherit;cursor:pointer}
+  .btn.pri{background:linear-gradient(180deg,#4C8DFF,#3668D8);border-color:#4C8DFF;color:#fff;box-shadow:0 6px 16px rgba(76,141,255,.35)}
+
+  .grid{display:grid;grid-template-columns:1fr 306px;grid-template-rows:1fr auto;gap:11px;flex:1;min-height:0}
+  .panel{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:12px;
+    display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.28)}
+  .ph{height:44px;display:flex;align-items:center;gap:10px;padding:0 15px;border-bottom:1px solid var(--line);flex:none}
+  .ph h2{font-size:14px;font-weight:700}
+  .ph .code{font-family:var(--mono);font-size:11px;color:var(--ink3)}
+  .ph .rt{margin-left:auto;display:flex;align-items:center;gap:8px}
+  .seg{display:flex;background:rgba(255,255,255,.04);border-radius:8px;padding:2px}
+  .seg span{padding:3px 10px;border-radius:6px;font-size:11.5px;color:var(--ink2)}
+  .seg span.on{background:rgba(255,255,255,.10);color:var(--ink);font-weight:650}
+  .price{text-align:right;line-height:1.25}
+  .price .v{font-size:19px;font-weight:750}
+  .price .c{font-size:11.5px;font-weight:650}
+
+  /* 图表 */
+  .chart{position:relative;flex:1;min-height:0;padding:6px 8px 0 0}
+  .chart svg{width:100%;height:100%;display:block}
+  .ylab{position:absolute;right:8px;top:12px;display:flex;flex-direction:column;gap:51px;font-family:var(--mono);
+    font-size:10.5px;color:var(--ink3);text-align:right;pointer-events:none}
+  .tip{position:absolute;left:56%;top:26px;padding:8px 11px;border-radius:9px;background:rgba(12,18,34,.94);
+    border:1px solid rgba(255,255,255,.12);box-shadow:0 10px 24px rgba(0,0,0,.5);font-size:11px;line-height:1.75;
+    font-family:var(--mono);color:var(--ink2)}
+  .tip b{color:var(--ink);font-weight:650}
+  .legend{position:absolute;left:16px;top:10px;display:flex;gap:14px;font-size:11px}
+  .legend i{display:inline-block;width:14px;height:2px;border-radius:2px;margin-right:5px;vertical-align:middle}
+  .vbox{height:66px;padding:0 8px 0 0;flex:none}
+  .vbox svg{width:100%;height:100%;display:block}
+
+  /* 右栏 */
+  .acct{padding:13px 15px 14px}
+  .acct .k{font-size:11.5px;color:var(--ink3)}
+  .acct .big{font-size:29px;font-weight:750;letter-spacing:-1px;margin:3px 0 9px}
+  .acct .row{display:flex;gap:10px}
+  .acct .cell{flex:1;padding:9px 10px;border-radius:9px;background:rgba(255,255,255,.035);border:1px solid var(--line)}
+  .acct .cell .t{font-size:11px;color:var(--ink3);margin-bottom:4px}
+  .acct .cell .v{font-size:15px;font-weight:700}
+  .donut{display:flex;align-items:center;gap:14px;padding:12px 15px 14px}
+  .donut svg{width:96px;height:96px;flex:none}
+  .donut .lg{flex:1;font-size:11.5px}
+  .donut .lg .r{display:flex;align-items:center;gap:7px;padding:3.5px 0;color:var(--ink2)}
+  .donut .lg .sw{width:8px;height:8px;border-radius:2px}
+  .donut .lg b{margin-left:auto;font-family:var(--mono);color:var(--ink)}
+  .flow{padding:6px 15px 12px}
+  .fl{display:flex;align-items:center;gap:9px;padding:7.5px 0;border-bottom:1px solid rgba(255,255,255,.045);font-size:12px}
+  .fl:last-child{border-bottom:0}
+  .fl .t{font-family:var(--mono);font-size:10.5px;color:var(--ink3);width:38px}
+  .fl .n{flex:1;font-weight:600}
+  .fl .p{font-family:var(--mono);font-weight:650}
+
+  /* 持仓卡 */
+  .holds{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,1fr);gap:11px}
+  .hcard{padding:12px 14px;border-radius:12px;background:linear-gradient(180deg,var(--panel2),var(--panel));
+    border:1px solid var(--line);position:relative;overflow:hidden}
+  .hcard .top{display:flex;align-items:baseline;gap:8px}
+  .hcard .nm{font-size:13.5px;font-weight:700}
+  .hcard .cd{font-family:var(--mono);font-size:10.5px;color:var(--ink3)}
+  .hcard .pnl{font-size:22px;font-weight:750;letter-spacing:-.6px;margin:7px 0 3px}
+  .hcard .sub{font-size:11.5px;color:var(--ink2);display:flex;gap:9px}
+  .hcard .glow{position:absolute;right:-30px;top:-30px;width:110px;height:110px;border-radius:50%;filter:blur(28px);opacity:.5}
+  .hcard .spark{position:absolute;right:10px;bottom:8px;width:74px;height:26px;opacity:.85}
+</style></head><body>
+<div class="shell">
+  <header>
+    <div class="brand"><span class="mark">K</span>K线驾驶舱</div>
+    <nav><a class="on" href="#">持仓</a><a href="#">自选</a><a href="#">涨停聚焦</a><a href="#">竞价</a><a href="#">龙虎榜</a><a href="#">选股</a></nav>
+    <div class="sp">
+      <span class="pill"><i class="dot"></i>盘中 10:35:22</span>
+      <span class="pill">总市值 <b class="num" style="color:var(--ink);margin-left:4px">28.63 万</b></span>
+      <button class="btn">刷新</button>
+      <button class="btn pri">+ 添加持仓</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- K线主图 -->
+    <section class="panel">
+      <div class="ph">
+        <h2>澳弘电子</h2><span class="code">605058 · 日K 前复权</span>
+        <span class="seg"><span>分时</span><span class="on">日K</span><span>周K</span><span>月K</span></span>
+        <div class="rt">
+          <div class="price"><div class="v num rise">48.76</div><div class="c num rise">+4.43  +9.99%</div></div>
+        </div>
+      </div>
+      <div class="chart">
+        <div class="legend">
+          <span class="dim">MA5 <b class="num" style="color:#F5A524">45.82</b></span>
+          <span class="dim">MA10 <b class="num" style="color:#4C8DFF">42.10</b></span>
+          <span class="dim">MA20 <b class="num" style="color:#A78BFA">39.66</b></span>
+        </div>
+        <svg id="kline" viewBox="0 0 860 300" preserveAspectRatio="none"></svg>
+        <div class="ylab"><span>48.76</span><span>45.20</span><span>41.64</span><span>38.08</span><span>34.52</span><span>30.96</span></div>
+        <div class="tip">
+          09-17 &nbsp;开 <b>44.33</b> 高 <b>48.76</b><br>
+          低 <b>43.90</b> 收 <b>48.76</b><br>
+          量 <b>12.6万手</b> 换手 <b>11.47%</b>
+        </div>
+      </div>
+      <div class="vbox"><svg id="vol" viewBox="0 0 860 66" preserveAspectRatio="none"></svg></div>
+    </section>
+
+    <!-- 右栏 -->
+    <aside class="panel">
+      <div class="ph"><h2>账户总览</h2><span class="rt dim" style="font-size:11px">今日</span></div>
+      <div class="acct">
+        <div class="k">浮动盈亏（元）</div>
+        <div class="big num rise">+18,462.00</div>
+        <div class="row">
+          <div class="cell"><div class="t">持仓市值</div><div class="v num">286,320</div></div>
+          <div class="cell"><div class="t">今日盈亏</div><div class="v num rise">+6,120</div></div>
+        </div>
+      </div>
+      <div class="ph" style="border-top:1px solid var(--line)"><h2>市场情绪</h2><span class="rt dim" style="font-size:11px">涨停 47</span></div>
+      <div class="donut">
+        <svg viewBox="0 0 42 42">
+          <circle cx="21" cy="21" r="15.9" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="6"></circle>
+          <circle cx="21" cy="21" r="15.9" fill="none" stroke="#FF4D5E" stroke-width="6"
+            stroke-dasharray="59.5 40.5" stroke-dashoffset="25" stroke-linecap="round"></circle>
+          <circle cx="21" cy="21" r="15.9" fill="none" stroke="#22C77C" stroke-width="6"
+            stroke-dasharray="25.3 74.7" stroke-dashoffset="-34.5" stroke-linecap="round"></circle>
+          <circle cx="21" cy="21" r="15.9" fill="none" stroke="#F5A524" stroke-width="6"
+            stroke-dasharray="10.1 89.9" stroke-dashoffset="-59.8" stroke-linecap="round"></circle>
+          <text x="21" y="20" text-anchor="middle" font-size="6.4" font-weight="700" fill="#E9EEFA" font-family="monospace">47</text>
+          <text x="21" y="26" text-anchor="middle" font-size="3.4" fill="#5F6C8A" font-family="monospace">涨停</text>
+        </svg>
+        <div class="lg">
+          <div class="r"><i class="sw" style="background:#FF4D5E"></i>涨停家数<b>47</b></div>
+          <div class="r"><i class="sw" style="background:#22C77C"></i>跌停家数<b>20</b></div>
+          <div class="r"><i class="sw" style="background:#F5A524"></i>炸板率<b>10.1%</b></div>
+          <div class="r"><i class="sw" style="background:#4C8DFF"></i>最高连板<b>5 板</b></div>
+        </div>
+      </div>
+      <div class="ph" style="border-top:1px solid var(--line)"><h2>自选异动</h2><span class="rt dim" style="font-size:11px">实时</span></div>
+      <div class="flow">
+        <div class="fl"><span class="t">10:34</span><span class="n">华瓷股份</span><span class="p rise">封板 +10.02%</span></div>
+        <div class="fl"><span class="t">10:31</span><span class="n">农发种业</span><span class="p rise">涨速 +0.14%</span></div>
+        <div class="fl"><span class="t">10:28</span><span class="n">招金黄金</span><span class="p fall">跌破 -5.00%</span></div>
+        <div class="fl"><span class="t">10:22</span><span class="n">中晶科技</span><span class="p rise">3 连板</span></div>
+      </div>
+    </aside>
+
+    <!-- 持仓卡 -->
+    <div class="holds">
+      <div class="hcard">
+        <div class="glow" data-decor style="background:#FF4D5E"></div>
+        <div class="top"><span class="nm">金健米业</span><span class="cd">600127</span><span class="tag rise" style="margin-left:auto;font-size:11px;font-weight:700">+9.97%</span></div>
+        <div class="pnl num rise">+1,040.00</div>
+        <div class="sub"><span>2000 股</span><span>成本 12.50</span><span class="rise">+4.16%</span></div>
+        <svg class="spark" viewBox="0 0 74 26"><polyline fill="none" stroke="#FF4D5E" stroke-width="1.4" points="0,24 9,22 18,19 27,16 36,14 45,12 54,9 63,7 74,5"/></svg>
+      </div>
+      <div class="hcard">
+        <div class="glow" data-decor style="background:#FF4D5E"></div>
+        <div class="top"><span class="nm">登海种业</span><span class="cd">002041</span><span class="tag rise" style="margin-left:auto;font-size:11px;font-weight:700">+5.50%</span></div>
+        <div class="pnl num rise">+2,280.00</div>
+        <div class="sub"><span>3000 股</span><span>成本 9.60</span><span class="rise">+7.92%</span></div>
+        <svg class="spark" viewBox="0 0 74 26"><polyline fill="none" stroke="#FF4D5E" stroke-width="1.4" points="0,20 9,22 18,17 27,19 36,14 45,16 54,11 63,13 74,8"/></svg>
+      </div>
+      <div class="hcard">
+        <div class="glow" data-decor style="background:#FF4D5E"></div>
+        <div class="top"><span class="nm">农发种业</span><span class="cd">600313</span><span class="tag rise" style="margin-left:auto;font-size:11px;font-weight:700">+5.18%</span></div>
+        <div class="pnl num rise">+900.00</div>
+        <div class="sub"><span>10000 股</span><span>成本 7.02</span><span class="rise">+1.28%</span></div>
+        <svg class="spark" viewBox="0 0 74 26"><polyline fill="none" stroke="#FF4D5E" stroke-width="1.4" points="0,18 9,15 18,17 27,13 36,15 45,10 54,12 63,8 74,9"/></svg>
+      </div>
+      <div class="hcard">
+        <div class="glow" data-decor style="background:#22C77C"></div>
+        <div class="top"><span class="nm">招金黄金</span><span class="cd">000506</span><span class="tag fall" style="margin-left:auto;font-size:11px;font-weight:700">-5.21%</span></div>
+        <div class="pnl num fall">-830.00</div>
+        <div class="sub"><span>1000 股</span><span>成本 19.40</span><span class="fall">-4.28%</span></div>
+        <svg class="spark" viewBox="0 0 74 26"><polyline fill="none" stroke="#22C77C" stroke-width="1.4" points="0,6 9,9 18,7 27,12 36,11 45,15 54,14 63,19 74,21"/></svg>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  let seed = 20260917;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  const N = 58, W = 860, H = 300, pad = 16;
+  const rows = [];
+  let p = 31.5;
+  for (let i = 0; i < N; i++) {
+    const o = p;
+    let drift = (rnd() - 0.42) * 1.5 + 0.14;      // 缓步上行
+    if (i > N - 4) drift = 0.62;                   // 尾段加速/涨停
+    const c = Math.max(28, o + drift);
+    const h = Math.max(o, c) + rnd() * 0.42;
+    const l = Math.min(o, c) - rnd() * 0.42;
+    rows.push({ o, c, h, l, v: 0.25 + rnd() * 0.75 + (i > N - 4 ? 0.7 : 0) });
+    p = c;
+  }
+  const hi = Math.max(...rows.map(r => r.h)), lo = Math.min(...rows.map(r => r.l));
+  const y = v => pad + (hi - v) / (hi - lo) * (H - pad * 2);
+  const step = W / N, bw = Math.max(4, step * 0.58);
+
+  const parts = [];
+  rows.forEach((r, i) => {
+    const up = r.c >= r.o, col = up ? '#FF4D5E' : '#22C77C';
+    const x = i * step + step / 2;
+    parts.push(`<line x1="${x.toFixed(1)}" y1="${y(r.h).toFixed(1)}" x2="${x.toFixed(1)}" y2="${y(r.l).toFixed(1)}" stroke="${col}" stroke-width="1"/>`);
+    const top = y(Math.max(r.o, r.c)), hgt = Math.max(1.6, Math.abs(y(r.o) - y(r.c)));
+    parts.push(`<rect x="${(x - bw / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${hgt.toFixed(1)}" fill="${up ? col : 'none'}" stroke="${col}" stroke-width="1.1" rx="1"/>`);
+  });
+  const ma = n => rows.map((_, i) => {
+    if (i < n - 1) return null;
+    const s = rows.slice(i - n + 1, i + 1).reduce((a, r) => a + r.c, 0) / n;
+    return [i * step + step / 2, y(s)];
+  }).filter(Boolean).map(pt => `${pt[0].toFixed(1)},${pt[1].toFixed(1)}`).join(' ');
+  parts.push(`<polyline fill="none" stroke="#F5A524" stroke-width="1.3" points="${ma(5)}"/>`);
+  parts.push(`<polyline fill="none" stroke="#4C8DFF" stroke-width="1.3" points="${ma(10)}"/>`);
+  parts.push(`<polyline fill="none" stroke="#A78BFA" stroke-width="1.3" points="${ma(20)}"/>`);
+  const lastX = (N - 1) * step + step / 2, lastY = y(rows[N - 1].c);
+  parts.push(`<line x1="${lastX.toFixed(1)}" y1="0" x2="${lastX.toFixed(1)}" y2="${H}" stroke="rgba(255,77,94,.45)" stroke-width="1" stroke-dasharray="4 4"/>`);
+  parts.push(`<circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="3.4" fill="#FF4D5E"/>`);
+  document.getElementById('kline').innerHTML = parts.join('');
+
+  const vs = rows.map(r => {
+    const x = rows.indexOf(r) * step + step / 2;
+    const up = r.c >= r.o;
+    const bh = Math.min(56, r.v * 32);
+    return `<rect x="${(x - bw / 2).toFixed(1)}" y="${(64 - bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="${up ? 'rgba(255,77,94,.55)' : 'rgba(34,199,124,.5)'}" rx="1"/>`;
+  });
+  document.getElementById('vol').innerHTML = vs.join('') +
+    `<line x1="0" y1="65" x2="${W}" y2="65" stroke="rgba(255,255,255,.12)" stroke-width="1"/>`;
+})();
+</script>
+</body></html>

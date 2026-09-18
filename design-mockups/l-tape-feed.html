@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>方案L 盘中异动流</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --bg:#F5F6F8; --panel:#FFFFFF; --line:#E6E9EF; --line2:#F0F2F6;
+    --ink:#141922; --ink2:#5A6472; --ink3:#98A2B2;
+    --rise:#E0242F; --fall:#0E9F5B; --cyan:#0EA5E9; --violet:#7C5CFC; --amber:#E08A00;
+    --mono:'JetBrains Mono','WenQuanYi Zen Hei Mono',ui-monospace,monospace;
+  }
+  html,body{width:1440px;height:900px;overflow:hidden}
+  body{background:var(--bg);color:var(--ink);
+    font:400 12.5px/1.45 -apple-system,'Segoe UI','WenQuanYi Zen Hei',sans-serif;-webkit-font-smoothing:antialiased}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+  .rise{color:var(--rise)}.fall{color:var(--fall)}.muted{color:var(--ink2)}.dim{color:var(--ink3)}
+  .shell{height:100%;display:flex;flex-direction:column;padding:12px 14px 10px;gap:10px}
+
+  header{height:48px;display:flex;align-items:center;gap:14px;padding:0 15px;background:var(--panel);
+    border:1px solid var(--line);border-radius:11px;flex:none}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:750;font-size:14.5px}
+  .mark{width:23px;height:23px;border-radius:6px;background:#141922;color:#fff;display:grid;place-items:center;
+    font-size:11px;font-weight:800}
+  .live{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--rise);font-weight:650}
+  .live i{width:7px;height:7px;border-radius:50%;background:var(--rise);animation:bl 1.4s ease-in-out infinite}
+  @keyframes bl{0%,100%{opacity:1}50%{opacity:.25}}
+  @media (prefers-reduced-motion:reduce){.live i{animation:none}}
+  nav{display:flex;gap:2px;margin-left:6px}
+  nav a{padding:6px 11px;border-radius:7px;font-size:12.5px;color:var(--ink2);text-decoration:none}
+  nav a.on{background:#F1F3F7;color:var(--ink);font-weight:700}
+  .sp{margin-left:auto;display:flex;align-items:center;gap:9px}
+  .btn{height:29px;padding:0 12px;border-radius:7px;border:1px solid var(--line);background:#fff;color:var(--ink);
+    font:600 12px inherit;cursor:pointer}
+  .btn.ghost{background:#F6F7F9}
+  .btn.pri{background:var(--rise);border-color:var(--rise);color:#fff}
+
+  .body{display:grid;grid-template-columns:1fr 342px;gap:10px;flex:1;min-height:0}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:11px;display:flex;flex-direction:column;
+    overflow:hidden}
+  .bar{height:42px;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid var(--line);flex:none}
+  .bar h2{font-size:13.5px;font-weight:750}
+  .bar .n{font-size:11.5px;color:var(--ink3);font-family:var(--mono)}
+  .chips{margin-left:auto;display:flex;gap:5px}
+  .chip{font-size:11.5px;padding:3.5px 9px;border-radius:6px;border:1px solid var(--line);color:var(--ink2);cursor:pointer}
+  .chip.on{background:#141922;border-color:#141922;color:#fff;font-weight:650}
+
+  /* 时间轴事件 */
+  .feed{flex:1;overflow:hidden;padding:2px 0 0}
+  .ev{display:grid;grid-template-columns:62px 18px 1fr;align-items:stretch;padding:0 14px 0 10px}
+  .ev .t{font-family:var(--mono);font-size:11px;color:var(--ink3);text-align:right;padding-top:12px}
+  .ev .rail{position:relative}
+  .ev .rail::before{content:"";position:absolute;left:8px;top:0;bottom:0;width:2px;background:var(--line2)}
+  .ev:first-child .rail::before{top:16px}
+  .ev:last-child .rail::before{bottom:auto;height:16px}
+  .ev .rail i{position:absolute;left:3px;top:15px;width:12px;height:12px;border-radius:50%;background:#fff;
+    border:2.5px solid var(--c);z-index:1}
+  .ev .card{margin:0 0 4px 8px;border:1px solid var(--line);border-left:3px solid var(--c);border-radius:8px;
+    padding:8px 12px 9px;background:#FDFDFE}
+  .ev .r1{display:flex;align-items:center;gap:9px}
+  .ev .type{font-size:10.5px;font-weight:800;padding:1.5px 7px;border-radius:4px;background:var(--cbg);color:var(--c)}
+  .ev .nm{font-size:13px;font-weight:700}
+  .ev .cd{font-family:var(--mono);font-size:10.5px;color:var(--ink3)}
+  .ev .px{margin-left:auto;font-family:var(--mono);font-size:13.5px;font-weight:700}
+  .ev .r2{display:flex;align-items:center;gap:10px;margin-top:4px;font-size:11.5px;color:var(--ink2)}
+  .ev .r2 .spk{width:70px;height:18px;flex:none}
+  .ev .r2 .sect{padding:1px 6px;border-radius:4px;background:#F2F4F8;font-size:10.5px}
+  .ev .r2 b{font-family:var(--mono);font-weight:650;color:var(--ink)}
+
+  /* 右栏 */
+  .rail{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:hidden}
+  .sec{padding:11px 14px 13px}
+  .sec .ttl{font-size:11.5px;color:var(--ink3);margin-bottom:9px}
+  .thermo{display:flex;align-items:flex-end;gap:10px;height:74px;margin-bottom:8px}
+  .col{flex:1;border-radius:5px 5px 0 0;background:linear-gradient(180deg,#F26B75,#D8202B);position:relative}
+  .col.g{background:linear-gradient(180deg,#4FC98C,#0E9F5B)}
+  .col .v{position:absolute;top:-17px;left:0;right:0;text-align:center;font-family:var(--mono);font-size:12px;font-weight:700}
+  .col .k{position:absolute;bottom:-18px;left:0;right:0;text-align:center;font-size:10.5px;color:var(--ink3)}
+  .mrow{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:12px;border-bottom:1px solid var(--line2)}
+  .mrow:last-child{border-bottom:0}
+  .mrow .k{color:var(--ink2);width:96px}
+  .mrow b{margin-left:auto;font-family:var(--mono)}
+  .heat{padding:2px 14px 12px}
+  .hrow{display:flex;align-items:center;gap:8px;padding:5.5px 0;font-size:11.5px}
+  .hrow .nm{width:62px;color:var(--ink2)}
+  .hrow .b{flex:1;height:6px;border-radius:3px;background:#F0F2F6;overflow:hidden}
+  .hrow .b i{display:block;height:100%;background:linear-gradient(90deg,#F26B75,#D8202B)}
+  .hrow .b i.g{background:linear-gradient(90deg,#4FC98C,#0E9F5B)}
+  .hrow .p{width:48px;text-align:right;font-family:var(--mono)}
+  .watch{padding:6px 14px 12px}
+  .wrow{display:grid;grid-template-columns:1fr 58px 62px;align-items:center;gap:8px;padding:6.5px 0;
+    border-bottom:1px solid var(--line2);font-size:12px}
+  .wrow:last-child{border-bottom:0}
+  .wrow .nm{font-weight:600}
+  .wrow .nm span{font-family:var(--mono);font-size:10px;color:var(--ink3);margin-left:5px}
+  .wrow .p{text-align:right;font-family:var(--mono);font-weight:650}
+  .wrow .d{text-align:right;font-family:var(--mono);font-weight:650}
+  .flash{animation:fk 1.5s ease-out 1}
+  @keyframes fk{0%{background:#FFF3F4}60%{background:#FFF9F9}100%{background:transparent}}
+  @media (prefers-reduced-motion:reduce){.flash{animation:none}}
+  footer{height:30px;display:flex;align-items:center;gap:12px;font-size:11px;color:var(--ink3);padding:0 4px;flex:none}
+  footer .sep{width:1px;height:10px;background:var(--line)}
+</style></head><body>
+<div class="shell">
+  <header>
+    <div class="brand"><span class="mark">流</span>盘中异动流</div>
+    <span class="live"><i></i>LIVE 10:35:22</span>
+    <nav><a class="on" href="#">异动流</a><a href="#">自选</a><a href="#">持仓</a><a href="#">涨停聚焦</a><a href="#">龙虎榜</a></nav>
+    <div class="sp">
+      <span class="muted num" style="font-size:11.5px">今日事件 1,284 · 命中自选 37</span>
+      <button class="btn ghost">暂停滚动</button>
+      <button class="btn">仅看自选</button>
+      <button class="btn pri">+ 添加自选</button>
+    </div>
+  </header>
+
+  <div class="body">
+    <section class="panel">
+      <div class="bar">
+        <h2>实时事件</h2><span class="n">按时间倒序 · 每 3 秒推送</span>
+        <div class="chips">
+          <span class="chip on">全部</span><span class="chip">封板</span><span class="chip">炸板</span>
+          <span class="chip">涨速</span><span class="chip">龙虎榜</span><span class="chip">新高</span>
+        </div>
+      </div>
+      <div class="feed">
+
+        <div class="ev" style="--c:#E0242F;--cbg:#FDECEC">
+          <div class="t">10:35:22</div><div class="rail"><i></i></div>
+          <div class="card">
+            <div class="r1"><span class="type">封板</span><span class="nm">华瓷股份</span><span class="cd">001216</span>
+              <span class="px rise">19.88&nbsp;&nbsp;+10.02%</span></div>
+            <div class="r2"><span class="sect">家居用品</span><span>3 连板 · 封单 <b>6,820 万</b></span><span>封板时间 <b>10:35:20</b></span>
+              <svg class="spk" viewBox="0 0 70 18"><polyline fill="none" stroke="#E0242F" stroke-width="1.3" points="0,16 10,14 20,12 30,12 40,9 50,9 60,6 70,4"/></svg></div>
+          </div>
+        </div>
+
+        <div class="ev" style="--c:#0EA5E9;--cbg:#E7F5FD">
+          <div class="t">10:34:58</div><div class="rail"><i></i></div>
+          <div class="card">
+            <div class="r1"><span class="type">涨速</span><span class="nm">澳弘电子</span><span class="cd">605058</span>
+              <span class="px rise">48.76&nbsp;&nbsp;+9.99%</span></div>
+            <div class="r2"><span class="sect">元件</span><span>空间龙 · 5 连板</span><span>1 分钟涨速 <b>+0.62%</b></span>
+              <svg class="spk" viewBox="0 0 70 18"><polyline fill="none" stroke="#E0242F" stroke-width="1.3" points="0,17 10,16 20,15 30,15 40,14 50,14 60,13 70,12"/></svg></div>
+          </div>
+        </div>
+
+        <div class="ev" style="--c:#7C5CFC;--cbg:#F0EDFE">
+          <div class="t">10:33:40</div><div class="rail"><i></i></div>
+          <div class="card">
+            <div class="r1"><span class="type">龙虎榜</span><span class="nm">中晶科技</span><span class="cd">003026</span>
+              <span class="px rise">37.00&nbsp;&nbsp;+9.99%</span></div>
+            <div class="r2"><span class="sect">半导体</span><span>机构专用净买入 <b>1.24 亿</b></span><span>3 连板</span>
+              <svg class="spk" viewBox="0 0 70 18"><polyline fill="none" stroke="#E0242F" stroke-width="1.3" points="0,16 10,15 20,13 30,13 40,11 50,10 60,8 70,6"/></svg></div>
+          </div>
+        </div>
+
+        <div class="ev" style="--c:#E08A00;--cbg:#FDF3E3">
+          <div class="t">10:32:06</div><div class="rail"><i></i></div>
+          <div class="card">
+            <div class="r1"><span class="type">炸板</span><span class="nm">三峡新材</span><span class="cd">600293</span>
+              <span class="px rise">3.40&nbsp;&nbsp;+7.20%</span></div>
+            <div class="r2"><span class="sect">玻璃玻纤</span><span>涨停打开 · 板上成交 <b>4,120 万</b></span><span>回封概率 <b>中</b></span>
+              <svg class="spk" viewBox="0 0 70 18"><polyline fill="none" stroke="#E08A00" stroke-width="1.3" points="0,14 10,7 20,6 30,9 40,8 50,11 60,10 70,12"/></svg></div>
+          </div>
+        </div>
+
+        <div class="ev" style="--c:#0E9F5B;--cbg:#E7F6EE">
+          <div class="t">10:31:12</div><div class="rail"><i></i></div>
+          <div class="card">
+            <div class="r1"><span class="type">跌破</span><span class="nm">招金黄金</span><span class="cd">000506</span>
+              <span class="px fall">18.57&nbsp;&nbsp;-5.21%</span></div>
+            <div class="r2"><span class="sect">黄金</span><span>跌破分时均线 · 持仓浮亏 <b>-830 元</b></span>
+              <svg class="spk" viewBox="0 0 70 18"><polyline fill="none" stroke="#0E9F5B" stroke-width="1.3" points="0,4 10,6 20,8 30,7 40,10 50,11 60,14 70,15"/></svg></div>
+          </div>
+        </div>
+
+        <div class="ev" style="--c:#E0242F;--cbg:#FDECEC">
+          <div class="t">10:29:44</div><div class="rail"><i></i></div>
+          <div class="card">
+            <div class="r1"><span class="type">封板</span><span class="nm">世联行</span><span class="cd">002285</span>
+              <span class="px rise">2.63&nbsp;&nbsp;+10.04%</span></div>
+            <div class="r2"><span class="sect">房地产服务</span><span>2 连板 · 封单 <b>3,240 万</b></span><span>换手 <b>8.67%</b></span>
+              <svg class="spk" viewBox="0 0 70 18"><polyline fill="none" stroke="#E0242F" stroke-width="1.3" points="0,16 10,14 20,13 30,11 40,11 50,9 60,8 70,7"/></svg></div>
+          </div>
+        </div>
+
+        <div class="ev" style="--c:#E0242F;--cbg:#FDECEC">
+          <div class="t">10:28:30</div><div class="rail"><i></i></div>
+          <div class="card">
+            <div class="r1"><span class="type">封板</span><span class="nm">万向德农</span><span class="cd">600371</span>
+              <span class="px rise">15.64&nbsp;&nbsp;+9.99%</span></div>
+            <div class="r2"><span class="sect">种植业</span><span>2 连板 · 板块内第 3 家</span><span>封成比 <b>0.82</b></span>
+              <svg class="spk" viewBox="0 0 70 18"><polyline fill="none" stroke="#E0242F" stroke-width="1.3" points="0,17 10,15 20,14 30,12 40,12 50,10 60,9 70,8"/></svg></div>
+          </div>
+        </div>
+
+        <div class="ev" style="--c:#0EA5E9;--cbg:#E7F5FD">
+          <div class="t">10:26:52</div><div class="rail"><i></i></div>
+          <div class="card">
+            <div class="r1"><span class="type">涨速</span><span class="nm">先导基电</span><span class="cd">600641</span>
+              <span class="px rise">36.80&nbsp;&nbsp;+10.01%</span></div>
+            <div class="r2"><span class="sect">半导体</span><span>首板 · 板块内第 9 家涨停</span><span>1 分钟涨速 <b>+0.80%</b></span>
+              <svg class="spk" viewBox="0 0 70 18"><polyline fill="none" stroke="#E0242F" stroke-width="1.3" points="0,16 10,15 20,14 30,13 40,11 50,9 60,8 70,5"/></svg></div>
+          </div>
+        </div>
+
+        <div class="ev" style="--c:#7C5CFC;--cbg:#F0EDFE">
+          <div class="t">10:24:18</div><div class="rail"><i></i></div>
+          <div class="card">
+            <div class="r1"><span class="type">连板</span><span class="nm">内蒙新华</span><span class="cd">603230</span>
+              <span class="px rise">12.25&nbsp;&nbsp;+9.96%</span></div>
+            <div class="r2"><span class="sect">出版</span><span>晋级 2 连板 · 昨日首板池</span><span>封单 <b>5,610 万</b></span>
+              <svg class="spk" viewBox="0 0 70 18"><polyline fill="none" stroke="#E0242F" stroke-width="1.3" points="0,16 10,14 20,12 30,12 40,10 50,9 60,7 70,7"/></svg></div>
+          </div>
+        </div>
+
+        <div class="ev" style="--c:#E0242F;--cbg:#FDECEC">
+          <div class="t">10:20:08</div><div class="rail"><i></i></div>
+          <div class="card">
+            <div class="r1"><span class="type">封板</span><span class="nm">金健米业</span><span class="cd">600127</span>
+              <span class="px rise">13.02&nbsp;&nbsp;+9.97%</span></div>
+            <div class="r2"><span class="sect">种植业</span><span>持仓股 · 浮盈 <b class="rise">+1,040 元</b></span><span>封单 <b>1.02 亿</b></span>
+              <svg class="spk" viewBox="0 0 70 18"><polyline fill="none" stroke="#E0242F" stroke-width="1.3" points="0,17 10,16 20,14 30,13 40,11 50,10 60,8 70,6"/></svg></div>
+          </div>
+        </div>
+
+        <div class="ev" style="--c:#0E9F5B;--cbg:#E7F6EE">
+          <div class="t">10:16:20</div><div class="rail"><i></i></div>
+          <div class="card">
+            <div class="r1"><span class="type">跌破</span><span class="nm">平安银行</span><span class="cd">000001</span>
+              <span class="px fall">11.62&nbsp;&nbsp;-0.68%</span></div>
+            <div class="r2"><span class="sect">银行</span><span>跌破 5 日均线 · 板块走弱</span><span>主力净流出 <b>-1.8 亿</b></span>
+              <svg class="spk" viewBox="0 0 70 18"><polyline fill="none" stroke="#0E9F5B" stroke-width="1.3" points="0,6 10,7 20,9 30,8 40,11 50,10 60,13 70,14"/></svg></div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <aside class="panel rail">
+      <div class="bar" style="border-bottom:1px solid var(--line)"><h2>情绪温度</h2><span class="n">10:35</span></div>
+      <div class="sec">
+        <div class="thermo">
+          <div class="col" style="height:100%"><span class="v rise">47</span><span class="k">涨停</span></div>
+          <div class="col g" style="height:43%"><span class="v fall">20</span><span class="k">跌停</span></div>
+          <div class="col" style="height:11%;background:linear-gradient(180deg,#F5B94A,#E08A00)"><span class="v" style="color:var(--amber)">10.1%</span><span class="k">炸板率</span></div>
+        </div>
+        <div class="mrow" style="margin-top:22px"><span class="k">昨日涨停今表现</span><b class="rise">+2.36%</b></div>
+        <div class="mrow"><span class="k">最高连板</span><b>5 板</b></div>
+        <div class="mrow"><span class="k">连板股数量</span><b>8</b></div>
+      </div>
+      <div class="bar" style="border-top:1px solid var(--line);border-bottom:1px solid var(--line)"><h2>题材温度</h2><span class="n">实时</span></div>
+      <div class="heat">
+        <div class="hrow"><span class="nm">半导体</span><span class="b"><i style="width:92%"></i></span><span class="p rise">+4.62%</span></div>
+        <div class="hrow"><span class="nm">种植业</span><span class="b"><i style="width:78%"></i></span><span class="p rise">+3.85%</span></div>
+        <div class="hrow"><span class="nm">元件</span><span class="b"><i style="width:62%"></i></span><span class="p rise">+2.94%</span></div>
+        <div class="hrow"><span class="nm">黄金</span><span class="b"><i style="width:22%"></i></span><span class="p rise">+0.72%</span></div>
+        <div class="hrow"><span class="nm">银行</span><span class="b"><i class="g" style="width:18%"></i></span><span class="p fall">-0.42%</span></div>
+        <div class="hrow"><span class="nm">白酒</span><span class="b"><i class="g" style="width:14%"></i></span><span class="p fall">-1.18%</span></div>
+      </div>
+      <div class="bar" style="border-top:1px solid var(--line);border-bottom:1px solid var(--line)"><h2>自选盯盘</h2><span class="n">11 只</span></div>
+      <div class="watch">
+        <div class="wrow flash"><span class="nm">金健米业<span>600127</span></span><span class="p rise">13.02</span><span class="d rise">+9.97%</span></div>
+        <div class="wrow"><span class="nm">澳弘电子<span>605058</span></span><span class="p rise">48.76</span><span class="d rise">+9.99%</span></div>
+        <div class="wrow"><span class="nm">登海种业<span>002041</span></span><span class="p rise">10.36</span><span class="d rise">+5.50%</span></div>
+        <div class="wrow"><span class="nm">农发种业<span>600313</span></span><span class="p rise">7.11</span><span class="d rise">+5.18%</span></div>
+        <div class="wrow"><span class="nm">招金黄金<span>000506</span></span><span class="p fall">18.57</span><span class="d fall">-5.21%</span></div>
+        <div class="wrow"><span class="nm">平安银行<span>000001</span></span><span class="p fall">11.62</span><span class="d fall">-0.68%</span></div>
+      </div>
+    </aside>
+  </div>
+
+  <footer>
+    <span>事件流按时间倒序 · 每 3 秒推送一次</span><span class="sep"></span>
+    <span>命中自选 37 条 / 今日 1,284 条</span><span class="sep"></span>
+    <span>数据源 腾讯 · 东方财富</span>
+  </footer>
+</div>
+</body></html>

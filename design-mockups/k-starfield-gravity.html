@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>方案K 题材星图</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --bg:#04060D; --ink:#EAF0FF; --ink2:#8FA0C4; --ink3:#4C5A7A;
+    --rise:#FF4D6A; --fall:#25D07E; --cyan:#57C7FF; --violet:#A78BFA;
+    --mono:'JetBrains Mono','WenQuanYi Zen Hei Mono',ui-monospace,monospace;
+  }
+  html,body{width:1440px;height:900px;overflow:hidden}
+  body{background:var(--bg);color:var(--ink);overflow:hidden;
+    font:400 12.5px/1.45 -apple-system,'Segoe UI','WenQuanYi Zen Hei',sans-serif;-webkit-font-smoothing:antialiased}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.3px}
+  .rise{color:var(--rise)}.fall{color:var(--fall)}.dim{color:var(--ink3)}.muted{color:var(--ink2)}
+
+  /* 星空底 */
+  .sky{position:absolute;inset:0;background-image:
+      radial-gradient(1.4px 1.4px at 12% 22%,rgba(255,255,255,.5),transparent),
+      radial-gradient(1.2px 1.2px at 78% 14%,rgba(255,255,255,.4),transparent),
+      radial-gradient(1.6px 1.6px at 62% 78%,rgba(255,255,255,.35),transparent),
+      radial-gradient(1.2px 1.2px at 28% 88%,rgba(255,255,255,.3),transparent),
+      radial-gradient(1.4px 1.4px at 88% 62%,rgba(255,255,255,.3),transparent),
+      radial-gradient(1200px 700px at 50% 46%,rgba(87,199,255,.10),transparent 62%)}
+  .ring{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);border-radius:50%;
+    border:1px solid rgba(255,255,255,.055)}
+  .ring.r1{width:340px;height:340px} .ring.r2{width:550px;height:550px} .ring.r3{width:700px;height:700px}
+  .cross{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%);width:760px;height:1px;
+    background:linear-gradient(90deg,transparent,rgba(255,255,255,.07),transparent)}
+  .cross.v{width:1px;height:760px;background:linear-gradient(180deg,transparent,rgba(255,255,255,.07),transparent)}
+  #lines{position:absolute;inset:0}
+
+  .shell{position:relative;height:100%;display:flex;flex-direction:column;padding:12px 14px 10px;gap:10px;z-index:2}
+  header{height:48px;display:flex;align-items:center;gap:14px;padding:0 15px;border-radius:12px;flex:none;
+    background:rgba(15,22,42,.62);border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(12px)}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:750;font-size:15px}
+  .mark{width:25px;height:25px;border-radius:50%;background:radial-gradient(circle at 34% 30%,#8FD8FF,#4F6BFF 60%,#2B2FA8);
+    box-shadow:0 0 18px rgba(87,199,255,.6)}
+  nav{display:flex;gap:2px}
+  nav a{padding:6px 12px;border-radius:8px;font-size:12.5px;color:var(--ink2);text-decoration:none}
+  nav a.on{background:rgba(87,199,255,.16);color:#B6E0FF;font-weight:650}
+  .sp{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .pill{font-size:11.5px;color:var(--ink2);border:1px solid rgba(255,255,255,.1);border-radius:999px;padding:4px 10px;
+    background:rgba(255,255,255,.03)}
+  .btn{height:29px;padding:0 13px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);
+    color:var(--ink);font:600 12px inherit;cursor:pointer}
+  .btn.pri{background:linear-gradient(180deg,#57C7FF,#3B7BE0);border-color:transparent;color:#04121F}
+
+  .stage{position:relative;flex:1;min-height:0}
+  .canvas{position:absolute;inset:0}
+
+  /* 板块节点 */
+  .sector{position:absolute;transform:translate(-50%,-50%);text-align:center;z-index:3}
+  .node{border-radius:50%;display:grid;place-items:center;margin:0 auto}
+  .sector .nm{font-size:12.5px;font-weight:700;margin-top:8px;white-space:nowrap}
+  .sector .pct{font-family:var(--mono);font-size:11.5px;font-weight:650}
+  .sector .cnt{font-size:10.5px;color:var(--ink3);white-space:nowrap}
+  .core .node{width:148px;height:148px;background:radial-gradient(circle at 38% 32%,#FF8A9A,#E02438 58%,#7A0C18);
+    box-shadow:0 0 70px rgba(255,77,106,.45),inset 0 0 40px rgba(255,255,255,.12)}
+  .core .nm{font-size:19px;font-weight:800;letter-spacing:.5px;margin-top:11px}
+  .core .pct{font-size:17px}
+  .core .cnt{font-size:11.5px;color:#FFC2CC}
+  .s1 .node{width:76px;height:76px;background:radial-gradient(circle at 36% 30%,#FF7C8E,#C81C2E 62%,#6E0C16);
+    box-shadow:0 0 30px rgba(255,77,106,.34)}
+  .s2 .node{width:54px;height:54px;background:rgba(255,77,106,.22);border:1px solid rgba(255,77,106,.55);
+    box-shadow:0 0 20px rgba(255,77,106,.22)}
+  .s3 .node{width:42px;height:42px;background:rgba(37,208,126,.16);border:1px solid rgba(37,208,126,.45)}
+  .core .node{animation:pulse 4.2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 60px rgba(255,77,106,.4),inset 0 0 40px rgba(255,255,255,.12)}
+    50%{box-shadow:0 0 92px rgba(255,77,106,.62),inset 0 0 48px rgba(255,255,255,.16)}}
+  @media (prefers-reduced-motion:reduce){.core .node{animation:none}}
+
+  /* 个股卫星 */
+  .sat{position:absolute;transform:translate(-50%,-50%);z-index:4}
+  .dot{width:9px;height:9px;border-radius:50%;background:#FF4D6A;box-shadow:0 0 12px rgba(255,77,106,.85)}
+  .dot.b{width:7px;height:7px;background:#FF8A9A} .dot.c{width:6px;height:6px;background:rgba(255,138,154,.65)}
+  .sat .lb{position:absolute;left:13px;top:-8px;font-size:10.5px;white-space:nowrap;color:var(--ink2);
+    background:rgba(4,6,13,.72);padding:1px 5px;border-radius:4px}
+  .sat.lead .lb{color:#FFD3DA;font-weight:700;background:rgba(224,36,56,.28);border:1px solid rgba(255,77,106,.5)}
+  .crown{position:absolute;left:-5px;top:-16px;font-size:10px;color:#FFD86B;font-weight:700}
+
+  /* 悬浮信息层 */
+  .card{position:absolute;border-radius:12px;background:rgba(12,18,36,.72);border:1px solid rgba(255,255,255,.09);
+    backdrop-filter:blur(12px);z-index:6}
+  .card h3{font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:7px}
+  .card h3 .tag{font-size:10px;font-weight:650;padding:1px 6px;border-radius:4px;background:rgba(87,199,255,.16);color:#9CD8FF}
+  .tl{left:18px;top:14px;width:252px;padding:13px 15px 14px}
+  .tl .row{display:flex;align-items:center;gap:8px;padding:7px 0;font-size:12px;border-bottom:1px solid rgba(255,255,255,.055)}
+  .tl .row:last-child{border-bottom:0}
+  .tl .row .badge{font-size:10px;font-weight:750;padding:1.5px 6px;border-radius:4px}
+  .tl .row .badge.main{background:rgba(255,77,106,.2);color:#FF98A8}
+  .tl .row .badge.sub{background:rgba(255,255,255,.08);color:var(--ink2)}
+  .tl .row b{margin-left:auto;font-family:var(--mono)}
+  .legend{right:18px;top:14px;width:214px;padding:13px 15px 14px}
+  .lg{display:flex;align-items:center;gap:8px;padding:5.5px 0;font-size:11.5px;color:var(--ink2)}
+  .lg .sw{width:9px;height:9px;border-radius:50%}
+  .lg b{margin-left:auto;font-family:var(--mono);color:var(--ink)}
+  .hint{right:18px;bottom:14px;width:214px;padding:11px 15px;font-size:11px;color:var(--ink3);line-height:1.7}
+  .hint b{color:var(--ink2);font-weight:600}
+
+  /* 底部跑马灯 */
+  footer{height:34px;display:flex;align-items:center;gap:12px;padding:0 14px;border-radius:10px;flex:none;
+    background:rgba(15,22,42,.62);border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(12px);overflow:hidden}
+  .tk{display:flex;align-items:center;gap:7px;font-size:12px;white-space:nowrap}
+  .tk .nm{font-weight:600}.tk .p{font-family:var(--mono);font-weight:650}
+  .tsep{width:1px;height:13px;background:rgba(255,255,255,.12)}
+</style></head><body>
+<div class="sky"></div>
+<div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div>
+<div class="cross"></div><div class="cross v"></div>
+<svg id="lines" width="1440" height="900"></svg>
+
+<div class="shell">
+  <header>
+    <div class="brand"><span class="mark"></span>题材星图 · 引力场</div>
+    <nav><a class="on" href="#">题材主线</a><a href="#">自选</a><a href="#">持仓</a><a href="#">涨停聚焦</a><a href="#">竞价</a><a href="#">选股</a></nav>
+    <div class="sp">
+      <span class="pill num">盘中 10:35:22</span>
+      <span class="pill">引力半径 = 连板高度 · 星球大小 = 板块成交额</span>
+      <button class="btn">重算星图</button>
+      <button class="btn pri">+ 添加自选</button>
+    </div>
+  </header>
+
+  <div class="stage">
+    <div class="canvas" id="canvas">
+      <div class="card tl">
+        <h3>引力核心 <span class="tag">主线</span></h3>
+        <div class="row"><span class="badge main">主线</span>半导体<b class="rise">+4.62%</b></div>
+        <div class="row"><span class="badge sub">支线</span>种植业<b class="rise">+3.85%</b></div>
+        <div class="row"><span class="badge sub">支线</span>元件<b class="rise">+2.94%</b></div>
+        <div class="row" style="border-top:1px solid rgba(255,255,255,.055);margin-top:2px">
+          <span class="muted" style="font-size:11px">主线资金外溢</span><b class="rise">+42.6 亿</b></div>
+      </div>
+
+      <div class="card legend">
+        <h3>星系图例</h3>
+        <div class="lg"><i class="sw" style="background:#E02438;width:14px;height:14px"></i>主线板块<b>1</b></div>
+        <div class="lg"><i class="sw" style="background:#C81C2E"></i>支线板块<b>3</b></div>
+        <div class="lg"><i class="sw" style="background:rgba(37,208,126,.9)"></i>调整板块<b>4</b></div>
+        <div class="lg"><i class="sw" style="background:#FF4D6A"></i>涨停个股<b>47</b></div>
+        <div class="lg"><i class="sw" style="background:#FFD86B"></i>空间龙 / 高度板<b>1</b></div>
+        <div class="lg" style="border-top:1px solid rgba(255,255,255,.055);margin-top:4px;padding-top:8px">
+          <span>市场情绪</span><b class="rise">+2.36%</b></div>
+      </div>
+
+      <div class="card hint">
+        <b>怎么读：</b>越靠近中心，资金越集中；同一圈层互相抢筹。<br>
+        点任意节点可下钻到板块成分与涨停明细。
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span class="num dim">10:35:22</span><span class="tsep"></span>
+    <div class="tk"><span class="nm">澳弘电子</span><span class="p rise">48.76 +9.99%</span></div><span class="tsep"></span>
+    <div class="tk"><span class="nm">金健米业</span><span class="p rise">13.02 +9.97%</span></div><span class="tsep"></span>
+    <div class="tk"><span class="nm">中晶科技</span><span class="p rise">37.00 +9.99%</span></div><span class="tsep"></span>
+    <div class="tk"><span class="nm">农发种业</span><span class="p rise">7.11 +5.18%</span></div><span class="tsep"></span>
+    <div class="tk"><span class="nm">招金黄金</span><span class="p fall">18.57 -5.21%</span></div><span class="tsep"></span>
+    <div class="tk"><span class="nm">平安银行</span><span class="p fall">11.62 -0.68%</span></div><span class="tsep"></span>
+    <span class="dim">涨停 47 · 跌停 20 · 最高 5 板</span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const CX = 720, CY = 452;                     // 星系中心（页内绝对坐标）
+  const sectors = [
+    { name: '半导体',  r: 0,   a: 0,    pct: 4.62,  cnt: 9, tier: 'core',
+      stocks: [{ n: '中晶科技', h: 3, lead: true }, { n: '先导基电', h: 1 }, { n: '瑞华科技', h: 3 }, { n: '华微电子', h: 1 }] },
+    { name: '种植业',  r: 190, a: -66,  pct: 3.85,  cnt: 3, tier: 's1',
+      stocks: [{ n: '登海种业', h: 2, lead: true }, { n: '万向德农', h: 2 }, { n: '农发种业', h: 1 }] },
+    { name: '元件',    r: 190, a: 66,   pct: 2.94,  cnt: 4, tier: 's1',
+      stocks: [{ n: '澳弘电子', h: 5, lead: true, crown: true }, { n: '金安国纪', h: 1 }, { n: '依顿电子', h: 1 }, { n: '超声电子', h: 1 }] },
+    { name: '消费电子', r: 292, a: -134, pct: 2.16, cnt: 2, tier: 's2',
+      stocks: [{ n: '共达电声', h: 2, lead: true }, { n: '国光电器', h: 1 }] },
+    { name: '出版',    r: 292, a: 134,  pct: 1.48,  cnt: 1, tier: 's2',
+      stocks: [{ n: '内蒙新华', h: 2, lead: true }] },
+    { name: '专业工程', r: 292, a: 180,  pct: 0.92,  cnt: 1, tier: 's2',
+      stocks: [{ n: '中岩大地', h: 2, lead: true }] },
+    { name: '房地产服务', r: 300, a: -100, pct: -0.64, cnt: 0, tier: 's3',
+      stocks: [{ n: '世联行', h: 2, lead: true }] },
+    { name: '黄金',    r: 348, a: 0,    pct: 0.72,  cnt: 0, tier: 's3',
+      stocks: [{ n: '招金黄金', h: 0, lead: true }] },
+    { name: '白酒',    r: 348, a: -160, pct: -1.18, cnt: 0, tier: 's3',
+      stocks: [{ n: '贵州茅台', h: 0, lead: true }] },
+    { name: '银行',    r: 348, a: 160,  pct: -0.42, cnt: 0, tier: 's3',
+      stocks: [{ n: '平安银行', h: 0, lead: true }] },
+  ];
+
+  const canvas = document.getElementById('canvas');
+  const lines = document.getElementById('lines');
+  const rad = (d) => (d * Math.PI) / 180;
+  const pos = (r, a) => [CX + r * Math.cos(rad(a)), CY + r * Math.sin(rad(a))];
+  const svg = [];
+
+  for (const s of sectors) {
+    const [x, y] = pos(s.r, s.a);
+    const up = s.pct >= 0;
+    const col = s.tier === 'core' ? '#FF4D6A' : up ? '#FF6B82' : '#25D07E';
+
+    if (s.r > 0) {
+      svg.push(`<line x1="${CX}" y1="${CY}" x2="${x}" y2="${y}" stroke="${col}" stroke-opacity="${s.tier === 's1' ? .3 : .16}" stroke-width="${s.tier === 's1' ? 1.2 : 1}" stroke-dasharray="${s.tier === 's3' ? '3 5' : '0'}"/>`);
+    }
+
+    // 卫星：绕板块圆的个股
+    const R = Math.max(34, 22 + s.stocks.length * 7);
+    s.stocks.forEach((st, i) => {
+      const a = -90 + (360 / s.stocks.length) * i + (s.tier === 'core' ? 25 : -20);
+      const sx = x + R * Math.cos(rad(a)), sy = y + R * Math.sin(rad(a));
+      const dc = st.h >= 5 ? 'dot' : st.h >= 3 ? 'dot' : st.h >= 2 ? 'dot b' : 'dot c';
+      svg.push(`<line x1="${x}" y1="${y}" x2="${sx}" y2="${sy}" stroke="${col}" stroke-opacity=".28" stroke-width=".9"/>`);
+      const el = document.createElement('div');
+      el.className = 'sat' + (st.lead ? ' lead' : '');
+      el.style.cssText = `left:${sx}px;top:${sy}px`;
+      el.innerHTML = `<div class="${dc}"></div>` + (st.lead
+        ? `<span class="lb">${st.n}${st.h > 1 ? ' ' + st.h + '板' : st.h === 1 ? ' 首板' : ''}</span>`
+        : '') + (st.crown ? '<span class="crown">空间龙</span>' : '');
+      canvas.appendChild(el);
+    });
+
+    const el = document.createElement('div');
+    el.className = `sector ${s.tier}`;
+    el.style.cssText = `left:${x}px;top:${y}px`;
+    el.innerHTML = `<div class="node"></div>
+      <div class="nm"${s.tier === 'core' ? '' : ' style="font-size:12px"'}>${s.name}</div>
+      <div class="pct num ${up ? 'rise' : 'fall'}">${up ? '+' : ''}${s.pct.toFixed(2)}%</div>
+      ${s.cnt ? `<div class="cnt">涨停 ${s.cnt} 家</div>` : '<div class="cnt">无涨停</div>'}`;
+    canvas.appendChild(el);
+  }
+  lines.innerHTML = svg.join('');
+})();
+</script>
+</body></html>

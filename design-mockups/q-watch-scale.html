@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>方案Q 行情刻度（自选+持仓）</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --paper:#F6F5F1; --panel:#FFFFFF; --ink:#14161A; --ink2:#5E636E; --ink3:#9BA0AA;
+    --line:#E2E1DB; --line2:#EDECE7;
+    --rise:#C81E28; --fall:#0C8F52; --brand:#1B4D3E;
+    --mono:'JetBrains Mono','WenQuanYi Zen Hei Mono',ui-monospace,monospace;
+  }
+  html,body{width:1440px;height:900px;overflow:hidden}
+  body{background:var(--paper);color:var(--ink);
+    font:400 12.5px/1.45 -apple-system,'Segoe UI','WenQuanYi Zen Hei',sans-serif;-webkit-font-smoothing:antialiased}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+  .rise{color:var(--rise)}.fall{color:var(--fall)}.muted{color:var(--ink2)}.dim{color:var(--ink3)}
+  .shell{height:100%;display:flex;flex-direction:column;padding:12px 14px 10px;gap:10px}
+
+  header{height:46px;display:flex;align-items:center;gap:13px;padding:0 4px;flex:none}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:800;font-size:15px;letter-spacing:.5px}
+  .mark{width:24px;height:24px;border-radius:3px;background:var(--ink);color:var(--paper);display:grid;place-items:center;
+    font-size:11px;font-weight:800}
+  nav{display:flex;gap:0}
+  nav a{padding:5px 11px;font-size:12.5px;color:var(--ink2);text-decoration:none;border-bottom:2px solid transparent}
+  nav a.on{color:var(--ink);font-weight:750;border-bottom-color:var(--ink)}
+  nav a b{font-family:var(--mono);font-size:10.5px;color:var(--ink3);margin-left:4px}
+  nav a.on b{color:var(--ink2)}
+  .sp{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .sp .meta{font-size:11.5px;color:var(--ink3);font-family:var(--mono)}
+  .btn{height:28px;padding:0 12px;border-radius:3px;border:1px solid var(--ink);background:transparent;color:var(--ink);
+    font:650 12px inherit;cursor:pointer}
+  .btn.pri{background:var(--ink);color:var(--paper)}
+
+  /* 顶部：一行数字，不做卡片 */
+  .top{display:flex;align-items:baseline;gap:18px;padding:0 4px 9px;border-bottom:1px solid var(--line);flex:none}
+  .tk{display:flex;align-items:baseline;gap:7px}
+  .tk .k{font-size:11.5px;color:var(--ink3)}
+  .tk .v{font-size:16px;font-weight:750;letter-spacing:-.4px}
+  .tk .c{font-size:11.5px;font-weight:650}
+  .top .tail{margin-left:auto;display:flex;gap:16px;font-size:11.5px;color:var(--ink2)}
+  .top .tail b{font-family:var(--mono);color:var(--ink)}
+
+  /* 刻度表 */
+  .board{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+  .axis,.row{display:grid;grid-template-columns:180px 1fr 110px 98px 162px;align-items:center;gap:12px}
+  .axis{height:28px;padding:0 12px;border-bottom:1.5px solid var(--ink);flex:none}
+  .axis .h{font-size:10.5px;font-weight:700;color:var(--ink3);letter-spacing:.6px}
+  .axis .h.r{text-align:right}
+  .ruler{position:relative;height:100%}
+  .ruler .tick{position:absolute;top:9px;font-family:var(--mono);font-size:10px;color:var(--ink3);transform:translateX(-50%)}
+  .ruler .mk{position:absolute;bottom:0;width:1px;height:9px;background:var(--line)}
+
+  .rows{flex:1;min-height:0;overflow:hidden}
+  .row{padding:0 12px;border-bottom:1px solid var(--line2);position:relative}
+  .row.held{background:#FCFCFA;padding-bottom:0;height:78px}
+  .row.limit{height:56px}
+  .row.norm{height:48px}
+  .row::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:transparent}
+  .row.held::before{background:var(--brand)}
+  .row.limit::before{background:var(--rise)}
+
+  .who{min-width:0}
+  .l1{display:flex;align-items:baseline;gap:7px}
+  .nm{font-size:14.5px;font-weight:750;letter-spacing:-.2px}
+  .row.limit .nm{font-size:15px}
+  .code{font-family:var(--mono);font-size:10.5px;color:var(--ink3)}
+  .tag{font-size:9.5px;font-weight:800;padding:1px 5px;border-radius:2px;border:1px solid var(--ink);
+    letter-spacing:.3px;color:var(--ink)}
+  .tag.hot{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  .l2{margin-top:3px;font-size:10.5px;color:var(--ink3);display:flex;gap:9px}
+  .l2 b{font-family:var(--mono);font-weight:600;color:var(--ink2)}
+
+  /* 刻度尺本体 */
+  .track{position:relative;height:26px}
+  .track .zero{position:absolute;left:35.29%;top:-6px;bottom:-6px;width:1px;background:var(--line)}
+  .track .grid{position:absolute;top:0;bottom:0;width:1px;background:var(--line2)}
+  .track .bar{position:absolute;top:8px;height:10px;border-radius:1px}
+  .track .bar.up{background:linear-gradient(90deg,#E8545C,#C81E28)}
+  .track .bar.down{background:linear-gradient(90deg,#0C8F52,#43B77F)}
+  .track .wr{position:absolute;top:3px;width:11px;height:11px;transform:translateX(-50%) rotate(45deg);
+    border:1.5px solid var(--ink);background:var(--paper)}
+  .track .wrline{position:absolute;top:20px;width:1px;height:5px;background:var(--ink3);transform:translateX(-50%)}
+  .track .wrl{position:absolute;top:-2px;font-family:var(--mono);font-size:10px;color:var(--ink2);white-space:nowrap}
+
+  .aux{display:flex;justify-content:flex-end;gap:11px;font-size:10.5px;color:var(--ink3);white-space:nowrap}
+  .aux b{font-family:var(--mono);font-weight:650;color:var(--ink2)}
+  .px{text-align:right;font-family:var(--mono);font-size:24px;font-weight:750;letter-spacing:-1px}
+  .row.norm .px{font-size:20px}
+  .px small{display:block;font-size:11px;font-weight:650;letter-spacing:0;margin-top:1px}
+  .pct{text-align:right}
+  .pct .p{font-family:var(--mono);font-size:17px;font-weight:750;letter-spacing:-.5px}
+  .row.norm .pct .p{font-size:15px}
+  .pct .k{font-size:10px;color:var(--ink3);margin-top:2px}
+
+  /* 持仓行的附加一条 */
+  .hstrip{grid-column:1/-1;display:flex;gap:20px;margin-top:6px;padding-top:6px;
+    border-top:1px dashed var(--line);font-size:11px;color:var(--ink3)}
+  .hstrip b{font-family:var(--mono);font-weight:700;color:var(--ink2)}
+  .hstrip .pnl{margin-left:auto;font-family:var(--mono);font-weight:800;font-size:13px}
+
+  /* 底部总览 */
+  footer{display:flex;align-items:stretch;gap:0;border-top:1.5px solid var(--ink);padding-top:10px;flex:none}
+  .fcell{padding:0 18px;border-right:1px solid var(--line)}
+  .fcell:first-child{padding-left:4px}
+  .fcell:last-child{border-right:0}
+  .fcell .k{font-size:10.5px;color:var(--ink3);letter-spacing:.4px}
+  .fcell .v{font-family:var(--mono);font-weight:750;margin-top:2px}
+  .fcell.hero .v{font-size:30px;letter-spacing:-1.4px}
+  .fcell .v.sm{font-size:15px}
+  .fcell .sub{font-size:10.5px;color:var(--ink3);margin-top:2px}
+  footer .note{margin-left:auto;align-self:center;font-size:11px;color:var(--ink3);padding-right:4px}
+</style></head><body>
+<div class="shell">
+  <header>
+    <div class="brand"><span class="mark">刻</span>行情刻度</div>
+    <nav>
+      <a class="on" href="#">自选<b>11</b></a><a href="#">持仓<b>4</b></a><a href="#">涨停聚焦<b>47</b></a>
+      <a href="#">竞价<b>89</b></a><a href="#">龙虎榜</a><a href="#">选股</a>
+    </nav>
+    <div class="sp">
+      <span class="meta">最后刷新 10:35:22</span>
+      <button class="btn">刷新</button>
+      <button class="btn pri">添加股票</button>
+    </div>
+  </header>
+
+  <div class="top">
+    <div class="tk"><span class="k">上证</span><span class="v num fall">3875.60</span><span class="c num fall">-0.41%</span></div>
+    <div class="tk"><span class="k">深证</span><span class="v num fall">13409.91</span><span class="c num fall">-0.33%</span></div>
+    <div class="tk"><span class="k">创业板</span><span class="v num fall">3298.31</span><span class="c num fall">-0.40%</span></div>
+    <div class="tail">
+      <span>两市成交 <b>1.82万亿</b></span><span>涨停 <b class="rise">47</b></span>
+      <span>炸板 <b>5</b></span><span>晋级 <b>10.1%</b></span>
+      <span>农业 3 · 黄金 1 · 未分组 7</span>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="axis">
+      <div class="h">股票 · 自选日 / 自选价</div>
+      <div class="ruler">
+        <span class="mk" style="left:5.9%"></span><span class="tick" style="left:5.9%">-5%</span>
+        <span class="mk" style="left:35.3%"></span><span class="tick" style="left:35.3%">0</span>
+        <span class="mk" style="left:64.7%"></span><span class="tick" style="left:64.7%">+5%</span>
+        <span class="mk" style="left:94.1%"></span><span class="tick" style="left:94.1%">+10%</span>
+      </div>
+      <div class="h r">最新价 / 涨跌额</div>
+      <div class="h r">涨跌幅 / 自选收益</div>
+      <div class="h r">换手 / 量比 / 成交额</div>
+    </div>
+
+    <div class="rows">
+      <div class="row limit">
+        <div class="who"><div class="l1"><span class="nm">澳弘电子</span><span class="code">605058</span><span class="tag hot">5连板</span></div>
+          <div class="l2"><span>自选 09-15</span><span>价 <b>44.33</b></span></div></div>
+        <div class="track">
+          <span class="grid" style="left:5.9%"></span><span class="grid" style="left:64.7%"></span>
+          <span class="zero"></span>
+          <i class="bar up" style="left:35.29%;width:58.77%"></i>
+          <i class="wrline" style="left:94.06%"></i><i class="wr" style="left:94.06%"></i><span class="wrl" style="right:46.1%">自选收益 +9.99%</span>
+        </div>
+        <div class="px rise">48.76<small class="rise">+4.43</small></div>
+        <div class="pct"><div class="p rise">+9.99%</div><div class="k">自选 +9.99%</div></div>
+        <div class="aux"><span>换手 <b>11.47%</b></span><span>量比 <b>2.10</b></span><span>额 <b>8.6亿</b></span></div>
+      </div>
+      <div class="row held">
+        <div class="who"><div class="l1"><span class="nm">金健米业</span><span class="code">600127</span><span class="tag hot">涨停</span><span class="tag">持仓</span></div>
+          <div class="l2"><span>自选 09-16</span><span>价 <b>12.50</b></span></div></div>
+        <div class="track">
+          <span class="grid" style="left:5.9%"></span><span class="grid" style="left:64.7%"></span>
+          <span class="zero"></span>
+          <i class="bar up" style="left:35.29%;width:58.65%"></i>
+          <i class="wrline" style="left:59.76%"></i><i class="wr" style="left:59.76%"></i><span class="wrl" style="right:11.8%">自选收益 +4.16%</span>
+        </div>
+        <div class="px rise">13.02<small class="rise">+1.18</small></div>
+        <div class="pct"><div class="p rise">+9.97%</div><div class="k">自选 +4.16%</div></div>
+        <div class="aux"><span>换手 <b>29.82%</b></span><span>量比 <b>1.02</b></span><span>额 <b>3.2亿</b></span></div>
+        <div class="hstrip"><span>开仓价 <b>12.50</b></span><span>持有 <b>2,000</b></span><span>持仓收益 <b class="rise">+7.92%</b></span><span class="pnl rise">+¥1,040.00</span></div>
+      </div>
+      <div class="row held">
+        <div class="who"><div class="l1"><span class="nm">农发种业</span><span class="code">600313</span><span class="tag">持仓</span></div>
+          <div class="l2"><span>自选 09-01</span><span>价 <b>7.02</b></span></div></div>
+        <div class="track">
+          <span class="grid" style="left:5.9%"></span><span class="grid" style="left:64.7%"></span>
+          <span class="zero"></span>
+          <i class="bar up" style="left:35.29%;width:30.47%"></i>
+          <i class="wrline" style="left:42.82%"></i><i class="wr" style="left:42.82%"></i><span class="wrl" style="left:9.2%">自选收益 +1.28%</span>
+        </div>
+        <div class="px rise">7.11<small class="rise">+0.35</small></div>
+        <div class="pct"><div class="p rise">+5.18%</div><div class="k">自选 +1.28%</div></div>
+        <div class="aux"><span>换手 <b>9.84%</b></span><span>量比 <b>1.89</b></span><span>额 <b>6.4亿</b></span></div>
+        <div class="hstrip"><span>开仓价 <b>7.02</b></span><span>持有 <b>10,000</b></span><span>持仓收益 <b class="rise">+1.28%</b></span><span class="pnl rise">+¥900.00</span></div>
+      </div>
+      <div class="row held">
+        <div class="who"><div class="l1"><span class="nm">登海种业</span><span class="code">002041</span><span class="tag">持仓</span></div>
+          <div class="l2"><span>自选 09-02</span><span>价 <b>9.60</b></span></div></div>
+        <div class="track">
+          <span class="grid" style="left:5.9%"></span><span class="grid" style="left:64.7%"></span>
+          <span class="zero"></span>
+          <i class="bar up" style="left:35.29%;width:32.36%"></i>
+          <i class="wrline" style="left:81.88%"></i><i class="wr" style="left:81.88%"></i><span class="wrl" style="right:33.9%">自选收益 +7.92%</span>
+        </div>
+        <div class="px rise">10.36<small class="rise">+0.54</small></div>
+        <div class="pct"><div class="p rise">+5.50%</div><div class="k">自选 +7.92%</div></div>
+        <div class="aux"><span>换手 <b>7.63%</b></span><span>量比 <b>1.52</b></span><span>额 <b>2.8亿</b></span></div>
+        <div class="hstrip"><span>开仓价 <b>9.60</b></span><span>持有 <b>3,000</b></span><span>持仓收益 <b class="rise">+7.92%</b></span><span class="pnl rise">+¥2,280.00</span></div>
+      </div>
+      <div class="row held">
+        <div class="who"><div class="l1"><span class="nm">招金黄金</span><span class="code">000506</span><span class="tag">持仓</span></div>
+          <div class="l2"><span>自选 09-10</span><span>价 <b>19.40</b></span></div></div>
+        <div class="track">
+          <span class="grid" style="left:5.9%"></span><span class="grid" style="left:64.7%"></span>
+          <span class="zero"></span>
+          <i class="bar down" style="left:4.65%;width:30.64%"></i>
+          <i class="wrline" style="left:10.12%"></i><i class="wr" style="left:10.12%"></i><span class="wrl" style="left:41.9%">自选收益 -4.28%</span>
+        </div>
+        <div class="px fall">18.57<small class="fall">-1.02</small></div>
+        <div class="pct"><div class="p fall">-5.21%</div><div class="k">自选 -4.28%</div></div>
+        <div class="aux"><span>换手 <b>6.52%</b></span><span>量比 <b>1.56</b></span><span>额 <b>2.6亿</b></span></div>
+        <div class="hstrip"><span>开仓价 <b>19.40</b></span><span>持有 <b>1,000</b></span><span>持仓收益 <b class="fall">-4.28%</b></span><span class="pnl fall">-¥830.00</span></div>
+      </div>
+      <div class="row limit">
+        <div class="who"><div class="l1"><span class="nm">中晶科技</span><span class="code">003026</span><span class="tag hot">3连板</span></div>
+          <div class="l2"><span>自选 09-12</span><span>价 <b>33.64</b></span></div></div>
+        <div class="track">
+          <span class="grid" style="left:5.9%"></span><span class="grid" style="left:64.7%"></span>
+          <span class="zero"></span>
+          <i class="bar up" style="left:35.29%;width:58.77%"></i>
+          <i class="wrline" style="left:94.06%"></i><i class="wr" style="left:94.06%"></i><span class="wrl" style="right:46.1%">自选收益 +9.99%</span>
+        </div>
+        <div class="px rise">37.00<small class="rise">+3.36</small></div>
+        <div class="pct"><div class="p rise">+9.99%</div><div class="k">自选 +9.99%</div></div>
+        <div class="aux"><span>换手 <b>12.85%</b></span><span>量比 <b>1.88</b></span><span>额 <b>5.4亿</b></span></div>
+      </div>
+      <div class="row limit">
+        <div class="who"><div class="l1"><span class="nm">华瓷股份</span><span class="code">001216</span><span class="tag hot">3连板</span></div>
+          <div class="l2"><span>自选 09-16</span><span>价 <b>19.53</b></span></div></div>
+        <div class="track">
+          <span class="grid" style="left:5.9%"></span><span class="grid" style="left:64.7%"></span>
+          <span class="zero"></span>
+          <i class="bar up" style="left:35.29%;width:58.95%"></i>
+          <i class="wrline" style="left:45.82%"></i><i class="wr" style="left:45.82%"></i><span class="wrl" style="left:6.2%">自选收益 +1.79%</span>
+        </div>
+        <div class="px rise">19.88<small class="rise">+1.81</small></div>
+        <div class="pct"><div class="p rise">+10.02%</div><div class="k">自选 +1.79%</div></div>
+        <div class="aux"><span>换手 <b>18.30%</b></span><span>量比 <b>3.05</b></span><span>额 <b>4.2亿</b></span></div>
+      </div>
+      <div class="row norm">
+        <div class="who"><div class="l1"><span class="nm">贵州茅台</span><span class="code">600519</span></div>
+          <div class="l2"><span>自选 08-28</span><span>价 <b>1258.00</b></span></div></div>
+        <div class="track">
+          <span class="grid" style="left:5.9%"></span><span class="grid" style="left:64.7%"></span>
+          <span class="zero"></span>
+          <i class="bar up" style="left:35.29%;width:4.06%"></i>
+          <i class="wrline" style="left:39.35%"></i><i class="wr" style="left:39.35%"></i><span class="wrl" style="left:12.6%">自选收益 +0.69%</span>
+        </div>
+        <div class="px rise">1266.66<small class="rise">+8.66</small></div>
+        <div class="pct"><div class="p rise">+0.69%</div><div class="k">自选 +0.69%</div></div>
+        <div class="aux"><span>换手 <b>0.14%</b></span><span>量比 <b>0.94</b></span><span>额 <b>18.7亿</b></span></div>
+      </div>
+      <div class="row norm">
+        <div class="who"><div class="l1"><span class="nm">深桑达Ａ</span><span class="code">000032</span></div>
+          <div class="l2"><span>自选 09-03</span><span>价 <b>14.20</b></span></div></div>
+        <div class="track">
+          <span class="grid" style="left:5.9%"></span><span class="grid" style="left:64.7%"></span>
+          <span class="zero"></span>
+          <i class="bar down" style="left:25.24%;width:10.05%"></i>
+          <i class="wrline" style="left:43.18%"></i><i class="wr" style="left:43.18%"></i><span class="wrl" style="left:8.8%">自选收益 +1.34%</span>
+        </div>
+        <div class="px fall">14.39<small class="fall">-0.25</small></div>
+        <div class="pct"><div class="p fall">-1.71%</div><div class="k">自选 +1.34%</div></div>
+        <div class="aux"><span>换手 <b>4.56%</b></span><span>量比 <b>1.18</b></span><span>额 <b>3.5亿</b></span></div>
+      </div>
+      <div class="row norm">
+        <div class="who"><div class="l1"><span class="nm">平安银行</span><span class="code">000001</span></div>
+          <div class="l2"><span>自选 09-05</span><span>价 <b>11.50</b></span></div></div>
+        <div class="track">
+          <span class="grid" style="left:5.9%"></span><span class="grid" style="left:64.7%"></span>
+          <span class="zero"></span>
+          <i class="bar down" style="left:31.29%;width:4.00%"></i>
+          <i class="wrline" style="left:41.41%"></i><i class="wr" style="left:41.41%"></i><span class="wrl" style="left:10.6%">自选收益 +1.04%</span>
+        </div>
+        <div class="px fall">11.62<small class="fall">-0.08</small></div>
+        <div class="pct"><div class="p fall">-0.68%</div><div class="k">自选 +1.04%</div></div>
+        <div class="aux"><span>换手 <b>0.62%</b></span><span>量比 <b>1.34</b></span><span>额 <b>9.6亿</b></span></div>
+      </div>
+      <div class="row norm">
+        <div class="who"><div class="l1"><span class="nm">金螳螂</span><span class="code">002081</span></div>
+          <div class="l2"><span>自选 09-08</span><span>价 <b>4.86</b></span></div></div>
+        <div class="track">
+          <span class="grid" style="left:5.9%"></span><span class="grid" style="left:64.7%"></span>
+          <span class="zero"></span>
+          <i class="bar down" style="left:26.82%;width:8.47%"></i>
+          <i class="wrline" style="left:26.82%"></i><i class="wr" style="left:26.82%"></i><span class="wrl" style="left:25.2%">自选收益 -1.44%</span>
+        </div>
+        <div class="px fall">4.79<small class="fall">-0.07</small></div>
+        <div class="pct"><div class="p fall">-1.44%</div><div class="k">自选 -1.44%</div></div>
+        <div class="aux"><span>换手 <b>4.55%</b></span><span>量比 <b>0.79</b></span><span>额 <b>1.4亿</b></span></div>
+      </div>
+    
+  </div>
+
+  <footer>
+    <div class="fcell hero"><div class="k">当前范围总收益率</div><div class="v rise">+2.36%</div></div>
+    <div class="fcell"><div class="k">总收益额</div><div class="v sm rise">+¥3,390.00</div></div>
+    <div class="fcell"><div class="k">总投入</div><div class="v sm">¥143,400</div><div class="sub">4 只持仓</div></div>
+    <div class="fcell"><div class="k">当前市值</div><div class="v sm">¥146,790</div><div class="sub">含 7 只观察</div></div>
+    <div class="fcell"><div class="k">刻度口径</div><div class="v sm">-6% ~ +11%</div><div class="sub">◇ 自选收益</div></div>
+    <div class="note">条形＝相对昨收涨跌幅 · 菱形＝相对「自选价」的自选收益 · 行高：持仓 &gt; 涨停 &gt; 普通</div>
+  </footer>
+</div>
+</body></html>

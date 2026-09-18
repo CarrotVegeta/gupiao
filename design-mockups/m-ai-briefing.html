@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>方案M AI 盘面播报</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --bg:#F6F7FB; --panel:#FFFFFF; --line:#E9EBF2; --line2:#F2F4F9;
+    --ink:#171B2B; --ink2:#5C6479; --ink3:#9AA1B4;
+    --rise:#E0242F; --fall:#0E9F5B; --brand:#4F46E5; --brand2:#7C6CFF; --amber:#D97706;
+    --mono:'JetBrains Mono','WenQuanYi Zen Hei Mono',ui-monospace,monospace;
+  }
+  html,body{width:1440px;height:900px;overflow:hidden}
+  body{background:var(--bg);color:var(--ink);
+    font:400 13px/1.6 -apple-system,'Segoe UI','WenQuanYi Zen Hei',sans-serif;-webkit-font-smoothing:antialiased}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+  .rise{color:var(--rise)}.fall{color:var(--fall)}.muted{color:var(--ink2)}.dim{color:var(--ink3)}
+  .shell{height:100%;display:flex;flex-direction:column;padding:12px 14px 10px;gap:10px}
+
+  header{height:50px;display:flex;align-items:center;gap:14px;padding:0 16px;background:var(--panel);
+    border:1px solid var(--line);border-radius:14px;flex:none;box-shadow:0 6px 18px rgba(23,27,43,.04)}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:750;font-size:14.5px}
+  .mark{width:26px;height:26px;border-radius:9px;background:linear-gradient(135deg,var(--brand),var(--brand2));
+    display:grid;place-items:center;color:#fff;font-size:12px;font-weight:800;box-shadow:0 6px 14px rgba(79,70,229,.28)}
+  .badge-ai{font-size:10.5px;font-weight:750;padding:2px 7px;border-radius:999px;background:#EEF0FF;color:var(--brand)}
+  nav{display:flex;gap:2px;margin-left:4px}
+  nav a{padding:6px 11px;border-radius:8px;font-size:12.5px;color:var(--ink2);text-decoration:none}
+  nav a.on{background:#F1F2F9;color:var(--ink);font-weight:700}
+  .sp{margin-left:auto;display:flex;align-items:center;gap:9px}
+  .btn{height:30px;padding:0 13px;border-radius:9px;border:1px solid var(--line);background:#fff;color:var(--ink);
+    font:600 12.5px inherit;cursor:pointer}
+  .btn.pri{background:linear-gradient(135deg,var(--brand),var(--brand2));border-color:transparent;color:#fff;
+    box-shadow:0 6px 14px rgba(79,70,229,.26)}
+
+  .body{display:grid;grid-template-columns:1fr 344px;gap:10px;flex:1;min-height:0}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;display:flex;flex-direction:column;
+    overflow:hidden;box-shadow:0 6px 18px rgba(23,27,43,.04)}
+
+  /* 对话区 */
+  .stream{flex:1;overflow:hidden;padding:16px 20px 4px;display:flex;flex-direction:column;gap:13px}
+  .msg{display:flex;gap:11px;align-items:flex-start}
+  .av{width:30px;height:30px;border-radius:10px;flex:none;display:grid;place-items:center;font-size:12px;font-weight:800}
+  .av.ai{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;box-shadow:0 5px 12px rgba(79,70,229,.25)}
+  .av.me{background:#E9EBF2;color:#5C6479}
+  .bub{background:#FAFBFE;border:1px solid var(--line);border-radius:4px 13px 13px 13px;padding:12px 15px;max-width:100%}
+  .msg.me{flex-direction:row-reverse}
+  .msg.me .bub{background:#EEF0FF;border-color:#E0E2FF;border-radius:13px 4px 13px 13px;color:#2A2F52}
+  .who{font-size:11px;color:var(--ink3);margin-bottom:5px;display:flex;align-items:center;gap:7px}
+  .who .tag{font-size:10px;font-weight:700;padding:1px 6px;border-radius:5px;background:#EEF0FF;color:var(--brand)}
+  .bub p{font-size:13px;color:#2C3145}
+  .bub p+p{margin-top:7px}
+  .bub .hl{font-weight:750}
+  .kv{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+  .kvc{display:flex;align-items:center;gap:7px;padding:6px 10px;border-radius:9px;background:#fff;border:1px solid var(--line);
+    font-size:11.5px;color:var(--ink2)}
+  .kvc b{font-family:var(--mono);font-size:12.5px;color:var(--ink)}
+  .mini{margin-top:11px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .mini .r{display:grid;grid-template-columns:1fr 74px 78px 92px;align-items:center;padding:7px 12px;font-size:12px;
+    border-bottom:1px solid var(--line2)}
+  .mini .r:last-child{border-bottom:0}
+  .mini .r.head{background:#FAFBFE;font-size:11px;color:var(--ink3);font-weight:600}
+  .mini .r span:not(:first-child){text-align:right;font-family:var(--mono)}
+  .mini .nm{font-weight:650;font-family:inherit}
+  .mini .nm i{font-family:var(--mono);font-size:10px;color:var(--ink3);font-style:normal;margin-left:5px}
+
+  .asks{display:flex;gap:7px;padding:4px 20px 10px;flex-wrap:wrap;flex:none}
+  .ask{font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:#fff;color:var(--ink2);cursor:pointer}
+  .ask:hover{border-color:#C9CDF7;color:var(--brand)}
+  .composer{margin:0 20px 14px;border:1px solid var(--line);border-radius:12px;padding:9px 10px 9px 14px;display:flex;
+    align-items:center;gap:10px;background:#FCFCFE;flex:none}
+  .composer .ph{flex:1;color:var(--ink3);font-size:12.5px}
+  .composer .send{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--brand),var(--brand2));
+    display:grid;place-items:center;color:#fff;font-size:13px;font-weight:700}
+
+  /* 右栏 */
+  .rail{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:hidden}
+  .rh{height:42px;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid var(--line);flex:none}
+  .rh h2{font-size:13px;font-weight:750}
+  .rh .n{margin-left:auto;font-size:11px;color:var(--ink3)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px 14px}
+  .stat{padding:10px 11px;border-radius:10px;background:#FAFBFE;border:1px solid var(--line2)}
+  .stat .t{font-size:11px;color:var(--ink3)}
+  .stat .v{font-size:18px;font-weight:750;margin-top:3px;font-family:var(--mono);letter-spacing:-.5px}
+  .lad{padding:8px 14px 12px}
+  .lrow{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px dashed var(--line2);font-size:12px}
+  .lrow:last-child{border-bottom:0}
+  .lrow .h{width:42px;height:20px;border-radius:6px;display:grid;place-items:center;font-family:var(--mono);font-size:11px;
+    font-weight:750;background:#FDECEC;color:var(--rise)}
+  .lrow .h.h5{background:#B0121C;color:#fff}
+  .lrow .names{flex:1;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lrow b{font-family:var(--mono);color:var(--ink3)}
+  .src{padding:6px 14px 12px}
+  .srow{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line2);font-size:12px}
+  .srow:last-child{border-bottom:0}
+  .srow .dot{width:6px;height:6px;border-radius:50%;background:var(--brand)}
+  .srow .t{color:var(--ink2);flex:1}
+  .srow b{font-family:var(--mono)}
+  footer{height:26px;display:flex;align-items:center;gap:11px;font-size:11px;color:var(--ink3);padding:0 4px;flex:none}
+  footer .sep{width:1px;height:10px;background:var(--line)}
+</style></head><body>
+<div class="shell">
+  <header>
+    <div class="brand"><span class="mark">AI</span>盘面播报 <span class="badge-ai">Beta</span></div>
+    <nav><a class="on" href="#">播报</a><a href="#">自选</a><a href="#">持仓</a><a href="#">涨停聚焦</a><a href="#">选股</a></nav>
+    <div class="sp">
+      <span class="muted num" style="font-size:11.5px">数据截至 10:35:22</span>
+      <button class="btn">重新生成</button>
+      <button class="btn pri">推送到微信</button>
+    </div>
+  </header>
+
+  <div class="body">
+    <section class="panel">
+      <div class="stream">
+        <div class="msg">
+          <div class="av ai">AI</div>
+          <div style="flex:1">
+            <div class="who">盘面播报 <span class="tag">10:35 盘中</span> 基于 47 只涨停股 · 86 个板块</div>
+            <div class="bub">
+              <p>今天早盘是 <span class="hl rise">半导体独强</span> 的结构：板块 <span class="hl rise">+4.62%</span>，9 家涨停，中晶科技 3 板接力，昨天的高度板澳弘电子 5 板没炸，<span class="hl">空间被打开</span>。</p>
+              <p>支线里 <span class="hl rise">种植业 +3.85%</span> 是政策催化，登海种业、万向德农双双 2 板；元件跟着半导体走，<span class="hl">+2.94%</span>。弱势在白酒 <span class="hl fall">-1.18%</span>、银行 <span class="hl fall">-0.42%</span>，指数被权重压着。</p>
+              <p>你的持仓 <span class="hl rise">浮盈 +18,462 元（+6.9%）</span>，金健米业、登海种业贡献了大头；<span class="hl fall">招金黄金 -5.21%</span> 是唯一的拖累项。</p>
+              <div class="kv">
+                <span class="kvc">涨停 <b class="rise">47</b></span>
+                <span class="kvc">跌停 <b class="fall">20</b></span>
+                <span class="kvc">炸板率 <b style="color:var(--amber)">10.1%</b></span>
+                <span class="kvc">最高连板 <b>5 板</b></span>
+                <span class="kvc">昨日涨停今表现 <b class="rise">+2.36%</b></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="msg me">
+          <div class="av me">我</div>
+          <div style="max-width:74%">
+            <div class="bub"><p>我的持仓现在风险大吗？该不该减招金黄金？</p></div>
+          </div>
+        </div>
+
+        <div class="msg">
+          <div class="av ai">AI</div>
+          <div style="flex:1">
+            <div class="who">风险体检 <span class="tag">引用持仓 4 只</span></div>
+            <div class="bub">
+              <p>整体风险 <span class="hl">中等偏低</span>：4 只持仓里 3 只属于当下主线/支线，仓位集中度 <span class="hl">78% 在农业链</span>，一旦种植业退潮会同时回撤。</p>
+              <p>招金黄金 <span class="hl fall">-5.21%</span>，跌破分时均线且黄金板块无涨停，<span class="hl">属于独立走弱而不是板块回调</span>；目前浮亏 830 元（-4.28%），占持仓 6.5%。</p>
+              <div class="mini">
+                <div class="r head"><span>持仓</span><span>现价</span><span>浮动盈亏</span><span>建议</span></div>
+                <div class="r"><span class="nm">金健米业<i>600127</i></span><span class="rise">13.02</span><span class="rise">+1,040</span><span>持有</span></div>
+                <div class="r"><span class="nm">登海种业<i>002041</i></span><span class="rise">10.36</span><span class="rise">+2,280</span><span>持有</span></div>
+                <div class="r"><span class="nm">招金黄金<i>000506</i></span><span class="fall">18.57</span><span class="fall">-830</span><span class="rise">建议减半</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="msg">
+          <div class="av ai">AI</div>
+          <div style="flex:1">
+            <div class="who">追问「半导体还能追吗？」 <span class="tag">引用 9 只涨停股</span></div>
+            <div class="bub">
+              <p>可以跟，但别打首板：今天 <span class="hl">9 家涨停、3 板高度</span>，属于分歧后一致，性价比在 <span class="hl">2 板接力</span>；风险是 <span class="hl fall">炸板率 10.1%</span>，龙头一炸板块退潮很快。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="asks">
+        <span class="ask">半导体还能追吗？</span>
+        <span class="ask">谁最可能晋级 4 板？</span>
+        <span class="ask">帮我看竞价异动</span>
+        <span class="ask">生成今日复盘</span>
+      </div>
+      <div class="composer">
+        <span class="ph">问点什么，例如「农业链还能拿几天？」</span>
+        <span class="send">↑</span>
+      </div>
+    </section>
+
+    <aside class="panel rail">
+      <div class="rh"><h2>数据依据</h2><span class="n">可点击核对</span></div>
+      <div class="grid2">
+        <div class="stat"><div class="t">涨停家数</div><div class="v rise">47</div></div>
+        <div class="stat"><div class="t">跌停家数</div><div class="v fall">20</div></div>
+        <div class="stat"><div class="t">炸板率</div><div class="v" style="color:var(--amber)">10.1%</div></div>
+        <div class="stat"><div class="t">连板股</div><div class="v">8</div></div>
+      </div>
+      <div class="rh" style="border-top:1px solid var(--line)"><h2>连板天梯</h2><span class="n">最高 5 板</span></div>
+      <div class="lad">
+        <div class="lrow"><span class="h h5">5板</span><span class="names">澳弘电子</span><b>1</b></div>
+        <div class="lrow"><span class="h">3板</span><span class="names">中晶科技 · 瑞华科技 · 华瓷股份</span><b>3</b></div>
+        <div class="lrow"><span class="h">2板</span><span class="names">内蒙新华 · 世联行 · 共达电声 · 万向德农</span><b>4</b></div>
+        <div class="lrow"><span class="h">1板</span><span class="names">先导基电 · 新宏泽 · 三峡新材 等</span><b>39</b></div>
+      </div>
+      <div class="rh" style="border-top:1px solid var(--line)"><h2>引用来源</h2><span class="n">实时</span></div>
+      <div class="src">
+        <div class="srow"><i class="dot"></i><span class="t">涨停池 · 腾讯行情</span><b class="rise">47 家</b></div>
+        <div class="srow"><i class="dot"></i><span class="t">板块涨幅 · 东方财富</span><b class="rise">半导体 +4.62%</b></div>
+        <div class="srow"><i class="dot"></i><span class="t">龙虎榜 · 净买入</span><b class="rise">中晶科技 1.24 亿</b></div>
+        <div class="srow"><i class="dot"></i><span class="t">我的持仓 · 本地</span><b class="rise">+18,462 元</b></div>
+      </div>
+      <div class="rh" style="border-top:1px solid var(--line)"><h2>自选异动</h2><span class="n">3 条</span></div>
+      <div class="src">
+        <div class="srow"><i class="dot" style="background:var(--rise)"></i><span class="t">10:34 华瓷股份 封板</span><b class="rise">+10.02%</b></div>
+      </div>
+    </aside>
+  </div>
+
+  <footer>
+    <span>播报由 AI 基于实时行情生成，仅供研究参考，不构成投资建议</span><span class="sep"></span>
+    <span>数据源 腾讯 / 东方财富</span>
+  </footer>
+</div>
+</body></html>

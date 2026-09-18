@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>方案 Z4 · 迷你K线（自选 / 持仓）</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --bg:#EEF0F4; --panel:#FFFFFF; --line:#E3E6EC; --line2:#F0F2F6; --head:#F7F8FB;
+    --ink:#151A22; --ink2:#59616F; --ink3:#949CAB;
+    --rise:#D8202B; --fall:#0E9F5B; --amber:#C2760A; --brand:#1D4ED8;
+    --mono:'JetBrains Mono','WenQuanYi Zen Hei Mono',ui-monospace,monospace;
+  }
+  html,body{width:1440px;height:900px;overflow:hidden}
+  body{background:var(--bg);color:var(--ink);
+    font:400 12.5px/1.45 -apple-system,'Segoe UI','WenQuanYi Zen Hei',sans-serif;-webkit-font-smoothing:antialiased}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+  .rise{color:var(--rise)}.fall{color:var(--fall)}.muted{color:var(--ink2)}.dim{color:var(--ink3)}
+  .shell{height:100%;display:flex;flex-direction:column;padding:11px 13px 9px;gap:9px}
+
+  header{height:46px;display:flex;align-items:center;gap:12px;padding:0 14px;background:var(--panel);
+    border:1px solid var(--line);border-radius:10px;flex:none}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:750;font-size:14px}
+  .mark{width:22px;height:22px;border-radius:6px;background:#141922;color:#fff;display:grid;place-items:center;
+    font-size:11px;font-weight:800}
+  .vlabel{margin-left:2px;padding:3px 9px;border-radius:999px;background:#EEF2FF;color:var(--brand);
+    border:1px solid #DCE6FF;font-size:11.5px;font-weight:700}
+  nav{display:flex;gap:1px}
+  nav a{display:flex;align-items:center;gap:5px;padding:6px 10px;border-radius:7px;font-size:12.5px;
+    color:var(--ink2);text-decoration:none}
+  nav a b{font-family:var(--mono);font-size:11px;font-weight:650;color:var(--ink3)}
+  nav a.on{background:#EEF2FF;color:var(--brand);font-weight:700}
+  nav a.on b{color:var(--brand)}
+  .sp{margin-left:auto;display:flex;align-items:center;gap:8px}
+  .btn{height:28px;padding:0 11px;border-radius:7px;border:1px solid var(--line);background:#fff;color:var(--ink);
+    font:600 12px inherit;cursor:pointer}
+  .btn.pri{background:var(--brand);border-color:var(--brand);color:#fff}
+
+  .market{display:grid;grid-template-columns:repeat(4,1fr);background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;overflow:hidden;flex:none;height:82px}
+  .mk{padding:8px 14px;border-right:1px solid var(--line2);display:flex;flex-direction:column;justify-content:center;gap:2px}
+  .mk:last-child{border-right:0}
+  .mk .k{font-size:11px;color:var(--ink3);display:flex;gap:5px}
+  .mk .v{font-size:19px;font-weight:750;letter-spacing:-.4px}
+  .mk .sub{font-size:11.5px;display:flex;gap:9px;font-weight:600}
+  .mk .sub i{font-style:normal;color:var(--ink3);font-weight:500}
+
+  .cols{display:grid;grid-template-columns:1fr 524px;gap:9px;flex:1;min-height:0}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;
+    overflow:hidden;min-height:0}
+  .bar{height:38px;display:flex;align-items:center;gap:9px;padding:0 13px;border-bottom:1px solid var(--line);flex:none}
+  .bar h2{font-size:13.5px;font-weight:750}
+  .bar .n{font-size:11px;color:var(--ink3);font-family:var(--mono)}
+  .bar .rt{margin-left:auto;display:flex;align-items:center;gap:6px}
+  .seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .seg span{padding:4px 10px;font-size:11.5px;color:var(--ink2);border-right:1px solid var(--line)}
+  .seg span:last-child{border-right:0}
+  .seg span.on{background:#EEF2FF;color:var(--brand);font-weight:700}
+  .gchip{font-size:11px;padding:3px 8px;border-radius:6px;background:var(--head);border:1px solid var(--line);color:var(--ink2)}
+  .gchip.on{background:#141922;border-color:#141922;color:#fff;font-weight:650}
+
+  .scroll{flex:1;min-height:0;overflow:hidden}
+  table{width:100%;border-collapse:collapse;table-layout:fixed}
+  thead th{height:28px;padding:0 8px;font-size:10.5px;font-weight:650;color:var(--ink3);text-align:right;
+    background:var(--head);border-bottom:1px solid var(--line);white-space:nowrap}
+  thead th:first-child{text-align:left}
+  tbody td{height:56px;padding:0 8px;text-align:right;font-size:12.5px;border-bottom:1px solid var(--line2);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  tbody td:first-child{text-align:left}
+  tbody tr:hover{background:#F6F8FD}
+  tbody tr.hold{background:#FFFBFB}
+  .stk{display:flex;align-items:baseline;gap:6px}
+  .nm{font-weight:650}
+  .code{font-family:var(--mono);font-size:10.5px;color:var(--ink3)}
+  .tag{font-size:10px;padding:0 5px;border-radius:3px;font-weight:750;background:#FDECEC;color:var(--rise);
+    border:1px solid #F7D5D8}
+  .tag.b{background:#FEF5E7;color:var(--amber);border-color:#F6E2C4}
+  .tag.g{background:#EDF3FF;color:var(--brand);border-color:#DCE6FF}
+  .tag.n{background:#F1F3F7;color:var(--ink2);border-color:#E3E6EC;font-weight:600}
+  .stk2{display:flex;flex-direction:column;gap:3px;align-items:flex-start}
+  .stk2 .r2{display:flex;gap:5px;align-items:center}
+  .px{font-size:15px;font-weight:750;letter-spacing:-.3px}
+  .pc{font-size:12.5px;font-weight:700}
+  .note{font-size:11px;color:var(--ink2)}
+  tbody td.l{text-align:left}
+  tbody.t54 td,.t54 tbody td{height:54px}
+
+  /* 字段值口径：值下面的小字 / 档位色 */
+  .an{font-size:10.5px;color:var(--ink3);margin-top:2px}
+  .chip{display:inline-block;padding:1px 7px;border-radius:5px;font-weight:700;font-size:11.5px;
+    font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .t-limit{background:#D8202B;color:#fff}
+  .t-limitd{background:#0E9F5B;color:#fff}
+  .t-up2{background:#FDECEC;color:#C81722;border:1px solid #F7D5D8}
+  .t-down2{background:#E8F7F0;color:#0C8A4D;border:1px solid #CFEBDE}
+  .t-up1{color:#D8202B}
+  .t-down1{color:#0E9F5B}
+  .t-flat{color:#59616F;background:#F1F3F7;border:1px solid #E3E6EC}
+  .w-rise{color:#C81722}.w-amber{color:#C2760A}.w-ink{color:#59616F}.w-dim{color:#949CAB}.w-fall{color:#0E9F5B}
+  .legendbar{height:26px;display:flex;align-items:center;gap:6px;padding:0 13px;flex:none;
+    border-bottom:1px solid var(--line2);font-size:10.5px;color:var(--ink3);white-space:nowrap}
+
+  /* 持仓卡内的纵向排布 */
+  .hcol{display:flex;flex-direction:column;gap:5px;width:100%}
+  .hrow-mid{display:flex;align-items:center;gap:10px}
+
+  /* Z7 行内字段网格 */
+  .fgrid-body{display:flex;flex-direction:column}
+  .frow{display:flex;align-items:center;gap:16px;height:57px;padding:0 13px;border-bottom:1px solid var(--line2)}
+  .frow.hold{background:#FFFBFB}
+  .fid{width:196px;flex:none;display:flex;flex-direction:column;gap:3px;overflow:hidden}
+  .fid .r2{display:flex;gap:5px;align-items:center}
+  .fvals{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+  .fline{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+  .fline--3{grid-template-columns:repeat(3,1fr)}
+  .fp{display:flex;align-items:baseline;gap:5px;min-width:0}
+  .fl{font-size:10.5px;color:var(--ink3);flex:none}
+  .fv{font-size:12.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hcard .fmid{display:flex;flex-direction:column;gap:6px;width:100%}
+  .phrase{font-size:11.5px;color:var(--ink2)}
+  .phrase b{color:var(--ink);font-weight:650}
+  .stack{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+  .stack .cap{font-size:11.5px;font-weight:700}
+  .chart-note{font-size:10px;color:var(--ink3);margin-top:3px;text-align:right}
+
+  .spark,.kline{display:block;margin-left:auto}
+  .spark__base{stroke:#C9CFDA;stroke-width:1;stroke-dasharray:3 3}
+  .spark__line{fill:none;stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}
+  .spark__area{stroke:none}
+  .spark__cost{stroke:var(--brand);stroke-width:1;stroke-dasharray:4 2;opacity:.75}
+  .spark--up .spark__line{stroke:var(--rise)}
+  .spark--up .spark__area{fill:var(--rise);opacity:.10}
+  .spark--up .spark__dot{fill:var(--rise)}
+  .spark--down .spark__line{stroke:var(--fall)}
+  .spark--down .spark__area{fill:var(--fall);opacity:.10}
+  .spark--down .spark__dot{fill:var(--fall)}
+  .k--up{stroke:var(--rise);fill:var(--rise)}
+  .k--down{stroke:var(--fall);fill:var(--fall)}
+  .k__ref{stroke:var(--brand);stroke-width:1;stroke-dasharray:4 2;opacity:.8}
+
+  .bar-wrap{display:block}
+  .bar-track{position:relative;height:9px;border-radius:5px;background:#EEF1F6;border:1px solid #E4E8EF;
+    width:100%;box-sizing:border-box;overflow:hidden}
+  .bar-fill{position:absolute;top:0;bottom:0;border-radius:5px}
+  .bar-fill--rise{background:linear-gradient(90deg,#E4453F,#C81722)}
+  .bar-fill--fall{background:linear-gradient(270deg,#25A96B,#0C8A4D)}
+  .bar-fill--ink{background:linear-gradient(90deg,#9FB0CC,#5A6B87)}
+  .bar-fill--flat{background:#C9CFDA}
+  .bar-axis{position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:#B9C1CE}
+  .bar-tick{position:absolute;top:-2px;bottom:-2px;width:1px;background:#B9C1CE}
+
+  .summary{padding:10px 14px 11px;border-bottom:1px solid var(--line);flex:none}
+  .summary .k{font-size:11px;color:var(--ink3)}
+  .summary .hero{font-size:30px;font-weight:800;letter-spacing:-1.1px;margin:1px 0 8px;font-family:var(--mono)}
+  .sm{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+  .sm div{padding:7px 8px;border-radius:8px;background:var(--head);border:1px solid var(--line2)}
+  .sm .t{font-size:10.5px;color:var(--ink3)}
+  .sm .v{font-size:13px;font-weight:700;margin-top:2px;font-family:var(--mono);letter-spacing:-.3px}
+  .hlist{flex:1;min-height:0;display:flex;flex-direction:column}
+  .hcard{flex:1;display:flex;flex-direction:column;justify-content:center;gap:5px;padding:8px 14px;
+    border-bottom:1px solid var(--line2);min-height:0}
+  .hcard:last-child{border-bottom:0}
+  .hcard .top{display:flex;align-items:baseline;gap:7px}
+  .hcard .nm{font-size:13.5px;font-weight:750}
+  .hcard .code{font-family:var(--mono);font-size:10.5px;color:var(--ink3)}
+  .hcard .pct{margin-left:auto;font-family:var(--mono);font-size:14px;font-weight:750}
+  .hcard .mid{display:flex;align-items:center;gap:10px}
+  .hcard .price{font-family:var(--mono);font-size:20px;font-weight:750;letter-spacing:-.6px;white-space:nowrap}
+  .hcard .price small{font-size:11.5px;font-weight:650;margin-left:5px;letter-spacing:0}
+  .hcard .pnl{margin-left:auto;text-align:right}
+  .hcard .pnl .v{font-family:var(--mono);font-size:13.5px;font-weight:750}
+  .hcard .pnl .k{font-size:10px;color:var(--ink3);margin-top:1px}
+  .hcard .foot{display:flex;gap:13px;font-size:10.5px;color:var(--ink3)}
+  .hcard .foot b{font-family:var(--mono);color:var(--ink2);font-weight:650}
+  footer{height:22px;display:flex;align-items:center;gap:11px;font-size:11px;color:var(--ink3);padding:0 3px;flex:none}
+  footer .sep{width:1px;height:10px;background:var(--line)}
+  footer .need{color:var(--brand);font-weight:650}
+</style></head><body>
+<div class="shell">
+  <header>
+    <div class="brand"><span class="mark">A</span>A 股看板<span class="vlabel">Z4 · 迷你K线</span></div>
+    <nav>
+      <a class="on" href="#">自选 <b>11</b></a>
+      <a href="#">持仓 <b>4</b></a>
+      <a href="#">涨停聚焦 <b>47</b></a>
+      <a href="#">竞价 <b>89</b></a>
+      <a href="#">龙虎榜 <b>—</b></a>
+      <a href="#">选股 <b>—</b></a>
+    </nav>
+    <div class="sp">
+      <span class="dim num" style="font-size:11px">最后刷新 09-18 10:35:22</span>
+      <button class="btn">刷新</button>
+      <button class="btn pri">添加股票</button>
+    </div>
+  </header>
+  <div class="market">
+    <div class="mk"><div class="k">上证指数 <span class="num dim">000001</span></div>
+      <div class="v num fall">3875.60</div>
+      <div class="sub"><span class="num fall">-16.00</span><span class="num fall">-0.41%</span><i class="num">8688亿</i></div></div>
+    <div class="mk"><div class="k">深证成指 <span class="num dim">399001</span></div>
+      <div class="v num fall">13409.91</div>
+      <div class="sub"><span class="num fall">-44.83</span><span class="num fall">-0.33%</span><i class="num">9544亿</i></div></div>
+    <div class="mk"><div class="k">创业板指 <span class="num dim">399006</span></div>
+      <div class="v num fall">3298.31</div>
+      <div class="sub"><span class="num fall">-13.16</span><span class="num fall">-0.40%</span><i class="num">4432亿</i></div></div>
+    <div class="mk"><div class="k">两市成交</div>
+      <div class="v num">1.82 万亿</div>
+      <div class="sub"><span>涨停 <b class="num rise">47</b></span><span>炸板 <b class="num" style="color:var(--amber)">5</b></span>
+        <span>晋级 <b class="num">10.1%</b></span></div></div>
+  </div>
+  <div class="cols">
+  <section class="panel">
+  <div class="bar">
+    <h2>自选</h2><span class="n">11 只</span>
+    <div class="rt">
+      <span class="gchip on">全部 11</span><span class="gchip">农业 3</span><span class="gchip">黄金 1</span>
+      <span class="gchip">未分组 7</span>
+      <div class="seg" style="margin-left:4px"><span class="on">全部 11</span><span>持仓 4</span></div>
+    </div>
+  </div>
+    <div class="scroll"><table>
+      <colgroup><col style="width:22%"><col style="width:16%"><col style="width:10%"><col style="width:9%">
+        <col style="width:6%"><col style="width:7%"><col style="width:7%"><col style="width:9%"><col style="width:14%"></colgroup>
+      <thead><tr><th>股票</th><th>近 10 日 K 线</th><th>最新价</th><th>涨跌幅</th><th>换手</th>
+        <th>成交额</th><th>自选日</th><th>自选价</th><th>自选收益</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><div class="stk"><span class="nm">澳弘电子</span><span class="code">605058</span><span class="tag">5连板</span></div></td>
+          <td><svg class="kline" viewBox="0 0 120 38" width="120" height="38" aria-label="近 10 日 K 线"><line class="k--up" x1="8.7" x2="8.7" y1="34.2" y2="35.0"/><rect class="k--up" x="5.5" y="34.3" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="20.1" x2="20.1" y1="33.2" y2="34.4"/><rect class="k--up" x="16.9" y="33.5" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="31.5" x2="31.5" y1="32.4" y2="33.8"/><rect class="k--up" x="28.3" y="32.8" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="42.9" x2="42.9" y1="32.3" y2="33.3"/><rect class="k--up" x="39.7" y="32.6" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="54.3" x2="54.3" y1="32.4" y2="32.9"/><rect class="k--up" x="51.1" y="32.4" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="65.7" x2="65.7" y1="27.3" y2="32.5"/><rect class="k--up" x="62.5" y="27.7" width="6.4" height="4.5" rx="0.5"/><line class="k--up" x1="77.1" x2="77.1" y1="22.1" y2="28.3"/><rect class="k--up" x="73.9" y="22.4" width="6.4" height="5.3" rx="0.5"/><line class="k--up" x1="88.5" x2="88.5" y1="16.2" y2="22.5"/><rect class="k--up" x="85.3" y="16.6" width="6.4" height="5.8" rx="0.5"/><line class="k--up" x1="99.9" x2="99.9" y1="9.8" y2="17.1"/><rect class="k--up" x="96.7" y="10.3" width="6.4" height="6.5" rx="0.5"/><line class="k--up" x1="111.3" x2="111.3" y1="3.0" y2="10.3"/><rect class="k--up" x="108.1" y="3.3" width="6.4" height="6.8" rx="0.5"/></svg>
+            <div class="chart-note num">10 日 +67.4%</div></td>
+          <td><div class="px num rise">48.76</div></td>
+          <td><div class="pc num rise">+9.99%</div></td>
+          <td class="num muted">11.47%</td>
+          <td class="num muted">8.6亿</td>
+          <td class="num dim">09-15</td>
+          <td class="num dim">44.33</td>
+          <td><div class="stack"><span class="cap num rise">+9.99%</span>
+            <div class="bar-wrap" style="width:96px"><div class="bar-track"><i class="bar-fill bar-fill--rise" style="left:47.0px;width:39.1px"></i><i class="bar-axis"></i></div></div></div></td>
+        </tr><tr class="hold">
+          <td><div class="stk"><span class="nm">金健米业</span><span class="code">600127</span><span class="tag">涨停</span><span class="tag g">持仓</span></div></td>
+          <td><svg class="kline" viewBox="0 0 120 38" width="120" height="38" aria-label="近 10 日 K 线"><line class="k--up" x1="8.7" x2="8.7" y1="31.5" y2="34.2"/><rect class="k--up" x="5.5" y="32.9" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="20.1" x2="20.1" y1="30.7" y2="35.0"/><rect class="k--up" x="16.9" y="30.9" width="6.4" height="2.7" rx="0.5"/><line class="k--down" x1="31.5" x2="31.5" y1="29.5" y2="30.5"/><rect class="k--down" x="28.3" y="30.1" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="42.9" x2="42.9" y1="28.0" y2="31.0"/><rect class="k--up" x="39.7" y="28.9" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="54.3" x2="54.3" y1="25.6" y2="29.4"/><rect class="k--up" x="51.1" y="26.9" width="6.4" height="2.5" rx="0.5"/><line class="k--up" x1="65.7" x2="65.7" y1="23.5" y2="27.6"/><rect class="k--up" x="62.5" y="25.0" width="6.4" height="1.2" rx="0.5"/><line class="k--up" x1="77.1" x2="77.1" y1="23.1" y2="27.2"/><rect class="k--up" x="73.9" y="23.5" width="6.4" height="2.2" rx="0.5"/><line class="k--up" x1="88.5" x2="88.5" y1="20.0" y2="25.8"/><rect class="k--up" x="85.3" y="21.7" width="6.4" height="2.6" rx="0.5"/><line class="k--up" x1="99.9" x2="99.9" y1="18.4" y2="22.7"/><rect class="k--up" x="96.7" y="19.5" width="6.4" height="2.1" rx="0.5"/><line class="k--up" x1="111.3" x2="111.3" y1="3.0" y2="19.6"/><rect class="k--up" x="108.1" y="3.7" width="6.4" height="14.9" rx="0.5"/></svg>
+            <div class="chart-note num">10 日 +20.3%</div></td>
+          <td><div class="px num rise">13.02</div></td>
+          <td><div class="pc num rise">+9.97%</div></td>
+          <td class="num muted">29.82%</td>
+          <td class="num muted">3.2亿</td>
+          <td class="num dim">09-16</td>
+          <td class="num dim">12.50</td>
+          <td><div class="stack"><span class="cap num rise">+4.16%</span>
+            <div class="bar-wrap" style="width:96px"><div class="bar-track"><i class="bar-fill bar-fill--rise" style="left:47.0px;width:16.3px"></i><i class="bar-axis"></i></div></div></div></td>
+        </tr><tr class="hold">
+          <td><div class="stk"><span class="nm">农发种业</span><span class="code">600313</span><span class="tag g">持仓</span></div></td>
+          <td><svg class="kline" viewBox="0 0 120 38" width="120" height="38" aria-label="近 10 日 K 线"><line class="k--up" x1="8.7" x2="8.7" y1="31.7" y2="34.3"/><rect class="k--up" x="5.5" y="33.0" width="6.4" height="1.1" rx="0.5"/><line class="k--up" x1="20.1" x2="20.1" y1="30.6" y2="35.0"/><rect class="k--up" x="16.9" y="30.6" width="6.4" height="1.6" rx="0.5"/><line class="k--up" x1="31.5" x2="31.5" y1="28.6" y2="32.6"/><rect class="k--up" x="28.3" y="29.6" width="6.4" height="1.4" rx="0.5"/><line class="k--up" x1="42.9" x2="42.9" y1="24.7" y2="28.8"/><rect class="k--up" x="39.7" y="27.4" width="6.4" height="1.2" rx="0.5"/><line class="k--up" x1="54.3" x2="54.3" y1="22.5" y2="29.1"/><rect class="k--up" x="51.1" y="22.6" width="6.4" height="6.1" rx="0.5"/><line class="k--up" x1="65.7" x2="65.7" y1="16.2" y2="22.1"/><rect class="k--up" x="62.5" y="18.8" width="6.4" height="2.9" rx="0.5"/><line class="k--up" x1="77.1" x2="77.1" y1="12.7" y2="19.2"/><rect class="k--up" x="73.9" y="13.5" width="6.4" height="4.1" rx="0.5"/><line class="k--up" x1="88.5" x2="88.5" y1="7.8" y2="15.4"/><rect class="k--up" x="85.3" y="9.4" width="6.4" height="3.2" rx="0.5"/><line class="k--up" x1="99.9" x2="99.9" y1="5.5" y2="11.0"/><rect class="k--up" x="96.7" y="8.1" width="6.4" height="1.8" rx="0.5"/><line class="k--up" x1="111.3" x2="111.3" y1="3.0" y2="7.7"/><rect class="k--up" x="108.1" y="6.1" width="6.4" height="1.0" rx="0.5"/></svg>
+            <div class="chart-note num">10 日 +10.4%</div></td>
+          <td><div class="px num rise">7.11</div></td>
+          <td><div class="pc num rise">+5.18%</div></td>
+          <td class="num muted">9.84%</td>
+          <td class="num muted">6.4亿</td>
+          <td class="num dim">09-01</td>
+          <td class="num dim">7.02</td>
+          <td><div class="stack"><span class="cap num rise">+1.28%</span>
+            <div class="bar-wrap" style="width:96px"><div class="bar-track"><i class="bar-fill bar-fill--rise" style="left:47.0px;width:5.0px"></i><i class="bar-axis"></i></div></div></div></td>
+        </tr><tr class="hold">
+          <td><div class="stk"><span class="nm">登海种业</span><span class="code">002041</span><span class="tag g">持仓</span></div></td>
+          <td><svg class="kline" viewBox="0 0 120 38" width="120" height="38" aria-label="近 10 日 K 线"><line class="k--up" x1="8.7" x2="8.7" y1="29.6" y2="35.0"/><rect class="k--up" x="5.5" y="30.2" width="6.4" height="3.1" rx="0.5"/><line class="k--up" x1="20.1" x2="20.1" y1="26.2" y2="31.1"/><rect class="k--up" x="16.9" y="27.2" width="6.4" height="3.8" rx="0.5"/><line class="k--up" x1="31.5" x2="31.5" y1="21.9" y2="27.4"/><rect class="k--up" x="28.3" y="23.2" width="6.4" height="3.0" rx="0.5"/><line class="k--down" x1="42.9" x2="42.9" y1="21.1" y2="23.0"/><rect class="k--down" x="39.7" y="22.0" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="54.3" x2="54.3" y1="20.1" y2="23.8"/><rect class="k--up" x="51.1" y="21.0" width="6.4" height="1.1" rx="0.5"/><line class="k--up" x1="65.7" x2="65.7" y1="18.4" y2="23.4"/><rect class="k--up" x="62.5" y="18.5" width="6.4" height="3.2" rx="0.5"/><line class="k--up" x1="77.1" x2="77.1" y1="14.7" y2="19.4"/><rect class="k--up" x="73.9" y="14.7" width="6.4" height="2.6" rx="0.5"/><line class="k--up" x1="88.5" x2="88.5" y1="8.2" y2="15.8"/><rect class="k--up" x="85.3" y="9.8" width="6.4" height="3.4" rx="0.5"/><line class="k--up" x1="99.9" x2="99.9" y1="4.9" y2="9.1"/><rect class="k--up" x="96.7" y="6.5" width="6.4" height="1.8" rx="0.5"/><line class="k--up" x1="111.3" x2="111.3" y1="3.0" y2="7.9"/><rect class="k--up" x="108.1" y="5.0" width="6.4" height="1.1" rx="0.5"/></svg>
+            <div class="chart-note num">10 日 +10.6%</div></td>
+          <td><div class="px num rise">10.36</div></td>
+          <td><div class="pc num rise">+5.50%</div></td>
+          <td class="num muted">7.63%</td>
+          <td class="num muted">2.8亿</td>
+          <td class="num dim">09-02</td>
+          <td class="num dim">9.60</td>
+          <td><div class="stack"><span class="cap num rise">+7.92%</span>
+            <div class="bar-wrap" style="width:96px"><div class="bar-track"><i class="bar-fill bar-fill--rise" style="left:47.0px;width:31.0px"></i><i class="bar-axis"></i></div></div></div></td>
+        </tr><tr>
+          <td><div class="stk"><span class="nm">中晶科技</span><span class="code">003026</span><span class="tag">3连板</span></div></td>
+          <td><svg class="kline" viewBox="0 0 120 38" width="120" height="38" aria-label="近 10 日 K 线"><line class="k--up" x1="8.7" x2="8.7" y1="33.8" y2="34.9"/><rect class="k--up" x="5.5" y="33.9" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="20.1" x2="20.1" y1="32.7" y2="35.0"/><rect class="k--up" x="16.9" y="32.8" width="6.4" height="1.5" rx="0.5"/><line class="k--up" x1="31.5" x2="31.5" y1="31.5" y2="32.6"/><rect class="k--up" x="28.3" y="32.1" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="42.9" x2="42.9" y1="30.7" y2="32.4"/><rect class="k--up" x="39.7" y="31.5" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="54.3" x2="54.3" y1="29.8" y2="31.6"/><rect class="k--up" x="51.1" y="30.6" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="65.7" x2="65.7" y1="29.5" y2="31.5"/><rect class="k--up" x="62.5" y="30.2" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="77.1" x2="77.1" y1="28.6" y2="30.1"/><rect class="k--up" x="73.9" y="28.9" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="88.5" x2="88.5" y1="20.5" y2="29.8"/><rect class="k--up" x="85.3" y="21.4" width="6.4" height="7.8" rx="0.5"/><line class="k--up" x1="99.9" x2="99.9" y1="12.9" y2="22.6"/><rect class="k--up" x="96.7" y="13.1" width="6.4" height="8.7" rx="0.5"/><line class="k--up" x1="111.3" x2="111.3" y1="3.0" y2="14.1"/><rect class="k--up" x="108.1" y="4.0" width="6.4" height="9.6" rx="0.5"/></svg>
+            <div class="chart-note num">10 日 +42.5%</div></td>
+          <td><div class="px num rise">37.00</div></td>
+          <td><div class="pc num rise">+9.99%</div></td>
+          <td class="num muted">12.85%</td>
+          <td class="num muted">5.4亿</td>
+          <td class="num dim">09-12</td>
+          <td class="num dim">33.64</td>
+          <td><div class="stack"><span class="cap num rise">+9.99%</span>
+            <div class="bar-wrap" style="width:96px"><div class="bar-track"><i class="bar-fill bar-fill--rise" style="left:47.0px;width:39.1px"></i><i class="bar-axis"></i></div></div></div></td>
+        </tr><tr>
+          <td><div class="stk"><span class="nm">华瓷股份</span><span class="code">001216</span><span class="tag">3连板</span></div></td>
+          <td><svg class="kline" viewBox="0 0 120 38" width="120" height="38" aria-label="近 10 日 K 线"><line class="k--up" x1="8.7" x2="8.7" y1="33.7" y2="35.0"/><rect class="k--up" x="5.5" y="34.2" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="20.1" x2="20.1" y1="32.8" y2="34.4"/><rect class="k--up" x="16.9" y="32.9" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="31.5" x2="31.5" y1="32.0" y2="32.9"/><rect class="k--up" x="28.3" y="32.3" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="42.9" x2="42.9" y1="31.4" y2="33.1"/><rect class="k--up" x="39.7" y="32.2" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="54.3" x2="54.3" y1="31.3" y2="32.4"/><rect class="k--up" x="51.1" y="31.8" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="65.7" x2="65.7" y1="30.6" y2="31.8"/><rect class="k--up" x="62.5" y="30.9" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="77.1" x2="77.1" y1="29.8" y2="31.1"/><rect class="k--up" x="73.9" y="30.3" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="88.5" x2="88.5" y1="21.3" y2="30.8"/><rect class="k--up" x="85.3" y="22.3" width="6.4" height="8.3" rx="0.5"/><line class="k--up" x1="99.9" x2="99.9" y1="12.8" y2="22.5"/><rect class="k--up" x="96.7" y="13.5" width="6.4" height="8.6" rx="0.5"/><line class="k--up" x1="111.3" x2="111.3" y1="3.0" y2="13.8"/><rect class="k--up" x="108.1" y="3.8" width="6.4" height="9.1" rx="0.5"/></svg>
+            <div class="chart-note num">10 日 +39.9%</div></td>
+          <td><div class="px num rise">19.88</div></td>
+          <td><div class="pc num rise">+10.02%</div></td>
+          <td class="num muted">18.30%</td>
+          <td class="num muted">4.2亿</td>
+          <td class="num dim">09-16</td>
+          <td class="num dim">19.53</td>
+          <td><div class="stack"><span class="cap num rise">+1.79%</span>
+            <div class="bar-wrap" style="width:96px"><div class="bar-track"><i class="bar-fill bar-fill--rise" style="left:47.0px;width:7.0px"></i><i class="bar-axis"></i></div></div></div></td>
+        </tr><tr>
+          <td><div class="stk"><span class="nm">贵州茅台</span><span class="code">600519</span></div></td>
+          <td><svg class="kline" viewBox="0 0 120 38" width="120" height="38" aria-label="近 10 日 K 线"><line class="k--up" x1="8.7" x2="8.7" y1="28.5" y2="35.0"/><rect class="k--up" x="5.5" y="30.5" width="6.4" height="2.2" rx="0.5"/><line class="k--up" x1="20.1" x2="20.1" y1="29.8" y2="32.3"/><rect class="k--up" x="16.9" y="29.9" width="6.4" height="1.3" rx="0.5"/><line class="k--up" x1="31.5" x2="31.5" y1="25.6" y2="29.8"/><rect class="k--up" x="28.3" y="25.7" width="6.4" height="3.2" rx="0.5"/><line class="k--up" x1="42.9" x2="42.9" y1="20.0" y2="26.0"/><rect class="k--up" x="39.7" y="22.3" width="6.4" height="2.1" rx="0.5"/><line class="k--up" x1="54.3" x2="54.3" y1="16.8" y2="22.9"/><rect class="k--up" x="51.1" y="17.3" width="6.4" height="4.9" rx="0.5"/><line class="k--up" x1="65.7" x2="65.7" y1="15.2" y2="17.5"/><rect class="k--up" x="62.5" y="15.3" width="6.4" height="1.2" rx="0.5"/><line class="k--up" x1="77.1" x2="77.1" y1="11.6" y2="15.0"/><rect class="k--up" x="73.9" y="13.7" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="88.5" x2="88.5" y1="11.2" y2="13.1"/><rect class="k--up" x="85.3" y="11.9" width="6.4" height="1.0" rx="0.5"/><line class="k--up" x1="99.9" x2="99.9" y1="5.8" y2="12.4"/><rect class="k--up" x="96.7" y="7.0" width="6.4" height="5.3" rx="0.5"/><line class="k--down" x1="111.3" x2="111.3" y1="3.0" y2="6.9"/><rect class="k--down" x="108.1" y="5.6" width="6.4" height="1.0" rx="0.5"/></svg>
+            <div class="chart-note num">10 日 +10.0%</div></td>
+          <td><div class="px num rise">1266.66</div></td>
+          <td><div class="pc num rise">+0.69%</div></td>
+          <td class="num muted">0.14%</td>
+          <td class="num muted">18.7亿</td>
+          <td class="num dim">08-28</td>
+          <td class="num dim">1258.00</td>
+          <td><div class="stack"><span class="cap num rise">+0.69%</span>
+            <div class="bar-wrap" style="width:96px"><div class="bar-track"><i class="bar-fill bar-fill--rise" style="left:47.0px;width:2.7px"></i><i class="bar-axis"></i></div></div></div></td>
+        </tr><tr>
+          <td><div class="stk"><span class="nm">深桑达Ａ</span><span class="code">000032</span></div></td>
+          <td><svg class="kline" viewBox="0 0 120 38" width="120" height="38" aria-label="近 10 日 K 线"><line class="k--down" x1="8.7" x2="8.7" y1="3.0" y2="9.1"/><rect class="k--down" x="5.5" y="5.7" width="6.4" height="1.3" rx="0.5"/><line class="k--down" x1="20.1" x2="20.1" y1="5.6" y2="11.5"/><rect class="k--down" x="16.9" y="5.7" width="6.4" height="5.5" rx="0.5"/><line class="k--down" x1="31.5" x2="31.5" y1="9.3" y2="15.7"/><rect class="k--down" x="28.3" y="11.3" width="6.4" height="3.8" rx="0.5"/><line class="k--down" x1="42.9" x2="42.9" y1="14.5" y2="18.6"/><rect class="k--down" x="39.7" y="16.3" width="6.4" height="1.0" rx="0.5"/><line class="k--down" x1="54.3" x2="54.3" y1="13.9" y2="22.7"/><rect class="k--down" x="51.1" y="16.4" width="6.4" height="5.3" rx="0.5"/><line class="k--down" x1="65.7" x2="65.7" y1="20.6" y2="27.5"/><rect class="k--down" x="62.5" y="22.6" width="6.4" height="3.0" rx="0.5"/><line class="k--down" x1="77.1" x2="77.1" y1="23.2" y2="30.0"/><rect class="k--down" x="73.9" y="25.0" width="6.4" height="3.5" rx="0.5"/><line class="k--down" x1="88.5" x2="88.5" y1="25.6" y2="30.8"/><rect class="k--down" x="85.3" y="28.1" width="6.4" height="1.5" rx="0.5"/><line class="k--down" x1="99.9" x2="99.9" y1="29.6" y2="32.5"/><rect class="k--down" x="96.7" y="30.7" width="6.4" height="1.1" rx="0.5"/><line class="k--down" x1="111.3" x2="111.3" y1="31.9" y2="35.0"/><rect class="k--down" x="108.1" y="32.1" width="6.4" height="1.2" rx="0.5"/></svg>
+            <div class="chart-note num">10 日 −10.1%</div></td>
+          <td><div class="px num fall">14.39</div></td>
+          <td><div class="pc num fall">−1.71%</div></td>
+          <td class="num muted">4.56%</td>
+          <td class="num muted">3.5亿</td>
+          <td class="num dim">09-03</td>
+          <td class="num dim">14.20</td>
+          <td><div class="stack"><span class="cap num rise">+1.34%</span>
+            <div class="bar-wrap" style="width:96px"><div class="bar-track"><i class="bar-fill bar-fill--rise" style="left:47.0px;width:5.2px"></i><i class="bar-axis"></i></div></div></div></td>
+        </tr><tr>
+          <td><div class="stk"><span class="nm">平安银行</span><span class="code">000001</span></div></td>
+          <td><svg class="kline" viewBox="0 0 120 38" width="120" height="38" aria-label="近 10 日 K 线"><line class="k--down" x1="8.7" x2="8.7" y1="3.6" y2="7.0"/><rect class="k--down" x="5.5" y="5.1" width="6.4" height="1.0" rx="0.5"/><line class="k--down" x1="20.1" x2="20.1" y1="3.0" y2="9.3"/><rect class="k--down" x="16.9" y="4.9" width="6.4" height="2.7" rx="0.5"/><line class="k--down" x1="31.5" x2="31.5" y1="7.8" y2="12.7"/><rect class="k--down" x="28.3" y="8.9" width="6.4" height="3.5" rx="0.5"/><line class="k--down" x1="42.9" x2="42.9" y1="10.6" y2="17.8"/><rect class="k--down" x="39.7" y="11.4" width="6.4" height="4.4" rx="0.5"/><line class="k--down" x1="54.3" x2="54.3" y1="13.3" y2="18.9"/><rect class="k--down" x="51.1" y="15.0" width="6.4" height="3.6" rx="0.5"/><line class="k--down" x1="65.7" x2="65.7" y1="17.5" y2="24.8"/><rect class="k--down" x="62.5" y="18.9" width="6.4" height="3.4" rx="0.5"/><line class="k--down" x1="77.1" x2="77.1" y1="20.5" y2="26.9"/><rect class="k--down" x="73.9" y="21.3" width="6.4" height="3.2" rx="0.5"/><line class="k--down" x1="88.5" x2="88.5" y1="20.9" y2="28.2"/><rect class="k--down" x="85.3" y="23.1" width="6.4" height="4.2" rx="0.5"/><line class="k--down" x1="99.9" x2="99.9" y1="26.8" y2="30.9"/><rect class="k--down" x="96.7" y="27.4" width="6.4" height="1.9" rx="0.5"/><line class="k--down" x1="111.3" x2="111.3" y1="27.1" y2="35.0"/><rect class="k--down" x="108.1" y="28.0" width="6.4" height="5.7" rx="0.5"/></svg>
+            <div class="chart-note num">10 日 −11.1%</div></td>
+          <td><div class="px num fall">11.62</div></td>
+          <td><div class="pc num fall">−0.68%</div></td>
+          <td class="num muted">0.62%</td>
+          <td class="num muted">9.6亿</td>
+          <td class="num dim">09-05</td>
+          <td class="num dim">11.50</td>
+          <td><div class="stack"><span class="cap num rise">+1.04%</span>
+            <div class="bar-wrap" style="width:96px"><div class="bar-track"><i class="bar-fill bar-fill--rise" style="left:47.0px;width:4.1px"></i><i class="bar-axis"></i></div></div></div></td>
+        </tr><tr class="hold">
+          <td><div class="stk"><span class="nm">招金黄金</span><span class="code">000506</span><span class="tag g">持仓</span></div></td>
+          <td><svg class="kline" viewBox="0 0 120 38" width="120" height="38" aria-label="近 10 日 K 线"><line class="k--down" x1="8.7" x2="8.7" y1="4.3" y2="7.1"/><rect class="k--down" x="5.5" y="5.4" width="6.4" height="1.6" rx="0.5"/><line class="k--down" x1="20.1" x2="20.1" y1="3.0" y2="13.9"/><rect class="k--down" x="16.9" y="6.2" width="6.4" height="5.0" rx="0.5"/><line class="k--down" x1="31.5" x2="31.5" y1="10.1" y2="13.4"/><rect class="k--down" x="28.3" y="12.0" width="6.4" height="1.0" rx="0.5"/><line class="k--down" x1="42.9" x2="42.9" y1="10.9" y2="18.7"/><rect class="k--down" x="39.7" y="12.5" width="6.4" height="5.1" rx="0.5"/><line class="k--down" x1="54.3" x2="54.3" y1="18.0" y2="22.5"/><rect class="k--down" x="51.1" y="18.2" width="6.4" height="2.6" rx="0.5"/><line class="k--down" x1="65.7" x2="65.7" y1="18.9" y2="24.6"/><rect class="k--down" x="62.5" y="20.1" width="6.4" height="1.5" rx="0.5"/><line class="k--down" x1="77.1" x2="77.1" y1="17.9" y2="24.6"/><rect class="k--down" x="73.9" y="20.1" width="6.4" height="4.1" rx="0.5"/><line class="k--down" x1="88.5" x2="88.5" y1="22.9" y2="29.9"/><rect class="k--down" x="85.3" y="23.8" width="6.4" height="3.8" rx="0.5"/><line class="k--down" x1="99.9" x2="99.9" y1="25.8" y2="33.1"/><rect class="k--down" x="96.7" y="27.0" width="6.4" height="6.0" rx="0.5"/><line class="k--down" x1="111.3" x2="111.3" y1="31.0" y2="35.0"/><rect class="k--down" x="108.1" y="33.5" width="6.4" height="1.0" rx="0.5"/></svg>
+            <div class="chart-note num">10 日 −8.9%</div></td>
+          <td><div class="px num fall">18.57</div></td>
+          <td><div class="pc num fall">−5.21%</div></td>
+          <td class="num muted">6.52%</td>
+          <td class="num muted">2.6亿</td>
+          <td class="num dim">09-10</td>
+          <td class="num dim">19.40</td>
+          <td><div class="stack"><span class="cap num fall">−4.28%</span>
+            <div class="bar-wrap" style="width:96px"><div class="bar-track"><i class="bar-fill bar-fill--fall" style="left:30.2px;width:16.8px"></i><i class="bar-axis"></i></div></div></div></td>
+        </tr><tr>
+          <td><div class="stk"><span class="nm">金螳螂</span><span class="code">002081</span></div></td>
+          <td><svg class="kline" viewBox="0 0 120 38" width="120" height="38" aria-label="近 10 日 K 线"><line class="k--down" x1="8.7" x2="8.7" y1="3.0" y2="7.7"/><rect class="k--down" x="5.5" y="4.6" width="6.4" height="1.7" rx="0.5"/><line class="k--down" x1="20.1" x2="20.1" y1="4.6" y2="13.1"/><rect class="k--down" x="16.9" y="4.6" width="6.4" height="7.2" rx="0.5"/><line class="k--down" x1="31.5" x2="31.5" y1="9.1" y2="13.2"/><rect class="k--down" x="28.3" y="12.1" width="6.4" height="1.0" rx="0.5"/><line class="k--down" x1="42.9" x2="42.9" y1="9.5" y2="17.8"/><rect class="k--down" x="39.7" y="11.7" width="6.4" height="3.4" rx="0.5"/><line class="k--down" x1="54.3" x2="54.3" y1="13.6" y2="20.3"/><rect class="k--down" x="51.1" y="16.3" width="6.4" height="2.9" rx="0.5"/><line class="k--down" x1="65.7" x2="65.7" y1="16.2" y2="22.9"/><rect class="k--down" x="62.5" y="18.7" width="6.4" height="1.5" rx="0.5"/><line class="k--down" x1="77.1" x2="77.1" y1="15.9" y2="23.0"/><rect class="k--down" x="73.9" y="18.6" width="6.4" height="3.6" rx="0.5"/><line class="k--down" x1="88.5" x2="88.5" y1="19.1" y2="27.5"/><rect class="k--down" x="85.3" y="20.9" width="6.4" height="5.1" rx="0.5"/><line class="k--down" x1="99.9" x2="99.9" y1="26.6" y2="32.8"/><rect class="k--down" x="96.7" y="26.9" width="6.4" height="3.4" rx="0.5"/><line class="k--down" x1="111.3" x2="111.3" y1="26.3" y2="35.0"/><rect class="k--down" x="108.1" y="28.9" width="6.4" height="6.1" rx="0.5"/></svg>
+            <div class="chart-note num">10 日 −9.5%</div></td>
+          <td><div class="px num fall">4.79</div></td>
+          <td><div class="pc num fall">−1.44%</div></td>
+          <td class="num muted">4.55%</td>
+          <td class="num muted">1.4亿</td>
+          <td class="num dim">09-08</td>
+          <td class="num dim">4.86</td>
+          <td><div class="stack"><span class="cap num fall">−1.44%</span>
+            <div class="bar-wrap" style="width:96px"><div class="bar-track"><i class="bar-fill bar-fill--fall" style="left:41.4px;width:5.6px"></i><i class="bar-axis"></i></div></div></div></td>
+        </tr>
+      </tbody>
+    </table></div>
+  </section>
+  <section class="panel">
+  <div class="summary">
+    <div class="k">当前范围总览 · 总收益率</div>
+    <div class="hero rise">+2.36%</div>
+    <div class="sm">
+      <div><div class="t">总收益额</div><div class="v rise">+¥3,390.00</div></div>
+      <div><div class="t">总投入</div><div class="v">¥143,400</div></div>
+      <div><div class="t">当前市值</div><div class="v">¥146,790</div></div>
+      <div><div class="t">持仓数量</div><div class="v">4</div></div>
+    </div>
+  </div>
+  <div class="bar"><h2>持仓</h2><span class="n">4 只</span>
+    <span class="rt dim" style="font-size:11px">K 线上蓝虚线 = 开仓价</span></div>
+    <div class="hlist">
+      <div class="hcard">
+    <div class="top"><span class="nm">登海种业</span><span class="code">002041</span>
+      <span class="tag n">种业</span><span class="pct rise">+5.50%</span></div>
+    <div class="mid"><div class="price rise">10.36<small class="rise">+0.54</small></div><div class="pnl"><div class="v rise">+¥2,280</div>
+  <div class="k">持仓收益 · +7.92%</div></div>
+        <svg class="kline" viewBox="0 0 218 52" width="218" height="52" aria-label="近 10 日 K 线"><line class="k--up" x1="13.6" x2="13.6" y1="41.2" y2="49.0"/><rect class="k--up" x="7.7" y="42.0" width="11.9" height="4.4" rx="0.5"/><line class="k--up" x1="34.8" x2="34.8" y1="36.4" y2="43.3"/><rect class="k--up" x="28.9" y="37.8" width="11.9" height="5.5" rx="0.5"/><line class="k--up" x1="56.0" x2="56.0" y1="30.2" y2="38.0"/><rect class="k--up" x="50.1" y="32.0" width="11.9" height="4.3" rx="0.5"/><line class="k--down" x1="77.2" x2="77.2" y1="29.0" y2="31.7"/><rect class="k--down" x="71.3" y="30.2" width="11.9" height="1.0" rx="0.5"/><line class="k--up" x1="98.4" x2="98.4" y1="27.5" y2="32.9"/><rect class="k--up" x="92.5" y="28.9" width="11.9" height="1.6" rx="0.5"/><line class="k--up" x1="119.6" x2="119.6" y1="25.1" y2="32.3"/><rect class="k--up" x="113.7" y="25.3" width="11.9" height="4.5" rx="0.5"/><line class="k--up" x1="140.8" x2="140.8" y1="19.7" y2="26.5"/><rect class="k--up" x="134.9" y="19.8" width="11.9" height="3.8" rx="0.5"/><line class="k--up" x1="162.0" x2="162.0" y1="10.4" y2="21.4"/><rect class="k--up" x="156.1" y="12.8" width="11.9" height="4.9" rx="0.5"/><line class="k--up" x1="183.2" x2="183.2" y1="5.7" y2="11.8"/><rect class="k--up" x="177.3" y="8.0" width="11.9" height="2.6" rx="0.5"/><line class="k--up" x1="204.4" x2="204.4" y1="3.0" y2="10.1"/><rect class="k--up" x="198.5" y="5.8" width="11.9" height="1.6" rx="0.5"/><line class="k__ref" x1="3" x2="215" y1="33.5" y2="33.5"/></svg></div>
+    <div class="foot"><span>开仓价 <b>9.60</b></span>
+      <span>持有数量 <b>3,000</b></span>
+      <span>持有 <b>12</b> 天</span><span>换手 <b>7.63%</b></span></div>
+  </div><div class="hcard">
+    <div class="top"><span class="nm">金健米业</span><span class="code">600127</span>
+      <span class="tag n">农业种植</span><span class="pct rise">+9.97%</span></div>
+    <div class="mid"><div class="price rise">13.02<small class="rise">+1.18</small></div><div class="pnl"><div class="v rise">+¥1,040</div>
+  <div class="k">持仓收益 · +4.16%</div></div>
+        <svg class="kline" viewBox="0 0 218 52" width="218" height="52" aria-label="近 10 日 K 线"><line class="k--up" x1="13.6" x2="13.6" y1="44.0" y2="47.8"/><rect class="k--up" x="7.7" y="46.0" width="11.9" height="1.0" rx="0.5"/><line class="k--up" x1="34.8" x2="34.8" y1="42.9" y2="49.0"/><rect class="k--up" x="28.9" y="43.1" width="11.9" height="3.9" rx="0.5"/><line class="k--down" x1="56.0" x2="56.0" y1="41.1" y2="42.6"/><rect class="k--down" x="50.1" y="42.0" width="11.9" height="1.0" rx="0.5"/><line class="k--up" x1="77.2" x2="77.2" y1="38.9" y2="43.2"/><rect class="k--up" x="71.3" y="40.2" width="11.9" height="1.2" rx="0.5"/><line class="k--up" x1="98.4" x2="98.4" y1="35.4" y2="41.0"/><rect class="k--up" x="92.5" y="37.3" width="11.9" height="3.6" rx="0.5"/><line class="k--up" x1="119.6" x2="119.6" y1="32.4" y2="38.4"/><rect class="k--up" x="113.7" y="34.6" width="11.9" height="1.8" rx="0.5"/><line class="k--up" x1="140.8" x2="140.8" y1="31.9" y2="37.8"/><rect class="k--up" x="134.9" y="32.5" width="11.9" height="3.1" rx="0.5"/><line class="k--up" x1="162.0" x2="162.0" y1="27.4" y2="35.8"/><rect class="k--up" x="156.1" y="29.8" width="11.9" height="3.8" rx="0.5"/><line class="k--up" x1="183.2" x2="183.2" y1="25.1" y2="31.3"/><rect class="k--up" x="177.3" y="26.7" width="11.9" height="3.0" rx="0.5"/><line class="k--up" x1="204.4" x2="204.4" y1="3.0" y2="26.8"/><rect class="k--up" x="198.5" y="4.0" width="11.9" height="21.4" rx="0.5"/><line class="k__ref" x1="3" x2="215" y1="14.0" y2="14.0"/></svg></div>
+    <div class="foot"><span>开仓价 <b>12.50</b></span>
+      <span>持有数量 <b>2,000</b></span>
+      <span>持有 <b>2</b> 天</span><span>换手 <b>29.82%</b></span></div>
+  </div><div class="hcard">
+    <div class="top"><span class="nm">农发种业</span><span class="code">600313</span>
+      <span class="tag n">种业</span><span class="pct rise">+5.18%</span></div>
+    <div class="mid"><div class="price rise">7.11<small class="rise">+0.35</small></div><div class="pnl"><div class="v rise">+¥900</div>
+  <div class="k">持仓收益 · +1.28%</div></div>
+        <svg class="kline" viewBox="0 0 218 52" width="218" height="52" aria-label="近 10 日 K 线"><line class="k--up" x1="13.6" x2="13.6" y1="44.2" y2="47.9"/><rect class="k--up" x="7.7" y="46.2" width="11.9" height="1.5" rx="0.5"/><line class="k--up" x1="34.8" x2="34.8" y1="42.7" y2="49.0"/><rect class="k--up" x="28.9" y="42.7" width="11.9" height="2.3" rx="0.5"/><line class="k--up" x1="56.0" x2="56.0" y1="39.9" y2="45.6"/><rect class="k--up" x="50.1" y="41.2" width="11.9" height="2.0" rx="0.5"/><line class="k--up" x1="77.2" x2="77.2" y1="34.2" y2="40.1"/><rect class="k--up" x="71.3" y="38.0" width="11.9" height="1.7" rx="0.5"/><line class="k--up" x1="98.4" x2="98.4" y1="31.0" y2="40.5"/><rect class="k--up" x="92.5" y="31.1" width="11.9" height="8.7" rx="0.5"/><line class="k--up" x1="119.6" x2="119.6" y1="22.0" y2="30.5"/><rect class="k--up" x="113.7" y="25.7" width="11.9" height="4.1" rx="0.5"/><line class="k--up" x1="140.8" x2="140.8" y1="16.9" y2="26.3"/><rect class="k--up" x="134.9" y="18.1" width="11.9" height="6.0" rx="0.5"/><line class="k--up" x1="162.0" x2="162.0" y1="9.9" y2="20.9"/><rect class="k--up" x="156.1" y="12.2" width="11.9" height="4.6" rx="0.5"/><line class="k--up" x1="183.2" x2="183.2" y1="6.7" y2="14.5"/><rect class="k--up" x="177.3" y="10.3" width="11.9" height="2.5" rx="0.5"/><line class="k--up" x1="204.4" x2="204.4" y1="3.0" y2="9.7"/><rect class="k--up" x="198.5" y="7.4" width="11.9" height="1.3" rx="0.5"/><line class="k__ref" x1="3" x2="215" y1="12.6" y2="12.6"/></svg></div>
+    <div class="foot"><span>开仓价 <b>7.02</b></span>
+      <span>持有数量 <b>10,000</b></span>
+      <span>持有 <b>17</b> 天</span><span>换手 <b>9.84%</b></span></div>
+  </div><div class="hcard">
+    <div class="top"><span class="nm">招金黄金</span><span class="code">000506</span>
+      <span class="tag n">黄金</span><span class="pct fall">−5.21%</span></div>
+    <div class="mid"><div class="price fall">18.57<small class="fall">−1.02</small></div><div class="pnl"><div class="v fall">−¥830</div>
+  <div class="k">持仓收益 · −4.28%</div></div>
+        <svg class="kline" viewBox="0 0 218 52" width="218" height="52" aria-label="近 10 日 K 线"><line class="k--down" x1="13.6" x2="13.6" y1="4.9" y2="8.9"/><rect class="k--down" x="7.7" y="6.4" width="11.9" height="2.4" rx="0.5"/><line class="k--down" x1="34.8" x2="34.8" y1="3.0" y2="18.6"/><rect class="k--down" x="28.9" y="7.5" width="11.9" height="7.2" rx="0.5"/><line class="k--down" x1="56.0" x2="56.0" y1="13.2" y2="18.0"/><rect class="k--down" x="50.1" y="15.9" width="11.9" height="1.0" rx="0.5"/><line class="k--down" x1="77.2" x2="77.2" y1="14.4" y2="25.5"/><rect class="k--down" x="71.3" y="16.6" width="11.9" height="7.4" rx="0.5"/><line class="k--down" x1="98.4" x2="98.4" y1="24.5" y2="31.1"/><rect class="k--down" x="92.5" y="24.9" width="11.9" height="3.8" rx="0.5"/><line class="k--down" x1="119.6" x2="119.6" y1="25.8" y2="34.0"/><rect class="k--down" x="113.7" y="27.6" width="11.9" height="2.2" rx="0.5"/><line class="k--down" x1="140.8" x2="140.8" y1="24.4" y2="34.0"/><rect class="k--down" x="134.9" y="27.6" width="11.9" height="6.0" rx="0.5"/><line class="k--down" x1="162.0" x2="162.0" y1="31.7" y2="41.7"/><rect class="k--down" x="156.1" y="32.9" width="11.9" height="5.5" rx="0.5"/><line class="k--down" x1="183.2" x2="183.2" y1="35.8" y2="46.2"/><rect class="k--down" x="177.3" y="37.5" width="11.9" height="8.6" rx="0.5"/><line class="k--down" x1="204.4" x2="204.4" y1="43.3" y2="49.0"/><rect class="k--down" x="198.5" y="46.9" width="11.9" height="1.0" rx="0.5"/><line class="k__ref" x1="3" x2="215" y1="29.6" y2="29.6"/></svg></div>
+    <div class="foot"><span>开仓价 <b>19.40</b></span>
+      <span>持有数量 <b>1,000</b></span>
+      <span>持有 <b>6</b> 天</span><span>换手 <b>6.52%</b></span></div>
+  </div>
+    </div>
+  </section></div>
+  
+  <footer>
+    <span>数据源 腾讯 / 东方财富</span><span class="sep"></span>
+    <span>行情 10:35:22</span><span class="sep"></span>
+    <span>每行近 10 日 K 线 · 持仓卡标注开仓价</span><span class="sep"></span>
+    <span class="need">数据依赖：新增日K接口 /api/quotes/daily（东财 push2his，一次批量）</span>
+  </footer>
+</div>
+</body></html>
