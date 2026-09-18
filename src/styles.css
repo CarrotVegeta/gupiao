@@ -946,6 +946,20 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   color: #fff;
 }
 
+/* 筛选按钮上的小计数（如「仅沪深 12」里的北交所只数） */
+.plate-stocks__filter-hint {
+  margin-left: 0.3077rem;
+  padding: 0 0.3077rem;
+  border-radius: 0.4615rem;
+  background: rgba(15, 23, 42, 0.08);
+  font-size: 0.6923rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.plate-stocks__filter[aria-pressed='true'] .plate-stocks__filter-hint {
+  background: rgba(255, 255, 255, 0.24);
+}
+
 .plate-stocks__table-wrap {
   max-height: 22.3077rem;
   overflow: auto;
@@ -1028,21 +1042,17 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
 }
 
 /*
- * 入选理由通常很长（实测一条 200+ 字）：限 3 行 + 省略号，悬停看全文。
+ * 入选理由通常很长（实测一条 200~500 字）。
  *
- * 关键一条是 `text-overflow: ellipsis`：`-webkit-line-clamp` 只有配合它才会在最后
- * 一行画「…」。只写 line-clamp + overflow:hidden 是把文字**硬切**，末行留半个字，
- * 看着像布局坏了（2026-09-19 用户反馈）。
+ * ⚠ 这里**不做 CSS 截断**：试过 `td` 直接 clamp 与 `td > span` clamp 两种，
+ * `display: -webkit-box` 都会被覆盖成 `flow-root`，`-webkit-line-clamp` 随之失效 ——
+ * 省略号时有时无、文字被硬切。改成在渲染前按字符预算截断（`PlateStockList` 的
+ * `TruncatedDesc`），CSS 只负责换行与颜色。
  */
 .plate-stocks__desc {
   color: var(--text-secondary);
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-overflow: ellipsis;
   word-break: break-word;
+  white-space: normal;
 }
 
 .plate-stocks__note {

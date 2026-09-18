@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 /** 财联社板块成分股（`/api/themes/rotation/:plateCode/stocks`） */
 export type PlateStock = {
@@ -40,14 +40,71 @@ const formatPrice = (value: number | null): string =>
   value === null ? '—' : value.toFixed(2);
 
 /**
+ * 按「能放几个字符」把长文本真正截断，末尾补省略号。
+ *
+ * 为什么不用 CSS 的 `-webkit-line-clamp`：这个单元格里试过两次都不行 ——
+ * `display: -webkit-box` 会被覆盖成 `flow-root`（`-webkit-line-clamp` 随之失效），
+ * 结果是**不画省略号、文字被硬切**；而是否画省略号还取决于文本正好断在哪个字上，
+ * 表现为「有的行有省略号、有的行没有」。用户明确要求「展示不完就省略」，
+ * 所以改成在渲染前按字符预算截断，结果稳定可控。
+ *
+ * 每行能放多少字由容器宽度估算：中日韩字符按 1 个字宽算，其余按 0.55 算。
+ */
+const CJK = /[\u3000-\u9fff\uff00-\uffef]/;
+const charWidth = (char: string): number => (CJK.test(char) ? 1 : 0.55);
+
+const fitChars = (text: string, budget: number): number => {
+  let used = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    used += charWidth(text[index]);
+    if (used > budget) return index;
+  }
+  return text.length;
+};
+
+/** 文本在给定像素宽度下最多能显示多少「字宽」 */
+const budgetFor = (widthPx: number, fontSizePx: number, lineCount: number): number =>
+  Math.max(8, Math.floor((widthPx / Math.max(fontSizePx, 1)) * lineCount));
+
+const useTruncate = (text: string, lineCount: number): { text: string; ref: React.RefObject<HTMLSpanElement | null> } => {
+  const ref = useRef<HTMLSpanElement | null>(null);
+  const [budget, setBudget] = useState(60);
+
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const measure = (): void => {
+      const style = getComputedStyle(node);
+      const width = node.clientWidth > 0 ? node.clientWidth : node.parentElement?.clientWidth ?? 0;
+      setBudget(budgetFor(width, Number.parseFloat(style.fontSize) || 13, lineCount));
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [lineCount]);
+
+  const truncated = useMemo(() => {
+    const keep = fitChars(text, budget);
+    return keep >= text.length ? text : `${text.slice(0, Math.max(1, keep - 1))}…`;
+  }, [text, budget]);
+
+  return { text: truncated, ref };
+};
+
+/** 单行入选理由：超长则截断并补省略号，全文仍在 title 里 */
+const TruncatedDesc = ({ text }: { text: string }) => {
+  const { text: shown, ref } = useTruncate(text, 3);
+  return <span ref={ref}>{shown}</span>;
+};
+
+/**
  * 板块成分股列表。
  *
  * 两种用法：
  *   - `variant="inline"`：渲染在板块行下面（窄屏 / 单独使用）
  *   - `variant="panel"`：渲染在右栏卡片里（宽屏下点开板块时，顶掉右栏的「市场情绪」）
- *
- * 三种过滤：全部 / 核心票 / 涨停（`pct ≥ 9.8`，与项目别处一致用「近似阈值」，
- * 不区分 20cm —— 这里只是浏览用的筛选，不做判定）。
  */
 export const PlateStockList = ({
   plateCode,
@@ -59,6 +116,13 @@ export const PlateStockList = ({
   const [state, setState] = useState<PlateStocksState>({ status: 'idle' });
   const [onlyCore, setOnlyCore] = useState(false);
   const [onlyLimitUp, setOnlyLimitUp] = useState(false);
+  /**
+   * 只看沪深两市（排除北交所）。
+   *
+   * 财联社的成分股里混着北交所（`920298.BJ` 这类），涨跌幅是 30cm 一档，
+   * 和沪深主板/创业板放在一张表里比涨跌幅没有可比性，所以给一个开关而不是默认排除。
+   */
+  const [onlyMainBoard, setOnlyMainBoard] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -94,9 +158,17 @@ export const PlateStockList = ({
   const visible = useMemo(
     () =>
       stocks.filter(
-        (stock) => (!onlyCore || stock.isCore) && (!onlyLimitUp || (stock.pct ?? 0) >= 9.8),
+        (stock) =>
+          (!onlyCore || stock.isCore) &&
+          (!onlyLimitUp || (stock.pct ?? 0) >= 9.8) &&
+          (!onlyMainBoard || stock.exchange !== 'BJ'),
       ),
-    [stocks, onlyCore, onlyLimitUp],
+    [stocks, onlyCore, onlyLimitUp, onlyMainBoard],
+  );
+  /** 北交所只数：仅沪深开关上标出来，让人知道排除了多少 */
+  const beijingCount = useMemo(
+    () => stocks.filter((stock) => stock.exchange === 'BJ').length,
+    [stocks],
   );
 
   if (state.status === 'loading' || state.status === 'idle') {
@@ -138,6 +210,23 @@ export const PlateStockList = ({
           >
             只看涨停
           </button>
+          <button
+            className="plate-stocks__filter"
+            type="button"
+            aria-pressed={onlyMainBoard}
+            title={
+              beijingCount > 0
+                ? `排除北交所 ${beijingCount} 只（30cm 涨跌幅，与沪深不可直接比较）`
+                : '该板块没有北交所成分股'
+            }
+            onClick={(event) => {
+              event.stopPropagation();
+              setOnlyMainBoard((value) => !value);
+            }}
+          >
+            仅沪深
+            {beijingCount > 0 ? <span className="plate-stocks__filter-hint">{beijingCount}</span> : null}
+          </button>
         </div>
       </div>
 
@@ -170,8 +259,13 @@ export const PlateStockList = ({
                   <td className={(stock.pct ?? 0) >= 0 ? 'is-up' : 'is-down'}>
                     {formatPct(stock.pct)}
                   </td>
+                  {/*
+                    截断在渲染前做掉（见 TruncatedDesc），不靠 CSS：
+                    这里试过 td 直接 clamp、td>span clamp 两种都不稳定 ——
+                    `display: -webkit-box` 被覆盖成 flow-root，省略号时有时无。
+                  */}
                   <td className="plate-stocks__desc" title={stock.assocDesc ?? ''}>
-                    {stock.assocDesc ?? '—'}
+                    {stock.assocDesc === null ? '—' : <TruncatedDesc text={stock.assocDesc} />}
                   </td>
                 </tr>
               ))}
