@@ -39,6 +39,7 @@ import { fetchEastmoneySprintLimitUp } from './sprint-limit-up/eastmoney.js';
 import { buildThemeDetail, buildThemes, buildThemeStocks } from './themes/service.js';
 import { buildThsBoardDetail, buildThsBoards } from './themes/thsBoard.js';
 import { buildReport, renderReport } from './mainline/report.js';
+import { fetchPlateStocks } from './market/cls-plate.js';
 import { buildTopicDetail, buildTopics } from './themes/topics.js';
 import { parseTrendFilters, scanTrend } from './screener/trend.js';
 import {
@@ -290,6 +291,19 @@ export const createApp = () => {
         message: error instanceof Error ? error.message : '主线报告生成失败',
       });
     }
+  });
+
+  /*
+   * 财联社板块成分股：轮动页点开一个板块看里面有哪些股票。
+   * 上游一次返回全部成员（实测「芯片产业链」770 只），且只有当前快照。
+   */
+  app.get('/api/themes/rotation/:plateCode/stocks', async (req, res) => {
+    const plateCode = String(req.params.plateCode ?? '').trim();
+    if (!/^cls\d{3,8}$/.test(plateCode)) {
+      return res.status(400).json({ message: 'plateCode 必须是财联社板块代码（cls + 数字）' });
+    }
+    const body = await fetchPlateStocks(plateCode);
+    return res.status(body.status === 'fresh' ? 200 : 502).json(body);
   });
 
   /*

@@ -6,6 +6,7 @@ import {
   fetchSectorRotation,
   type RotationDays,
 } from '../lib/sectorRotation';
+import { PlateStockList } from './PlateStockList';
 import { WarningNotesPanel, WarningNotesToggle, useWarningNotes } from './WarningNotes';
 
 /**
@@ -14,6 +15,9 @@ import { WarningNotesPanel, WarningNotesToggle, useWarningNotes } from './Warnin
  * 自取数、不依赖板块页的日期选择 —— 上游这个接口**没有日期参数**，
  * 它按自己的交易日窗口返回，和「当前查看哪一天」无关。
  * 因此这里只在挂载和切换窗口时各请求一次。
+ *
+ * 2026-09-19：每行可点开看该板块的成分股（`/api/themes/rotation/:plateCode/stocks`，
+ * 财联社 `plate/stocks`，一次返回全部成员 + 当前行情 + 入选理由）。
  */
 const formatPct = (value: number | null): string =>
   value === null || !Number.isFinite(value) ? '—' : `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
@@ -48,6 +52,8 @@ export const SectorRotationPanel = ({ onSummary }: SectorRotationPanelProps = {}
   const [days, setDays] = useState<RotationDays>(DEFAULT_ROTATION_DAYS);
   const [data, setData] = useState<SectorRotationResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  /** 当前展开的板块（同时只展开一个，避免一次拉几百只股票的接口） */
+  const [expandedPlate, setExpandedPlate] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -150,30 +156,49 @@ export const SectorRotationPanel = ({ onSummary }: SectorRotationPanelProps = {}
 
       {hasData ? (
         <div className="sector-rotation__list">
-          {visible.map((item, index) => (
-            <div className="sector-rotation__row" key={item.plateCode}>
-              <span className="sector-rotation__rank">{index + 1}</span>
-              <span className="sector-rotation__name">{item.plateName}</span>
-              <span
-                className={`sector-rotation__pct${(item.latestChange ?? 0) >= 0 ? ' is-up' : ' is-down'}`}
-                title="最近一个交易日的板块涨跌幅"
-              >
-                {formatPct(item.latestChange)}
-              </span>
-              <span className="sector-rotation__stat" title={`窗口内 ${days} 个交易日里进入涨幅 top10 的次数`}>
-                上榜 <b>{item.appearCount}</b>/{days}
-              </span>
-              <span className="sector-rotation__stat" title="窗口内上榜日的单日最大涨幅">
-                最大 <b>{formatPct(item.maxChange)}</b>
-              </span>
-              <span className="sector-rotation__stat" title="窗口内上榜日的平均涨幅">
-                均值 <b>{formatPct(item.avgChange)}</b>
-              </span>
-              <span className="sector-rotation__span" title="首次上榜 → 最近一次上榜">
-                {formatDate(item.firstSeen)} → {formatDate(item.lastSeen)}
-              </span>
-            </div>
-          ))}
+          {visible.map((item, index) => {
+            const expanded = expandedPlate === item.plateCode;
+            return (
+              <div className="sector-rotation__item" key={item.plateCode}>
+                <button
+                  className="sector-rotation__row"
+                  type="button"
+                  aria-expanded={expanded}
+                  onClick={() => setExpandedPlate(expanded ? null : item.plateCode)}
+                >
+                  <span className="sector-rotation__rank">{index + 1}</span>
+                  <span className="sector-rotation__name">
+                    <span className="sector-rotation__caret" aria-hidden="true">
+                      {expanded ? '▾' : '▸'}
+                    </span>
+                    {item.plateName}
+                  </span>
+                  <span
+                    className={`sector-rotation__pct${(item.latestChange ?? 0) >= 0 ? ' is-up' : ' is-down'}`}
+                    title="最近一个交易日的板块涨跌幅"
+                  >
+                    {formatPct(item.latestChange)}
+                  </span>
+                  <span
+                    className="sector-rotation__stat"
+                    title={`窗口内 ${days} 个交易日里进入涨幅 top10 的次数`}
+                  >
+                    上榜 <b>{item.appearCount}</b>/{days}
+                  </span>
+                  <span className="sector-rotation__stat" title="窗口内上榜日的单日最大涨幅">
+                    最大 <b>{formatPct(item.maxChange)}</b>
+                  </span>
+                  <span className="sector-rotation__stat" title="窗口内上榜日的平均涨幅">
+                    均值 <b>{formatPct(item.avgChange)}</b>
+                  </span>
+                  <span className="sector-rotation__span" title="首次上榜 → 最近一次上榜">
+                    {formatDate(item.firstSeen)} → {formatDate(item.lastSeen)}
+                  </span>
+                </button>
+                {expanded ? <PlateStockList plateCode={item.plateCode} /> : null}
+              </div>
+            );
+          })}
         </div>
       ) : (
         <p className="overview__empty">

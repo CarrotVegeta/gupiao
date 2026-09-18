@@ -863,10 +863,168 @@ nav.card[aria-label='一级导航'] .group-sidebar__count {
   padding: 0.4615rem 0.6154rem;
   border-radius: var(--radius-sm);
   font-size: 0.9231rem;
+  /* 每行改成可点开的按钮（点开看成分股），所以要把按钮自带样式清掉 */
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.sector-rotation__row:nth-child(odd) {
+.sector-rotation__row:hover {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.sector-rotation__row[aria-expanded='true'] {
+  background: rgba(59, 111, 245, 0.08);
+}
+
+/* 斑马纹挪到外层 item 上：row 现在被 item 包了一层，nth-child 选不到了 */
+.sector-rotation__item:nth-child(odd) .sector-rotation__row {
   background: var(--bg-muted);
+}
+
+.sector-rotation__item:nth-child(odd) .sector-rotation__row:hover {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.sector-rotation__item:nth-child(odd) .sector-rotation__row[aria-expanded='true'] {
+  background: rgba(59, 111, 245, 0.08);
+}
+
+.sector-rotation__caret {
+  display: inline-block;
+  width: 1.0769rem;
+  color: var(--text-tertiary);
+  font-size: 0.7692rem;
+}
+
+/* ---- 成分股列表（展开行） ---- */
+
+.plate-stocks {
+  padding: 0.6154rem 0.6154rem 0.9231rem;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.plate-stocks__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6154rem;
+  margin-bottom: 0.4615rem;
+}
+
+.plate-stocks__count {
+  color: var(--text-secondary);
+  font-size: 0.8462rem;
+}
+
+.plate-stocks__filters {
+  display: inline-flex;
+  gap: 0.3077rem;
+}
+
+.plate-stocks__filter {
+  padding: 0.2308rem 0.6154rem;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 0.6154rem;
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.8077rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.plate-stocks__filter[aria-pressed='true'] {
+  border-color: var(--accent-primary);
+  background: var(--accent-primary);
+  color: #fff;
+}
+
+.plate-stocks__table-wrap {
+  max-height: 22.3077rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.plate-stocks__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8462rem;
+}
+
+.plate-stocks__table th,
+.plate-stocks__table td {
+  padding: 0.3846rem 0.6154rem;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  text-align: left;
+  vertical-align: top;
+}
+
+.plate-stocks__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--text-tertiary);
+  font-size: 0.7692rem;
+  font-weight: 600;
+}
+
+.plate-stocks__table tbody td:nth-child(3),
+.plate-stocks__table tbody td:nth-child(4) {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.plate-stocks__code {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.plate-stocks__ex {
+  margin-left: 0.3077rem;
+  color: var(--text-tertiary);
+  font-size: 0.6923rem;
+}
+
+.plate-stocks__core {
+  margin-left: 0.4615rem;
+  padding: 0.0769rem 0.3846rem;
+  border-radius: 0.4615rem;
+  background: rgba(59, 111, 245, 0.12);
+  color: var(--accent-primary);
+  font-size: 0.6923rem;
+  font-weight: 700;
+}
+
+/* 入选理由通常很长：限制行数，悬停看全文 */
+.plate-stocks__desc {
+  max-width: 34rem;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.plate-stocks__note {
+  margin: 0.4615rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8077rem;
+}
+
+.plate-stocks__warnings {
+  margin: 0.4615rem 0 0;
+  padding-left: 1.0769rem;
+  color: var(--text-tertiary);
+  font-size: 0.7692rem;
 }
 
 .sector-rotation__rank {
